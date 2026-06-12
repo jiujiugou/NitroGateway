@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv NitroGateway.Transport/* NitroGateway.Transport/obj NitroGateway.Transport/.*)",
+      "Bash(rm -rf NitroGateway.Transport)",
+      "Bash(mv src/NitroGateway.Transport.MQTT/* src/NitroGateway.Transport/MQTT/)",
+      "Bash(mv src/NitroGateway.Transport.MQTT/obj src/NitroGateway.Transport/MQTT/)",
+      "Bash(mv src/NitroGateway.Transport.MQTT/bin src/NitroGateway.Transport/MQTT/)",
+      "Bash(rm -rf src/NitroGateway.Transport.MQTT)",
+      "Read(//tmp/**)",
+      "Read(//c/Users/jiuji/.nuget/packages/mqttnet/5.1.0.1559/**)",
+      "Bash(cd /tmp && rm -rf fm_check && mkdir fm_check && cd fm_check && dotnet new console --force -o . > /dev/null 2>&1 && dotnet add package FluentModbus --version 5.* 2>&1 | tail -3 && dotnet build > /dev/null 2>&1 && find ~/.nuget/packages/fluentmodbus -name \"*.dll\" ! -path \"*/ref/*\" | head -3)",
+      "Read(//c/Users/jiuji/.nuget/packages/fluentmodbus/**)",
+      "Bash(git init *)"
+    ]
+  }
+}

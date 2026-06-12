@@ -1,0 +1,31 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NitroGateway.Device/NitroGateway.Device.csproj" />
+    <Project Path="src/NitroGateway.Domain/NitroGateway.Domain.csproj" />
+    <Project Path="src/NitroGateway.Shared/NitroGateway.Shared.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Protocol/" />
+  <Folder Name="/src/NitroGateway.Protocol/Abstraction/">
+    <Project Path="src/NitroGateway.Protocol/Abstraction/NitroGateway.Protocol.Abstractions.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Protocol/Modbus/">
+    <Project Path="src/NitroGateway.Protocol/Modbus/NitroGateway.Protocol.Modbus.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Storage/" />
+  <Folder Name="/src/NitroGateway.Storage/Buffer/">
+    <Project Path="src/NitroGateway.Storage/Buffer/NitroGateway.Storage.Buffer.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Storage/Configuration/">
+    <Project Path="src/NitroGateway.Storage/Configuration/NitroGateway.Storage.Configuration.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Storage/TimeSeries/">
+    <Project Path="src/NitroGateway.Storage/TimeSeries/NitroGateway.Storage.TimeSeries.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Transport/" />
+  <Folder Name="/src/NitroGateway.Transport/HTTP/">
+    <Project Path="src/NitroGateway.Transport/HTTP/NitroGateway.Transport.HTTP.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Transport/MQTT/">
+    <Project Path="src/NitroGateway.Transport/MQTT/NitroGateway.Transport.MQTT.csproj" />
+  </Folder>
+</Solution>
