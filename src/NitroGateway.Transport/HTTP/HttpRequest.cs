@@ -1,7 +1,7 @@
 namespace NitroGateway.Transport.HTTP;
 
 /// <summary>HTTP 请求</summary>
-public sealed class HttpRequest
+public sealed record HttpRequest
 {
     /// <summary>请求路径，相对于 BaseUrl，如 "/api/measurements"</summary>
     public required string Path { get; init; }

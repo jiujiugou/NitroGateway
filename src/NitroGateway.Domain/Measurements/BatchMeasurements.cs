@@ -4,7 +4,7 @@ namespace NitroGateway.Domain.Measurements;
 /// 批量测点记录，代表一轮采集扫描产生的全部点位数据。
 /// 用于将一次扫描周期的结果作为一个整体进行传输和存储。
 /// </summary>
-public sealed class BatchMeasurements
+public sealed record BatchMeasurements
 {
     /// <summary>批次唯一标识</summary>
     public Guid Id { get; init; }

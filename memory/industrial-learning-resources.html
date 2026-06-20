@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工业协议网关 — 学习资料</title>
+<style>
+  :root { --bg:#0f1117; --card:#1a1d27; --accent:#58a6ff; --green:#3fb950; --orange:#d2991d; --text:#c9d1d9; --muted:#8b949e; --border:#30363d; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; line-height:1.6; padding:2rem; max-width:900px; margin:0 auto; }
+  h1 { font-size:2rem; color:#f0f6fc; margin-bottom:.25rem; }
+  h1+p { color:var(--muted); margin-bottom:2rem; }
+  h2 { color:#f0f6fc; font-size:1.25rem; margin:2rem 0 1rem; padding-bottom:.5rem; border-bottom:1px solid var(--border); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1.25rem; }
+  .card h3 { color:#f0f6fc; font-size:1rem; margin-bottom:.5rem; }
+  .card p { color:var(--muted); font-size:.875rem; margin-bottom:.5rem; }
+  .card a { color:var(--accent); text-decoration:none; font-size:.875rem; }
+  .card a:hover { text-decoration:underline; }
+  .steps { counter-reset:step; list-style:none; }
+  .steps li { counter-increment:step; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:1rem 1.25rem; margin-bottom:.75rem; position:relative; }
+  .steps li::before { content:counter(step); background:var(--accent); color:#fff; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:700; margin-right:.75rem; flex-shrink:0; }
+  .steps li strong { color:#f0f6fc; }
+  .steps li p { color:var(--muted); font-size:.875rem; margin-top:.25rem; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:.75rem; font-weight:600; margin-right:.25rem; }
+  .tag-fire { background:#da3633; color:#fff; }
+  .tag-dotnet { background:#512bd4; color:#fff; }
+  .tag-java { background:#f8981d; color:#000; }
+  .tag-c { background:#555; color:#fff; }
+  table { width:100%; border-collapse:collapse; margin:1rem 0; }
+  th,td { text-align:left; padding:.5rem .75rem; border-bottom:1px solid var(--border); font-size:.875rem; }
+  th { color:var(--muted); font-weight:600; }
+  td a { color:var(--accent); text-decoration:none; }
+  td a:hover { text-decoration:underline; }
+  strong { color:#f0f6fc; }
+</style>
+</head>
+<body>
+
+<h1>工业协议网关</h1>
+<p>从 Modbus 到 OPC UA 到 S7，从理论到跑通第一条链路</p>
+
+<!-- 工具 -->
+<h2>🛠 工具（免费，先装这三个）</h2>
+<div class="grid">
+  <div class="card">
+    <h3>ModbusPal</h3>
+    <p>Modbus TCP 模拟器，定义寄存器/线圈，你的 ModbusDriver 直接读它</p>
+    <a href="https://sourceforge.net/projects/modbuspal/" target="_blank">sourceforge.net →</a>
+  </div>
+  <div class="card">
+    <h3>Prosys OPC UA Server</h3>
+    <p>OPC UA 模拟服务器，免费版够用，浏览 NodeId 树</p>
+    <a href="https://www.prosysopc.com/products/opc-ua-simulation-server/" target="_blank">prosysopc.com →</a>
+  </div>
+  <div class="card">
+    <h3>Codesys</h3>
+    <p>免费软 PLC，写梯形图/ST 语言，模拟真实西门子 PLC</p>
+    <a href="https://www.codesys.com/" target="_blank">codesys.com →</a>
+  </div>
+  <div class="card">
+    <h3>Wireshark</h3>
+    <p>抓 Modbus TCP 帧看原始报文——亲眼看到功能码和寄存器值</p>
+    <a href="https://www.wireshark.org/" target="_blank">wireshark.org →</a>
+  </div>
+  <div class="card">
+    <h3>MQTTX</h3>
+    <p>MQTT 桌面客户端，调试发布/订阅，连 test.mosquitto.org</p>
+    <a href="https://mqttx.app/" target="_blank">mqttx.app →</a>
+  </div>
+</div>
+
+<!-- 协议 -->
+<h2>Modbus</h2>
+<table>
+  <tr><th>资源</th><th>说明</th></tr>
+  <tr><td><strong>Modbus 协议规范（中文）</strong></td><td>搜"Modbus协议中文版 中国工控网"，一页 PDF 讲清所有功能码</td></tr>
+  <tr><td><a href="http://www.simplymodbus.ca/FAQ.htm" target="_blank">Simply Modbus FAQ</a></td><td>最简洁的 Modbus FAQ，寄存器/功能码/出错码一张表</td></tr>
+  <tr><td><strong>ModbusPal 教程</strong></td><td>YouTube 搜 "ModbusPal tutorial"，5分钟学会模拟</td></tr>
+</table>
+
+<h2>OPC UA</h2>
+<table>
+  <tr><th>资源</th><th>说明</th></tr>
+  <tr><td><a href="https://reference.opcfoundation.org/" target="_blank">OPC Foundation 官方文档</a></td><td>选 "Part 1 Overview"，理解 AddressSpace 和 NodeId</td></tr>
+  <tr><td><strong>Prosys 官方教程</strong></td><td>安装后自带 Quick Start，连上就能浏览节点树</td></tr>
+</table>
+
+<h2>S7（西门子）</h2>
+<table>
+  <tr><th>资源</th><th>说明</th></tr>
+  <tr><td><a href="https://github.com/S7NetPlus/s7netplus" target="_blank">S7netplus GitHub</a></td><td>README 有地址格式说明：DB1.DBD0 是什么意思</td></tr>
+  <tr><td><strong>s7-1200 datasheet</strong></td><td>搜一下就知道 DB 块是什么、为什么会占 DBD0/DBW2 这种地址</td></tr>
+</table>
+
+<!-- 开源参考 -->
+<h2>开源参考</h2>
+<div class="grid">
+  <div class="card">
+    <h3><span class="tag tag-java">Java</span> HiveMQ Edge</h3>
+    <p>工业协议网关产品级开源项目，看架构和适配器模式</p>
+  </div>
+  <div class="card">
+    <h3><span class="tag tag-c">C</span> Neuron (EMQX)</h3>
+    <p>轻量工业协议网关，看驱动加载模式和点位管理</p>
+  </div>
+  <div class="card">
+    <h3><span class="tag tag-dotnet">C#</span> IoTGateway</h3>
+    <p>国内 .NET 工业网关，GitHub 搜，看点位的表结构设计</p>
+  </div>
+  <div class="card">
+    <h3><span class="tag tag-fire">C#</span> FluentModbus</h3>
+    <p>你在用的 Modbus 库，源码有完整 TCP+RTU 示例</p>
+    <a href="https://github.com/Apollo3zehn/FluentModbus" target="_blank">github.com →</a>
+  </div>
+</div>
+
+<!-- 路径 -->
+<h2>快速上手路径（按顺序，总共 1~2 小时）</h2>
+<ol class="steps">
+  <li>
+    <strong>装 ModbusPal</strong> → 定义 3 个 HoldingRegister → 跑 <code>ModbusDriver.ReadAsync</code> → 亲眼看到 <code>ushort[]</code>
+  </li>
+  <li>
+    <strong>装 MQTTX</strong> → 连接 <code>test.mosquitto.org</code> → 写一段代码把刚才读到的寄存器值 Publish 到云端主题
+  </li>
+  <li>
+    <strong>装 Prosys OPC UA</strong> → 浏览它的 NodeId 树 → 理解 <code>ns=3;s=Temperature</code> 为什么长这样
+  </li>
+  <li>
+    <strong>回头看代码</strong> → 打开你的 <code>IProtocolDriver</code> → 打开 <code>ModbusDriver</code> → 明白每一个设计是为什么
+  </li>
+</ol>
+
+<p style="color:var(--muted);font-size:.875rem;margin-top:2rem;">
+  ← 回到 <a href="industrial-learning-resources.md" style="color:var(--accent);">Markdown 版本</a>
+</p>
+
+</body>
+</html>

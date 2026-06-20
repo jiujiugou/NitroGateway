@@ -11,13 +11,13 @@ namespace NitroGateway.Storage.TimeSeries;
 /// </summary>
 public interface IMeasurementStore
 {
-    /// <summary>批量写入快照</summary>
+    /// <summary>批量写入快照。内部应做批量优化而非逐条 INSERT</summary>
     Task<OperationResult> WriteAsync(IReadOnlyList<PointSnapshot> snapshots, CancellationToken ct = default);
 
-    /// <summary>时间范围查询</summary>
+    /// <summary>按设备、点位、时间范围查询历史快照</summary>
     Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryAsync(
         Guid deviceId, Guid pointId, DateTime from, DateTime to, CancellationToken ct = default);
 
-    /// <summary>删除过期的历史数据</summary>
+    /// <summary>删除指定时间之前的历史数据，用于存储空间管理</summary>
     Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default);
 }

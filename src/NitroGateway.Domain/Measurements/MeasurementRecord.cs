@@ -7,7 +7,7 @@ namespace NitroGateway.Domain.Measurements;
 /// 相比 <see cref="PointSnapshot"/>，本记录可脱离 <see cref="DevicePoint"/> 独立存储和传输，
 /// 包含了查询和转发所需的全部上下文信息。
 /// </summary>
-public sealed class MeasurementRecord
+public sealed record MeasurementRecord
 {
     /// <summary>记录唯一标识</summary>
     public Guid Id { get; init; }

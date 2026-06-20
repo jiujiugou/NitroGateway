@@ -216,6 +216,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
     // ---- 内部实现 ----
 
+    /// <summary>更新连接状态并触发 <see cref="StateChanged"/> 事件</summary>
     private void SetState(MqttConnectionState state)
     {
         if (State == state) return;
@@ -225,6 +226,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         StateChanged?.Invoke(state);
     }
 
+    /// <summary>MQTTnet 消息回调：将 MQTT 消息写入 Channel 管道供外部消费</summary>
     private Task OnMessageReceivedAsync(MqttNet.MqttApplicationMessageReceivedEventArgs e)
     {
         var payload = e.ApplicationMessage.Payload;
@@ -250,9 +252,14 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>MQTTnet 断开回调：如配置了自动重连则启动重连流程</summary>
     private async Task OnDisconnectedAsync(MqttNet.MqttClientDisconnectedEventArgs e)
     {
         _logger.LogWarning("MQTT 意外断开: {Reason}", e.Reason);
+
+        // Faulted/Disconnected → 不重连（已经放弃或主动断开）
+        if (State is MqttConnectionState.Faulted or MqttConnectionState.Disconnected)
+            return;
 
         if (_options.MaxReconnectAttempts == 0)
         {
@@ -263,6 +270,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         await TryReconnectAsync();
     }
 
+    /// <summary>指数退避自动重连，超过最大次数后状态变为 Faulted</summary>
     private async Task TryReconnectAsync()
     {
         CancelReconnect();
@@ -293,6 +301,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         SetState(MqttConnectionState.Faulted);
     }
 
+    /// <summary>取消当前进行中的重连尝试</summary>
     private void CancelReconnect()
     {
         _reconnectCts?.Cancel();

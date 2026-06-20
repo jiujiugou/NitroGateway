@@ -7,7 +7,7 @@ namespace NitroGateway.Domain.Devices;
 public sealed class DevicePoint
 {
     /// <summary>点位唯一标识</summary>
-    public Guid Id { get; private set; }
+    public Guid Id { get; init; }
 
     /// <summary>点位名称，如 "炉温"、"转速"</summary>
     public required string Name { get; set; }

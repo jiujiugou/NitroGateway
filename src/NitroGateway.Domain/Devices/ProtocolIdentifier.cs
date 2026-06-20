@@ -4,7 +4,7 @@ namespace NitroGateway.Domain.Devices;
 /// 协议标识值对象，用于替代魔法字符串。
 /// 基于协议名称和版本号判断相等性，忽略大小写。
 /// </summary>
-public sealed class ProtocolIdentifier
+public sealed record ProtocolIdentifier
 {
     /// <summary>协议名称，如 "Modbus"、"OPC UA"、"S7"</summary>
     public required string Name { get; init; }
@@ -12,9 +12,9 @@ public sealed class ProtocolIdentifier
     /// <summary>协议方言，如 "Modbus RTU"、"Modbus TCP"</summary>
     public string? Dialect { get; init; }
 
-    /// <inheritdoc />
-    public override bool Equals(object? obj) =>
-        obj is ProtocolIdentifier other
+    /// <summary>大小写不敏感相等</summary>
+    public bool Equals(ProtocolIdentifier? other) =>
+        other is not null
         && string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase)
         && string.Equals(Dialect, other.Dialect, StringComparison.OrdinalIgnoreCase);
 

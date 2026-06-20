@@ -5,7 +5,7 @@ namespace NitroGateway.Domain.Devices;
 /// 每次采集生成新的实例，不可变——不应修改已有快照。
 /// 自描述：无需查数据库即可获取 DeviceId、点位名称等上下文。
 /// </summary>
-public sealed class PointSnapshot
+public sealed record PointSnapshot
 {
     /// <summary>所属设备 ID</summary>
     public Guid DeviceId { get; init; }

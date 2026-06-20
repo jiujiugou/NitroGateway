@@ -3,10 +3,13 @@
   <ItemGroup>
     <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
     <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\Configuration\NitroGateway.Storage.Configuration.csproj" />
+    <ProjectReference Include="..\NitroGateway.Protocol\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>NitroGateway.DeviceManagement</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>

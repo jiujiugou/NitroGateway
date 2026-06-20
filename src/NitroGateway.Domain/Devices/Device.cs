@@ -7,7 +7,7 @@ namespace NitroGateway.Domain.Devices;
 public sealed class Device
 {
     /// <summary>设备唯一标识</summary>
-    public Guid Id { get; private set; }
+    public Guid Id { get; init; }
 
     /// <summary>设备名称，如 "1号车间 PLC"</summary>
     public required string Name { get; set; }

@@ -4,7 +4,7 @@ namespace NitroGateway.Domain.Devices;
 /// 设备连接参数值对象。
 /// 包含网络地址、超时策略、重试策略以及协议特有扩展参数。
 /// </summary>
-public sealed class DeviceConnection
+public sealed record DeviceConnection
 {
     /// <summary>
     /// 连接地址。

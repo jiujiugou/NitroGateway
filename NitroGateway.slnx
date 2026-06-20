@@ -1,7 +1,12 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/NitroGateway.Collection/NitroGateway.Collection.csproj" />
     <Project Path="src/NitroGateway.Device/NitroGateway.Device.csproj" />
     <Project Path="src/NitroGateway.Domain/NitroGateway.Domain.csproj" />
+    <Project Path="src/NitroGateway.Forwarder/NitroGateway.Forwarder.csproj" />
+    <Project Path="src/NitroGateway.Host/NitroGateway.Host.csproj" />
+    <Project Path="src/NitroGateway.Infrastructure.Sqlite/NitroGateway.Infrastructure.Sqlite.csproj" />
+    <Project Path="src/NitroGateway.Scheduler/NitroGateway.Scheduler.csproj" />
     <Project Path="src/NitroGateway.Shared/NitroGateway.Shared.csproj" />
   </Folder>
   <Folder Name="/src/NitroGateway.Protocol/" />

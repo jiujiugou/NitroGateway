@@ -133,6 +133,7 @@ public sealed class HttpClientWrapper : IHttpClient
 
     // ---- 内部 ----
 
+    /// <summary>将内部请求模型转换为 HttpRequestMessage</summary>
     private static HttpRequestMessage BuildHttpMessage(HttpRequest request)
     {
         var msg = new HttpRequestMessage(request.Method, request.Path);
@@ -146,6 +147,7 @@ public sealed class HttpClientWrapper : IHttpClient
         return msg;
     }
 
+    /// <summary>请求成功时重置连续失败计数并恢复 Connected 状态</summary>
     private void OnSuccess()
     {
         _consecutiveFailures = 0;
@@ -157,6 +159,7 @@ public sealed class HttpClientWrapper : IHttpClient
         }
     }
 
+    /// <summary>请求失败时累加计数，连续失败超过阈值则进入 Faulted</summary>
     private void OnFailure(Exception ex)
     {
         _consecutiveFailures++;

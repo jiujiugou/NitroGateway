@@ -7,13 +7,13 @@ using NitroGateway.Shared;
 namespace NitroGateway.Protocol.Modbus;
 
 /// <summary>
-/// Modbus 协议驱动，基于 FluentModbus 实现。
+/// Modbus TCP 协议驱动，基于 FluentModbus ModbusTcpClient 实现。
 /// </summary>
-public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
+public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
 {
     private readonly DeviceConnection _connection;
     private readonly ModbusEndian _endian;
-    private readonly ILogger<ModbusDriver> _logger;
+    private readonly ILogger<ModbusTcpDriver> _logger;
     private readonly ModbusAddressParser _addressParser = new();
     private readonly ModbusTcpClient _client = new();
     private byte _unitId = 1;
@@ -24,7 +24,10 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
     /// <inheritdoc />
     public DriverCapability Capability => ModbusDriverCapability.Instance;
 
-    public ModbusDriver(DeviceConnection connection, ILogger<ModbusDriver> logger)
+    /// <summary>创建 Modbus 驱动实例</summary>
+    /// <param name="connection">设备连接参数（Endpoint、超时、UnitId、Endian 等）</param>
+    /// <param name="logger">日志记录器</param>
+    public ModbusTcpDriver(DeviceConnection connection, ILogger<ModbusTcpDriver> logger)
     {
         _connection = connection;
         _logger = logger;
@@ -148,7 +151,7 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
                         results.Add(new RawPointValue
                         {
                             Point = groupList[i],
-                            RawData = new[] { (ushort)(coilBytes[i] != 0 ? 1 : 0) },
+                            Value = coilBytes[i] != 0,
                             Timestamp = timestamp
                         });
                     }
@@ -177,10 +180,12 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
 
                         byteOffset += byteCount;
 
+                        var decodedValue = DecodeRegisters(segment, point.DataType);
+
                         results.Add(new RawPointValue
                         {
                             Point = point,
-                            RawData = segment,
+                            Value = decodedValue,
                             Timestamp = timestamp
                         });
                     }
@@ -243,6 +248,7 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
         return OperationResult.Success();
     }
 
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (State == DriverState.Connected)
@@ -252,6 +258,7 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
 
     // ---- 内部 ----
 
+    /// <summary>按功能区和地址连续性分组，每组可合并为一次批量读请求</summary>
     private static IEnumerable<IEnumerable<DevicePoint>> GroupByContinuity(List<DevicePoint> points)
     {
         var parser = new ModbusAddressParser();
@@ -278,6 +285,34 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
         return groups;
     }
 
+    /// <summary>Modbus 寄存器 → 领域值（int/float/bool/string），默认 ABCD 大端</summary>
+    private static object DecodeRegisters(ushort[] registers, DataType type)
+    {
+        if (registers.Length == 0) return 0;
+
+        // 构建大端字节数组
+        var bytes = new byte[registers.Length * 2];
+        for (var i = 0; i < registers.Length; i++) { bytes[i * 2] = (byte)(registers[i] >> 8); bytes[i * 2 + 1] = (byte)(registers[i] & 0xFF); }
+        if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
+
+        return type switch
+        {
+            DataType.Bool => registers[0] != 0,
+            DataType.Byte => bytes[0],
+            DataType.Int16 => (short)registers[0],
+            DataType.UInt16 => registers[0],
+            DataType.Int32 when bytes.Length >= 4 => BitConverter.ToInt32(bytes),
+            DataType.UInt32 when bytes.Length >= 4 => BitConverter.ToUInt32(bytes),
+            DataType.Float when bytes.Length >= 4 => (double)BitConverter.ToSingle(bytes),
+            DataType.Int64 when bytes.Length >= 8 => BitConverter.ToInt64(bytes),
+            DataType.UInt64 when bytes.Length >= 8 => BitConverter.ToUInt64(bytes),
+            DataType.Double when bytes.Length >= 8 => BitConverter.ToDouble(bytes),
+            DataType.String => System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0'),
+            _ => registers
+        };
+    }
+
+    /// <summary>将工程值按 DataType 编码为 Modbus 寄存器数组，供写入操作使用</summary>
     private ushort[] EncodeValue(object value, DataType type) => type switch
     {
         DataType.Bool => [Convert.ToBoolean(value) ? (ushort)1 : (ushort)0],
@@ -293,6 +328,7 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
         _ => throw new NotSupportedException($"不支持的 DataType: {type}")
     };
 
+    /// <summary>将多寄存器值类型 Marshal 为 byte[] 再转换为 ushort[]</summary>
     private ushort[] EncodeMulti<T>(T value) where T : unmanaged
     {
         var size = System.Runtime.InteropServices.Marshal.SizeOf<T>();
@@ -316,6 +352,7 @@ public sealed class ModbusDriver : IProtocolDriver, IAsyncDisposable
         return registers;
     }
 
+    /// <summary>从连接参数中解析字节序，未指定默认 ABCD</summary>
     private static ModbusEndian ParseEndian(object? value) => value?.ToString()?.ToUpperInvariant() switch
     {
         "CDAB" => ModbusEndian.CDAB,

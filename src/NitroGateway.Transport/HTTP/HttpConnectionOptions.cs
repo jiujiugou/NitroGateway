@@ -1,7 +1,7 @@
 namespace NitroGateway.Transport.HTTP;
 
 /// <summary>HTTP 连接参数</summary>
-public sealed class HttpConnectionOptions
+public sealed record HttpConnectionOptions
 {
     /// <summary>基础 URL，如 "https://api.example.com"</summary>
     public required string BaseUrl { get; init; }

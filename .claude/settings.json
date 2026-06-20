@@ -11,7 +11,11 @@
       "Read(//c/Users/jiuji/.nuget/packages/mqttnet/5.1.0.1559/**)",
       "Bash(cd /tmp && rm -rf fm_check && mkdir fm_check && cd fm_check && dotnet new console --force -o . > /dev/null 2>&1 && dotnet add package FluentModbus --version 5.* 2>&1 | tail -3 && dotnet build > /dev/null 2>&1 && find ~/.nuget/packages/fluentmodbus -name \"*.dll\" ! -path \"*/ref/*\" | head -3)",
       "Read(//c/Users/jiuji/.nuget/packages/fluentmodbus/**)",
-      "Bash(git init *)"
+      "Bash(git init *)",
+      "Bash(git commit -m 'feat: init NitroGateway — industrial protocol gateway *)",
+      "Bash(dotnet new *)",
+      "Bash(rm -rf _tmp_)",
+      "Bash(dotnet run *)"
     ]
   }
 }

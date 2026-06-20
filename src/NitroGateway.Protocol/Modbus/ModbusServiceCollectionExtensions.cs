@@ -15,15 +15,15 @@ public static class ModbusServiceCollectionExtensions
         services.AddTransient<IProtocolDriver>(sp =>
         {
             // 具体连接参数在 Create 时传入，此处注册工厂回调
-            throw new InvalidOperationException("请通过 IProtocolDriverFactory 创建 ModbusDriver");
+            throw new InvalidOperationException("请通过 IProtocolDriverFactory 创建 ModbusTcpDriver");
         });
         return services;
     }
 
     /// <summary>根据连接参数创建 Modbus 驱动</summary>
-    public static IProtocolDriver CreateModbusDriver(
-        DeviceConnection connection, ILogger<ModbusDriver> logger)
+    public static IProtocolDriver CreateModbusTcpDriver(
+        DeviceConnection connection, ILogger<ModbusTcpDriver> logger)
     {
-        return new ModbusDriver(connection, logger);
+        return new ModbusTcpDriver(connection, logger);
     }
 }

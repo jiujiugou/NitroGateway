@@ -1,7 +1,7 @@
 namespace NitroGateway.Transport.HTTP;
 
 /// <summary>HTTP 响应</summary>
-public sealed class HttpResponse
+public sealed record HttpResponse
 {
     /// <summary>HTTP 状态码</summary>
     public int StatusCode { get; init; }

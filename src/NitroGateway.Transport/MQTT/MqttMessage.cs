@@ -1,7 +1,7 @@
 namespace NitroGateway.Transport.MQTT;
 
 /// <summary>收到的 MQTT 消息</summary>
-public sealed class MqttMessage
+public sealed record MqttMessage
 {
     /// <summary>主题</summary>
     public required string Topic { get; init; }

@@ -4,7 +4,7 @@ namespace NitroGateway.Domain.Protocols;
 /// 协议驱动能力声明。
 /// 每种协议有不同的特性集，采集引擎据此选择最优调用策略。
 /// </summary>
-public sealed class DriverCapability
+public sealed record DriverCapability
 {
     /// <summary>是否支持批量读取（一次请求读取多个点位）</summary>
     public bool SupportsBatchRead { get; init; }

@@ -9,15 +9,18 @@ namespace NitroGateway.Storage.Buffer;
 /// </summary>
 public interface IForwardBuffer
 {
-    /// <summary>入队一批待转发数据</summary>
+    /// <summary>入队一批待转发数据。不应阻塞调用方</summary>
     Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default);
 
-    /// <summary>出队一批数据（不移除，Forwarder 成功后才 Commit）</summary>
+    /// <summary>
+    /// 出队最多 maxCount 批数据，不移除。
+    /// Forwarder 成功转发后调用 <see cref="CommitAsync"/> 删除。
+    /// </summary>
     Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(int maxCount, CancellationToken ct = default);
 
-    /// <summary>确认转发成功，移除已出队的数据</summary>
+    /// <summary>确认转发成功，移除已出队的批次</summary>
     Task<OperationResult> CommitAsync(IReadOnlyList<Guid> batchIds, CancellationToken ct = default);
 
-    /// <summary>当前队列长度</summary>
+    /// <summary>当前队列中待转发的批次数</summary>
     int Count { get; }
 }
