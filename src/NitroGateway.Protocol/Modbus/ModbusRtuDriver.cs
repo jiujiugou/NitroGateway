@@ -142,7 +142,7 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IDisposable
         // RTU 不支持异步，用 Task.Run 适配接口
         return Task.Run(() =>
         {
-            var groups = GroupByContinuity(pointList);
+            var groups = ModbusProtocolHelper.GroupByContinuity(pointList);
             var results = new List<RawPointValue>();
             var timestamp = DateTime.UtcNow;
 
@@ -181,7 +181,7 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IDisposable
                             for (var i = 0; i < addr.Count && byteOffset + (i * 2) + 1 < rawBytes.Length; i++)
                                 segment[i] = (ushort)((rawBytes[byteOffset + i * 2] << 8) | rawBytes[byteOffset + i * 2 + 1]);
                             byteOffset += addr.Count * 2;
-                            results.Add(new RawPointValue { Point = point, Value = DecodeRegisters(segment, point.DataType), Timestamp = timestamp });
+                            results.Add(new RawPointValue { Point = point, Value = ModbusProtocolHelper.DecodeRegisters(segment, point.DataType), Timestamp = timestamp });
                         }
                     }
                 }
@@ -205,7 +205,7 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IDisposable
             {
                 if (ma.Area == ModbusArea.HoldingRegister)
                 {
-                    var regs = EncodeValue(value, point.DataType);
+                    var regs = ModbusProtocolHelper.EncodeValue(value, point.DataType);
                     if (regs.Length == 1) _client.WriteSingleRegister(_unitId, ma.Offset, (short)regs[0]);
                     else _client.WriteMultipleRegisters(_unitId, ma.Offset, regs);
                 }
@@ -228,63 +228,4 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IDisposable
 
     public void Dispose() { _client.Dispose(); }
 
-    // ═══════════ 复用逻辑（与 ModbusTcpDriver 相同） ═══════════
-
-    private static IEnumerable<IEnumerable<DevicePoint>> GroupByContinuity(List<DevicePoint> points)
-    {
-        var parser = new ModbusAddressParser();
-        var sorted = points.Select(p => (Point: p, Addr: parser.ParseWithCount(p.Address, p.DataType)))
-            .OrderBy(x => x.Addr.Area).ThenBy(x => x.Addr.Offset).ToList();
-        var groups = new List<List<DevicePoint>>();
-        List<DevicePoint>? cur = null; ModbusAddress? last = null;
-        foreach (var (p, a) in sorted)
-        {
-            if (cur is null || last is null || a.Area != last.Area || a.Offset > last.Offset + last.Count) { cur = []; groups.Add(cur); }
-            cur.Add(p); last = a;
-        }
-        return groups;
-    }
-
-    private static ushort[] EncodeValue(object value, DataType type) => type switch
-    {
-        DataType.Bool => [(ushort)(Convert.ToBoolean(value) ? 1 : 0)],
-        DataType.Byte => [Convert.ToByte(value)],
-        DataType.Int16 => [(ushort)Convert.ToInt16(value)],
-        DataType.UInt16 => [Convert.ToUInt16(value)],
-        DataType.Int32 => ToRegs(Convert.ToInt32(value)),
-        DataType.UInt32 => ToRegs(Convert.ToUInt32(value)),
-        DataType.Float => ToRegs(Convert.ToSingle(value)),
-        DataType.Int64 => ToRegs(Convert.ToInt64(value)),
-        DataType.UInt64 => ToRegs(Convert.ToUInt64(value)),
-        DataType.Double => ToRegs(Convert.ToDouble(value)),
-        _ => throw new NotSupportedException($"DataType: {type}")
-    };
-
-    private static object DecodeRegisters(ushort[] regs, DataType type)
-    {
-        if (regs.Length == 0) return 0;
-        var bytes = new byte[regs.Length * 2];
-        for (var i = 0; i < regs.Length; i++) { bytes[i * 2] = (byte)(regs[i] >> 8); bytes[i * 2 + 1] = (byte)(regs[i] & 0xFF); }
-        if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
-        return type switch
-        {
-            DataType.Bool => regs[0] != 0, DataType.Byte => bytes[0],
-            DataType.Int16 => (short)regs[0], DataType.UInt16 => regs[0],
-            DataType.Int32 when bytes.Length >= 4 => BitConverter.ToInt32(bytes),
-            DataType.UInt32 when bytes.Length >= 4 => BitConverter.ToUInt32(bytes),
-            DataType.Float when bytes.Length >= 4 => (double)BitConverter.ToSingle(bytes),
-            DataType.Int64 when bytes.Length >= 8 => BitConverter.ToInt64(bytes),
-            DataType.UInt64 when bytes.Length >= 8 => BitConverter.ToUInt64(bytes),
-            DataType.Double when bytes.Length >= 8 => BitConverter.ToDouble(bytes),
-            DataType.String => System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0'),
-            _ => regs
-        };
-    }
-
-    private static ushort[] ToRegs(float f) { var b = BitConverter.GetBytes(f); if (BitConverter.IsLittleEndian) Array.Reverse(b); return [(ushort)((b[0] << 8) | b[1]), (ushort)((b[2] << 8) | b[3])]; }
-    private static ushort[] ToRegs(int v) => ToRegs((float)v);
-    private static ushort[] ToRegs(uint v) => ToRegs((float)v);
-    private static ushort[] ToRegs(double d) { var b = BitConverter.GetBytes(d); if (BitConverter.IsLittleEndian) Array.Reverse(b); return [(ushort)((b[0] << 8) | b[1]), (ushort)((b[2] << 8) | b[3]), (ushort)((b[4] << 8) | b[4]), (ushort)((b[6] << 8) | b[7])]; }
-    private static ushort[] ToRegs(long v) => ToRegs((double)v);
-    private static ushort[] ToRegs(ulong v) => ToRegs((double)v);
 }

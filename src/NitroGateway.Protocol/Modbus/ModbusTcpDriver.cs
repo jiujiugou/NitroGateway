@@ -31,7 +31,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
     {
         _connection = connection;
         _logger = logger;
-        _endian = ParseEndian(connection.Parameters.GetValueOrDefault("Endian"));
+        _endian = ModbusProtocolHelper.ParseEndian(connection.Parameters.GetValueOrDefault("Endian"));
         _unitId = (byte)(int)(connection.Parameters.GetValueOrDefault("UnitId") ?? 1);
 
         _client.ConnectTimeout = connection.ConnectTimeoutMs;
@@ -126,7 +126,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
         var pointList = points.ToList();
         if (pointList.Count == 0) return Array.Empty<RawPointValue>();
 
-        var groups = GroupByContinuity(pointList);
+        var groups = ModbusProtocolHelper.GroupByContinuity(pointList);
         var results = new List<RawPointValue>();
         var timestamp = DateTime.UtcNow;
 
@@ -180,7 +180,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
 
                         byteOffset += byteCount;
 
-                        var decodedValue = DecodeRegisters(segment, point.DataType);
+                        var decodedValue = ModbusProtocolHelper.DecodeRegisters(segment, point.DataType);
 
                         results.Add(new RawPointValue
                         {
@@ -213,7 +213,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
         {
             if (ma.Area == ModbusArea.HoldingRegister)
             {
-                var registers = EncodeValue(value, point.DataType);
+                var registers = ModbusProtocolHelper.EncodeValue(value, point.DataType);
                 if (registers.Length == 1)
                     _client.WriteSingleRegister(_unitId, ma.Offset, (short)registers[0]);
                 else
@@ -258,106 +258,4 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
 
     // ---- 内部 ----
 
-    /// <summary>按功能区和地址连续性分组，每组可合并为一次批量读请求</summary>
-    private static IEnumerable<IEnumerable<DevicePoint>> GroupByContinuity(List<DevicePoint> points)
-    {
-        var parser = new ModbusAddressParser();
-        var sorted = points
-            .Select(p => (Point: p, Addr: parser.ParseWithCount(p.Address, p.DataType)))
-            .OrderBy(x => x.Addr.Area).ThenBy(x => x.Addr.Offset)
-            .ToList();
-
-        var groups = new List<List<DevicePoint>>();
-        List<DevicePoint>? current = null;
-        ModbusAddress? last = null;
-
-        foreach (var (point, addr) in sorted)
-        {
-            if (current is null || last is null ||
-                addr.Area != last.Area || addr.Offset > last.Offset + last.Count)
-            {
-                current = [];
-                groups.Add(current);
-            }
-            current.Add(point);
-            last = addr;
-        }
-        return groups;
-    }
-
-    /// <summary>Modbus 寄存器 → 领域值（int/float/bool/string），默认 ABCD 大端</summary>
-    private static object DecodeRegisters(ushort[] registers, DataType type)
-    {
-        if (registers.Length == 0) return 0;
-
-        // 构建大端字节数组
-        var bytes = new byte[registers.Length * 2];
-        for (var i = 0; i < registers.Length; i++) { bytes[i * 2] = (byte)(registers[i] >> 8); bytes[i * 2 + 1] = (byte)(registers[i] & 0xFF); }
-        if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
-
-        return type switch
-        {
-            DataType.Bool => registers[0] != 0,
-            DataType.Byte => bytes[0],
-            DataType.Int16 => (short)registers[0],
-            DataType.UInt16 => registers[0],
-            DataType.Int32 when bytes.Length >= 4 => BitConverter.ToInt32(bytes),
-            DataType.UInt32 when bytes.Length >= 4 => BitConverter.ToUInt32(bytes),
-            DataType.Float when bytes.Length >= 4 => (double)BitConverter.ToSingle(bytes),
-            DataType.Int64 when bytes.Length >= 8 => BitConverter.ToInt64(bytes),
-            DataType.UInt64 when bytes.Length >= 8 => BitConverter.ToUInt64(bytes),
-            DataType.Double when bytes.Length >= 8 => BitConverter.ToDouble(bytes),
-            DataType.String => System.Text.Encoding.ASCII.GetString(bytes).TrimEnd('\0'),
-            _ => registers
-        };
-    }
-
-    /// <summary>将工程值按 DataType 编码为 Modbus 寄存器数组，供写入操作使用</summary>
-    private ushort[] EncodeValue(object value, DataType type) => type switch
-    {
-        DataType.Bool => [Convert.ToBoolean(value) ? (ushort)1 : (ushort)0],
-        DataType.Byte => [Convert.ToByte(value)],
-        DataType.Int16 => [(ushort)Convert.ToInt16(value)],
-        DataType.UInt16 => [Convert.ToUInt16(value)],
-        DataType.Int32 => EncodeMulti(Convert.ToInt32(value)),
-        DataType.UInt32 => EncodeMulti(Convert.ToUInt32(value)),
-        DataType.Float => EncodeMulti(Convert.ToSingle(value)),
-        DataType.Int64 => EncodeMulti(Convert.ToInt64(value)),
-        DataType.UInt64 => EncodeMulti(Convert.ToUInt64(value)),
-        DataType.Double => EncodeMulti(Convert.ToDouble(value)),
-        _ => throw new NotSupportedException($"不支持的 DataType: {type}")
-    };
-
-    /// <summary>将多寄存器值类型 Marshal 为 byte[] 再转换为 ushort[]</summary>
-    private ushort[] EncodeMulti<T>(T value) where T : unmanaged
-    {
-        var size = System.Runtime.InteropServices.Marshal.SizeOf<T>();
-        var bytes = new byte[size];
-
-        // Marshal value into byte array
-        var ptr = System.Runtime.InteropServices.Marshal.AllocHGlobal(size);
-        try
-        {
-            System.Runtime.InteropServices.Marshal.StructureToPtr(value!, ptr, false);
-            System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, size);
-        }
-        finally
-        {
-            System.Runtime.InteropServices.Marshal.FreeHGlobal(ptr);
-        }
-
-        // 转换为 ushort[]，FluentModbus 按 Endianness 处理
-        var registers = new ushort[size / 2];
-        Buffer.BlockCopy(bytes, 0, registers, 0, size);
-        return registers;
-    }
-
-    /// <summary>从连接参数中解析字节序，未指定默认 ABCD</summary>
-    private static ModbusEndian ParseEndian(object? value) => value?.ToString()?.ToUpperInvariant() switch
-    {
-        "CDAB" => ModbusEndian.CDAB,
-        "BADC" => ModbusEndian.BADC,
-        "DCBA" => ModbusEndian.DCBA,
-        _ => ModbusEndian.ABCD
-    };
 }
