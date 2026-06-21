@@ -8,6 +8,7 @@
     <Project Path="src/NitroGateway.Infrastructure.Sqlite/NitroGateway.Infrastructure.Sqlite.csproj" />
     <Project Path="src/NitroGateway.Scheduler/NitroGateway.Scheduler.csproj" />
     <Project Path="src/NitroGateway.Shared/NitroGateway.Shared.csproj" />
+    <Project Path="src/NitroGateway.Webapi/NitroGateway.Webapi.csproj" />
   </Folder>
   <Folder Name="/src/NitroGateway.Protocol/" />
   <Folder Name="/src/NitroGateway.Protocol/Abstraction/">

@@ -12,5 +12,6 @@
     <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
     <ProjectReference Include="..\NitroGateway.Infrastructure.Sqlite\NitroGateway.Infrastructure.Sqlite.csproj" />
+    <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
   </ItemGroup>
 </Project>

@@ -15,7 +15,14 @@
       "Bash(git commit -m 'feat: init NitroGateway — industrial protocol gateway *)",
       "Bash(dotnet new *)",
       "Bash(rm -rf _tmp_)",
-      "Bash(dotnet run *)"
+      "Bash(dotnet run *)",
+      "Bash(npm --version)",
+      "Bash(rm -rf NitroGateway.Admin)",
+      "Bash(npm create *)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(npx vue-tsc *)",
+      "Bash(npx vite *)"
     ]
   }
 }

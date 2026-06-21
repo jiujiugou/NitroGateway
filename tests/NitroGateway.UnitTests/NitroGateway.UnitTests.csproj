@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="*" />
+    <PackageReference Include="xunit" Version="*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\Modbus\NitroGateway.Protocol.Modbus.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Device\NitroGateway.Device.csproj" />
+  </ItemGroup>
+
+</Project>

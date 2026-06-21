@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NitroGateway · 架构全景</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#c9d1d9;--muted:#8b949e;--green:#3fb950;--blue:#58a6ff;--purple:#a371f7;--orange:#d2991d;--red:#f85149;--cyan:#39d2c0}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:1.5rem;line-height:1.55}
+h1{font-size:1.8rem;color:#f0f6fc;text-align:center;margin-bottom:.25rem}
+.sub{text-align:center;color:var(--muted);margin-bottom:2rem;font-size:.85rem}
+ h2{color:#f0f6fc;font-size:1.05rem;margin:2.5rem 0 .75rem;text-align:center}
+
+/* ══════ Layer Diagram ══════ */
+.layers{max-width:800px;margin:0 auto}
+.layer{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1rem 1.25rem;margin-bottom:.75rem;display:flex;align-items:flex-start;gap:1rem}
+.layer-num{min-width:80px;text-align:center}
+.layer-num .num{font-size:1.6rem;font-weight:700;line-height:1}
+.layer-num .label{font-size:.65rem;color:var(--muted);text-transform:uppercase;margin-top:2px}
+.layer .modules{display:flex;flex-wrap:wrap;gap:.35rem;flex:1}
+.tag{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.75rem;font-weight:600;white-space:nowrap}
+.domain{background:#0d2b4a;color:var(--blue)}.shared{background:#0d2b4a;color:var(--blue)}
+.infra{background:#2a1f1a;color:var(--orange)}.service{background:#1a1a2e;color:var(--purple)}.app{background:#1a2a1a;color:var(--green)}
+.host{background:#0d2b1a;color:var(--cyan)}.todo{background:var(--card);color:var(--muted);border:1px dashed var(--border)}
+.impl{font-size:.65rem;color:var(--muted);display:block;margin-top:1px}
+
+/* ══════ Data Flow ══════ */
+.flow{max-width:800px;margin:1rem auto}
+.flow-row{display:flex;align-items:center;justify-content:center;gap:.4rem;margin-bottom:.4rem;flex-wrap:wrap}
+.flow-node{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.5rem 1rem;font-size:.8rem;text-align:center}
+.flow-node .who{font-size:.6rem;color:var(--muted);text-transform:uppercase}
+.flow-node .what{color:#f0f6fc;font-weight:600;margin-top:1px}
+.flow-arrow{color:var(--muted);font-size:1.1rem}
+.flow-node.src{border-color:var(--orange)}.flow-node.proc{border-color:var(--blue)}.flow-node.store{border-color:var(--green)}.flow-node.out{border-color:var(--purple)}
+
+/* ══════ Table ══════ */
+.modules-table{max-width:800px;margin:1rem auto}
+.modules-table table{width:100%;border-collapse:collapse;font-size:.8rem}
+.modules-table th{text-align:left;padding:.4rem .6rem;color:var(--muted);border-bottom:1px solid var(--border);font-size:.7rem;text-transform:uppercase}
+.modules-table td{padding:.4rem .6rem;border-bottom:1px solid var(--border)}
+.modules-table .done{color:var(--green)}.modules-table .wip{color:var(--orange)}.modules-table .empty{color:var(--muted)}
+
+/* ══════ Closed Loop ══════ */
+.loop{background:var(--card);border:1px solid var(--green);border-radius:8px;padding:1.25rem;max-width:800px;margin:1rem auto}
+.loop h3{color:var(--green);font-size:.9rem;margin-bottom:.75rem}
+.loop ol{margin-left:1.25rem;font-size:.85rem}
+.loop li{margin-bottom:.5rem;color:var(--text)}
+.loop .code{color:var(--blue);font-family:monospace;font-size:.8rem}
+
+.footer{text-align:center;color:var(--muted);font-size:.7rem;margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<h1>NitroGateway 架构全景</h1>
+<p class="sub">工业协议边缘网关 · 15 个项目 · 4,602 行 · Layer 0→3</p>
+
+<!-- ══════ Layers ══════ -->
+<h2>四层架构</h2>
+<div class="layers">
+
+<div class="layer">
+  <div class="layer-num"><div class="num" style="color:var(--blue)">L0</div><div class="label">核心·零依赖</div></div>
+  <div class="modules">
+    <span class="tag domain">📐 Domain<br><span class="impl">Devices / Protocols / Measurements</span></span>
+    <span class="tag shared">🔧 Shared<br><span class="impl">OperationResult / OperationalError</span></span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-num"><div class="num" style="color:var(--orange)">L1</div><div class="label">基础设施</div></div>
+  <div class="modules">
+    <span class="tag infra">📡 Transport.MQTT<br><span class="impl">MQTTnet 封装</span></span>
+    <span class="tag infra">🌐 Transport.HTTP<br><span class="impl">HttpClient + Polly</span></span>
+    <span class="tag infra">🔌 Protocol.Modbus<br><span class="impl">TCP + RTU 驱动</span></span>
+    <span class="tag infra">🔌 Protocol.OpcUa<br><span class="impl">OPC UA SDK 驱动</span></span>
+    <span class="tag infra">💾 Storage.*<br><span class="impl">Config / TimeSeries / Buffer 接口</span></span>
+    <span class="tag infra">🗄️ Infra.Sqlite<br><span class="impl">EF Core + SQLite 实现</span></span>
+    <span class="tag infra">⏰ Scheduler<br><span class="impl">定时任务调度</span></span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-num"><div class="num" style="color:var(--purple)">L2</div><div class="label">领域服务</div></div>
+  <div class="modules">
+    <span class="tag service">🏭 Device<br><span class="impl">设备管理 + 健康判定</span></span>
+    <span class="tag service">⚙️ Collection<br><span class="impl">采集引擎（四步流水线）</span></span>
+    <span class="tag service">🚀 Forwarder<br><span class="impl">边云转发</span></span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-num"><div class="num" style="color:var(--green)">L3</div><div class="label">入口</div></div>
+  <div class="modules">
+    <span class="tag host">🏠 Host<br><span class="impl">启动入口 + 模拟PLC</span></span>
+    <span class="tag todo">🌐 Webapi<br><span class="impl">REST API (TODO)</span></span>
+    <span class="tag todo">🖥️ Admin<br><span class="impl">管理后台 (TODO)</span></span>
+  </div>
+</div>
+
+</div>
+
+<!-- ══════ Data Flow ══════ -->
+<h2>主数据流（端到端闭环）</h2>
+<div class="flow">
+
+<div class="flow-row">
+  <div class="flow-node src"><div class="who">Host</div><div class="what">FakeModbusDevice</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node proc"><div class="who">Collection.DeviceReader</div><div class="what">驱动读原始值</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node proc"><div class="who">Protocol.Modbus</div><div class="what">ModbusTcpDriver</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node proc"><div class="who">Collection.Pipeline</div><div class="what">缩放 + 死区</div></div>
+</div>
+
+<div class="flow-row">
+  <div class="flow-node store"><div class="who">Collection.Dispatcher</div><div class="what">双写</div></div>
+  <div class="flow-arrow">↘</div>
+  <div class="flow-node store"><div class="who">Storage.TimeSeries</div><div class="what">measurements 表</div></div>
+  <div class="flow-node store" style="margin-left:.5rem"><div class="who">Storage.Buffer</div><div class="what">forward_buffer 表</div></div>
+</div>
+
+<div class="flow-row">
+  <div class="flow-node out"><div class="who">Forwarder</div><div class="what">Buffer → JSON → MQTT</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node out"><div class="who">Transport.MQTT</div><div class="what">MQTT Broker</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node out" style="border-color:var(--green)"><div class="who">云端</div><div class="what">MQTTX / 数据中心</div></div>
+</div>
+
+</div>
+
+<!-- ══════ Closed Loop ══════ -->
+<h2>什么是"闭环"</h2>
+<div class="loop">
+    <ol>
+      <li>网关启动 → Scheduler 每 <strong>1 秒</strong>调一次采集</li>
+      <li>内置 <strong>模拟 PLC</strong> 在 127.0.0.1:502 返回 3 个传感器值（自动波动）</li>
+      <li><code class="code">ModbusTcpDriver</code> 读到 ushort[] → 解码为 double/int → <code class="code">RawPointValue</code></li>
+      <li><code class="code">Pipeline</code> 做缩放 + 死区 → <code class="code">PointSnapshot</code></li>
+      <li><code class="code">Dispatcher</code> 双写：<code class="code">measurements</code> 表 + <code class="code">forward_buffer</code> 表</li>
+      <li><code class="code">HealthReporter</code> → <code class="code">DeviceHealthMonitor</code> 计采集成败</li>
+      <li>Scheduler 每 <strong>5 秒</strong>调一次转发 → <code class="code">Forwarder</code> JSON 序列化 → MQTT 发布</li>
+    </ol>
+</div>
+
+<!-- ══════ Module Table ══════ -->
+<h2>注册依赖关系速查</h2>
+<div class="modules-table">
+<table>
+<tr><th>模块</th><th>依赖谁</th><th>被谁依赖</th><th>状态</th></tr>
+<tr><td class="done">Domain</td><td>Shared</td><td>所有模块</td><td>✅</td></tr>
+<tr><td class="done">Shared</td><td>—</td><td>所有模块</td><td>✅</td></tr>
+<tr><td class="done">Transport.MQTT</td><td>Shared + Domain</td><td>Host, Forwarder</td><td>✅</td></tr>
+<tr><td class="done">Transport.HTTP</td><td>Shared + Domain</td><td>Host</td><td>✅</td></tr>
+<tr><td class="done">Protocol.Modbus</td><td>Shared + Domain + Abstractions</td><td>Host (via Factory)</td><td>✅</td></tr>
+<tr><td class="wip">Protocol.OpcUa</td><td>Shared + Domain + Abstractions</td><td>Host (TODO)</td><td>⚠️ Connect 待调通</td></tr>
+<tr><td class="done">Storage.*</td><td>Domain</td><td>Infra.Sqlite, Device, Collection, Forwarder</td><td>✅ 接口</td></tr>
+<tr><td class="done">Infra.Sqlite</td><td>Storage.* + Domain + Shared</td><td>Host</td><td>✅ 实现</td></tr>
+<tr><td class="done">Scheduler</td><td>Shared</td><td>Host, Collection, Forwarder</td><td>✅</td></tr>
+<tr><td class="done">Device</td><td>Domain + Shared + Storage + Protocol.Abst</td><td>Host, Collection</td><td>✅</td></tr>
+<tr><td class="done">Collection</td><td>Domain + Shared + Device + Storage + Protocol + Scheduler</td><td>Host</td><td>✅</td></tr>
+<tr><td class="done">Forwarder</td><td>Domain + Shared + Storage + Transport + Scheduler</td><td>Host</td><td>✅</td></tr>
+<tr><td class="done">Host</td><td>全部</td><td>—</td><td>✅</td></tr>
+<tr><td class="empty">Webapi</td><td>—</td><td>—</td><td>📋 空目录</td></tr>
+<tr><td class="empty">Admin</td><td>—</td><td>—</td><td>📋 空目录</td></tr>
+</table>
+</div>
+
+<div class="footer">NitroGateway · 15 projects · 4,602 lines · 0 errors · Build 2026-06</div>
+</body>
+</html>

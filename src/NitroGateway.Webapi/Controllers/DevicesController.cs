@@ -39,7 +39,7 @@ public class DevicesController : ControllerBase
     {
         var existing = await _devices.GetAsync(id);
         if (existing.IsFailure) return NotFound(ApiResponse<DeviceDto>.Fail("NotFound", "设备不存在"));
-        var device = ToDomain(d) with { Id = id };
+        var device = new Device { Id = id, Name = d.Name, Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect }, Connection = new DeviceConnection { Endpoint = d.Connection.Endpoint, ConnectTimeoutMs = d.Connection.ConnectTimeoutMs, RequestTimeoutMs = d.Connection.RequestTimeoutMs, RetryCount = d.Connection.RetryCount, RetryIntervalMs = d.Connection.RetryIntervalMs, Parameters = d.Connection.Parameters }, Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown };
         var r = await _devices.RegisterAsync(device);
         return r.IsSuccess ? Ok(ApiResponse<DeviceDto>.Ok(Map(r.Value!))) : BadRequest(ApiResponse<DeviceDto>.Fail("Update", r.Error!.Message));
     }
@@ -79,7 +79,7 @@ public class DevicesController : ControllerBase
     [HttpPut("{deviceId}/points/{pointId}")]
     public async Task<ActionResult<ApiResponse<PointDto>>> UpdatePoint(Guid deviceId, Guid pointId, PointDto d)
     {
-        var p = ToDomainPoint(d) with { Id = pointId };
+        var p = new DevicePoint { Id = pointId, Name = d.Name, Address = d.Address, Description = d.Description, DataType = Enum.Parse<DataType>(d.DataType), Access = Enum.Parse<PointAccess>(d.Access), Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset };
         var r = await _points.UpdateAsync(deviceId, p);
         return r.IsSuccess ? Ok(ApiResponse<PointDto>.Ok(MapPoint(p))) : BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", r.Error!.Message));
     }

@@ -5,7 +5,7 @@ namespace NitroGateway.Protocol.Modbus;
 /// <summary>
 /// Modbus 协议工具类。TCP 和 RTU 驱动共享的解码/分组/编码逻辑。
 /// </summary>
-internal static class ModbusProtocolHelper
+public static class ModbusProtocolHelper
 {
     /// <summary>按功能区和地址连续性分组，每组可合并为一次批量读请求</summary>
     public static IEnumerable<IEnumerable<DevicePoint>> GroupByContinuity(List<DevicePoint> points)
