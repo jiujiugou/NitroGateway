@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\NitroGateway.Device\NitroGateway.Device.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\Configuration\NitroGateway.Storage.Configuration.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
+    <ProjectReference Include="..\NitroGateway.Infrastructure.Sqlite\NitroGateway.Infrastructure.Sqlite.csproj" />
+  </ItemGroup>
+</Project>
