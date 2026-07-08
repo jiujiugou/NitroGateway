@@ -50,3 +50,20 @@ export async function deletePoint(deviceId: string, pointId: string): Promise<bo
   const { data } = await client.delete<ApiResponse<unknown>>(`/devices/${deviceId}/points/${pointId}`)
   return data.success
 }
+
+export async function importPoints(deviceId: string, csvText: string): Promise<number> {
+  const { data } = await client.post<ApiResponse<{ count: number }>>(`/devices/${deviceId}/points/import`, csvText, { headers: { 'Content-Type': 'text/plain' } })
+  return data.data?.count ?? 0
+}
+
+export async function generatePoints(deviceId: string, req: { nameTemplate: string; startAddress: number; count: number; dataType: string; access: string }): Promise<number> {
+  const { data } = await client.post<ApiResponse<{ count: number }>>(`/devices/${deviceId}/points/generate`, req)
+  return data.data?.count ?? 0
+}
+
+export async function exportPoints(deviceId: string): Promise<void> {
+  const r = await client.get(`/devices/${deviceId}/points/export`, { responseType: 'blob' })
+  const url = URL.createObjectURL(new Blob([r.data]))
+  const a = document.createElement('a'); a.href = url; a.download = `points_${deviceId}.csv`; a.click()
+  URL.revokeObjectURL(url)
+}
