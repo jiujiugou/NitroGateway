@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>NitroGateway · 从 PLC 到浏览器 — 完整链路</title>
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--border:#e4e7ed;--text:#4a5568;--muted:#a0aec0;--heading:#1a202c;--blue:#409eff;--green:#67c23a;--orange:#e6a23c;--red:#f56c6c;--purple:#9060eb}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.8;padding:2rem;max-width:900px;margin:0 auto}
+h1{font-size:2rem;color:var(--heading);text-align:center;margin-bottom:.5rem}
+h2{font-size:1.25rem;color:var(--heading);margin:3rem 0 1rem;padding-bottom:.5rem;border-bottom:2px solid var(--blue)}
+h3{font-size:1rem;color:var(--heading);margin:1.5rem 0 .5rem}
+.sub{text-align:center;color:var(--muted);margin-bottom:2rem;font-size:.9rem}
+.step{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin:1.5rem 0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.step-num{display:inline-block;background:var(--blue);color:#fff;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:14px;font-weight:700;margin-right:8px}
+.step-title{font-size:1.05rem;font-weight:700;color:var(--heading);margin-bottom:.75rem}
+.code{background:#f0f2f5;border:1px solid var(--border);border-radius:6px;padding:.75rem 1rem;font-family:'Cascadia Code',Consolas,monospace;font-size:.8rem;overflow-x:auto;margin:.5rem 0;white-space:pre}
+.note{background:#ecf5ff;border-left:3px solid var(--blue);padding:.75rem 1rem;margin:1rem 0;border-radius:0 6px 6px 0;font-size:.85rem}
+.warn{background:#fdf6ec;border-left:3px solid var(--orange)}
+.file-ref{color:var(--blue);font-family:monospace;font-size:.85rem}
+.flow-row{display:flex;align-items:center;justify-content:center;gap:.5rem;margin:1rem 0;flex-wrap:wrap}
+.flow-box{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.5rem 1rem;text-align:center;font-size:.8rem}
+.flow-box .who{font-size:.65rem;color:var(--muted)}
+.flow-box .what{font-weight:600;color:var(--heading)}
+.flow-arrow{color:var(--blue);font-size:1.2rem;font-weight:700}
+.footer{text-align:center;color:var(--muted);font-size:.75rem;margin-top:4rem;padding-top:1rem;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<h1>从 PLC 到浏览器</h1>
+<p class="sub">NitroGateway 完整数据流 · 每一步的代码和原理</p>
+
+<!-- ═══════════ SCENE ═══════════ -->
+<h2>场景：工厂车间</h2>
+
+<div class="step">
+<p>一个车间里有一台西门子 PLC（铁柜子）。上面接着三根传感器线：</p>
+<table style="margin:1rem 0;width:100%;border-collapse:collapse">
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px"><strong>温度传感器</strong></td><td>→ 接到 PLC 的寄存器 <strong>40001</strong></td><td>当前值：60.5°C</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px"><strong>压力传感器</strong></td><td>→ 接到 PLC 的寄存器 <strong>40003</strong></td><td>当前值：2.1 bar（PLC 存储为 210，需 ×0.1）</td></tr>
+<tr><td style="padding:6px 12px"><strong>运行开关</strong></td><td>→ 接到 PLC 的 <strong>00001</strong> 布尔位</td><td>当前值：1 开 / 0 关</td></tr>
+</table>
+
+<p>PLC 通过网线接到工厂局域网，IP 地址是 <strong style="color:var(--blue)">192.168.1.10:502</strong>。</p>
+<p>PLC 每几毫秒自己刷新一次寄存器。它不等任何人，也听不懂"把数据给我"——它只说 Modbus 协议。</p>
+</div>
+
+<!-- ═══════════ STEP 1 ═══════════ -->
+<h2>第一步：设备配置（谁 + 在哪 + 怎么说话）</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">1</span>管理员在网页上添了一台设备</div>
+
+<p>打开 <strong>NitroGateway 管理控制台</strong> → 设备管理 → 添加设备，填了四个东西：</p>
+
+<table style="margin:1rem 0;width:100%;border-collapse:collapse">
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px;width:120px"><strong>设备名称</strong></td><td>一号车间 PLC</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px"><strong>协议</strong></td><td>Modbus / TCP</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px"><strong>连接地址</strong></td><td><code>192.168.1.10:502</code></td></tr>
+<tr><td style="padding:6px 12px"><strong>状态</strong></td><td>Online</td></tr>
+</table>
+
+<p>然后给它配了 3 个<strong>点位</strong>：</p>
+
+<table style="margin:1rem 0;width:100%;border-collapse:collapse">
+<tr style="border-bottom:1px solid var(--border);background:#f0f2f5"><td>名称</td><td>地址</td><td>类型</td><td>缩放系数</td><td>死区</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td>Temperature</td><td>40001</td><td>Float</td><td>×1.0</td><td>0.5</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td>Pressure</td><td>40003</td><td>Int16</td><td>×0.1</td><td>0</td></tr>
+<tr><td>Running</td><td>00001</td><td>Bool</td><td>—</td><td>—</td></tr>
+</table>
+
+<div class="note">
+  <strong>存到哪里？</strong><br>
+  点击"保存"时，前端调 <code>POST /api/devices</code> → <span class="file-ref">DevicesController.cs</span> → <span class="file-ref">DeviceManager.RegisterAsync()</span> → <span class="file-ref">SqliteDeviceRepository.SaveAsync()</span> → SQLite 的 <code>devices</code> 表和 <code>points</code> 表。
+</div>
+
+<p>现在 SQLite 里有了：</p>
+<div class="code">devices 表:  { Id: abc-123, Name:"一号车间 PLC", ProtocolName:"Modbus", Endpoint:"192.168.1.10:502", Status:"Online" }
+points 表:   { Id: pt-1, DeviceId:abc-123, Name:"Temperature", Address:"40001", DataType:"Float", ScaleFactor:1.0, Deadband:0.5 }
+             { Id: pt-2, DeviceId:abc-123, Name:"Pressure", Address:"40003", DataType:"Int16", ScaleFactor:0.1 }
+             { Id: pt-3, DeviceId:abc-123, Name:"Running", Address:"00001", DataType:"Bool" }</div>
+</div>
+
+<!-- ═══════════ STEP 2 ═══════════ -->
+<h2>第二步：网关开始采集（每一秒自动触发）</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">2</span>Scheduler 叫醒 CollectionEngine</div>
+
+<div class="flow-row">
+<div class="flow-box"><div class="who">Scheduler</div><div class="what">每 1000ms</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">CollectionEngine</div><div class="what">CollectAllOnlineAsync()</div></div>
+</div>
+
+<div class="code">// SchedulerEngine 内部
+while (true) {
+    await Task.Delay(100);  // 每 100ms 检查一次
+    检查是否有任务到期 → 到期就执行
+}
+
+// CollectionEngine.CollectAllOnlineAsync()
+var devices = await deviceManager.GetByStatusAsync(Online);  // SQL: SELECT FROM devices WHERE Status='Online'
+foreach (var device in devices)
+    await CollectDeviceAsync(device);  // ← 下一节</div>
+
+<div class="note">
+  <strong>关键文件</strong>：<span class="file-ref">SchedulerEngine.cs</span>（89 行，单线程轮询调度）、<span class="file-ref">CollectionEngine.cs</span>（86 行，编排四子模块）
+</div>
+</div>
+
+<!-- ═══════════ STEP 3 ═══════════ -->
+<h2>第三步：和 PLC 说话（Modbus TCP 协议）</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">3</span>DeviceReader → ModbusTcpDriver → PLC</div>
+
+<div class="flow-row">
+<div class="flow-box"><div class="who">DeviceReader</div><div class="what">拿设备+点位</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">ModbusTcpDriver</div><div class="what">FluentModbus</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">TCP Socket</div><div class="what">192.168.1.10:502</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">PLC</div><div class="what">返回字节</div></div>
+</div>
+
+<div class="code">// DeviceReader.ReadDeviceAsync(device)
+var points = device.Points.Where(p => p.Enabled).ToList();     // 只取启用的点位
+var driver = factory.Create(device.Protocol, device.Connection); // new ModbusTcpDriver
+await driver.ConnectAsync();         // TCP 三次握手 → 192.168.1.10:502
+var result = await driver.ReadBatchAsync(points);  // 发 Modbus 帧，收响应
+await driver.DisconnectAsync();      // TCP 断开</div>
+
+<p><strong>ModbusTcpDriver 做了两件事</strong>：</p>
+
+<div class="note"><strong>① 拼帧——发"给我 40001 开始的 5 个寄存器"</strong></div>
+<div class="code">// FluentModbus 帮网关拼了这段 Modbus TCP 帧（12 字节）
+帧格式: [事务ID][协议ID][长度][站号][功能码 0x03][起始地址 40001][数量 5]
+↓ 通过 TCP Socket 发给 PLC
+PLC 收到，理解"他要读 40001 后面的 5 个寄存器"</div>
+
+<div class="note"><strong>② 收帧——拆开 PLC 的回复</strong></div>
+<div class="code">// PLC 的回复帧
+帧格式: [事务ID][协议ID][长度][站号][功能码 0x03][字节数][16位值][16位值]...
+         [0,1]  [0,0]  [13]  [1]   [3]           [10]    [8字节数据...]
+
+// 其中 8 字节数据是:
+寄存器地址    原始字节         数据类型   含义
+40001        [0x42,0x70,    Float      [0x4270,0x0000]
+              0x00,0x00]               = 60.0
+
+40003        [0x00,0xD2]    Int16      [0x00D2]
+                                       = 210
+
+40004        [0x00,0x00,    Int32      [0x0000,0x0032]
+              0x00,0x32]               = 50
+
+00001        [0x01]         Bool       [1]
+                                       = true</div>
+
+<p><strong>FluentModbus 把这些字节转成 ushort[] 返回</strong>。然后 ModbusTcpDriver 调用自己的 <code>DecodeRegisters()</code>：</p>
+
+<div class="code">// ModbusProtocolHelper.DecodeRegisters()
+// 驱动内部把 ushort[] 解码为领域值
+
+ushort[]{0x4270,0x0000} + DataType.Float  →  60.0  (double)
+ushort[]{0x00D2}        + DataType.Int16  →  210   (short)
+ushort[]{0x0000,0x0032} + DataType.Int32  →  50    (int)
+ushort[]{0x0001}        + DataType.Bool   →  true  (bool)
+
+// 每个值包进 RawPointValue，返回 4 个 RawPointValue
+RawPointValue { Point=Temperature, Value=60.0,   Timestamp=... }
+RawPointValue { Point=Pressure,    Value=210,    Timestamp=... }
+RawPointValue { Point=FlowRate,    Value=50,     Timestamp=... }
+RawPointValue { Point=Running,     Value=true,   Timestamp=... }</div>
+
+<div class="note"><strong>关键文件</strong>：<span class="file-ref">ModbusTcpDriver.cs</span>（334 行）、<span class="file-ref">ModbusProtocolHelper.cs</span>（80 行，解码/分组/编码）、<span class="file-ref">DeviceReader.cs</span>（40 行）</div>
+</div>
+
+<!-- ═══════════ STEP 4 ═══════════ -->
+<h2>第四步：原始值 → 工程值（Pipeline 纯函数处理）</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">4</span>PointValuePipeline 把 PLC 的 210 变成工程值 21.0</div>
+
+<div class="flow-row">
+<div class="flow-box"><div class="who">4 个 RawPointValue</div><div class="what">{Value=60.0,210,50,true}</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">Pipeline.Process()</div><div class="what">三项操作</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">3 个 PointSnapshot</div><div class="what">{Value=60.0,21.0,0.5,true}</div></div>
+</div>
+
+<div class="code">// PointValuePipeline.Process() — 对每一个 RawPointValue 做三件事
+
+// ── ① 缩放 ──
+// Temperature:  60.0 × 1.0 + 0  = 60.0   (Float, ScaleFactor=1.0)
+// Pressure:     210  × 0.1 + 0  = 21.0   (Int16, ScaleFactor=0.1, PLC 存的是 10 倍值)
+// FlowRate:     50   × 0.01    = 0.5    (Int32, ScaleFactor=0.01)
+// Running:      true → 直接输出，不缩放 (Bool 类型跳过)
+
+// ── ② 死区判定 ──
+// Temperature: |60.0 − 59.8| = 0.2 < 死区 0.5 → 丢弃！不产生这条 snapshot
+// Pressure:    没有死区 → 输出
+// FlowRate:    没有死区 → 输出
+// Running:     Bool 不判死区 → 输出
+
+// ── ③ 组装 PointSnapshot ──
+PointSnapshot { DeviceId:abc-123, DevicePointId:pt-2, RawValue:210,  Value:21.0, Quality:Good }
+PointSnapshot { DeviceId:abc-123, DevicePointId:pt-3, RawValue:50,   Value:0.5,  Quality:Good }
+PointSnapshot { DeviceId:abc-123, DevicePointId:pt-4, RawValue:true, Value:true, Quality:Good }
+// Temperature 那一条因为死区被丢弃了，不输出</div>
+
+<div class="note warn"><strong>为什么需要死区？</strong><br>温度传感器可能有 ±0.1°C 的噪声。如果没有死区，网关每一秒都会报"温度从 60.0 变成 60.1，又变成 59.9"。死区过滤掉这些微小的抖动，只有真正的变化（>0.5°C）才记录。</div>
+
+<div class="note"><strong>关键文件</strong>：<span class="file-ref">PointValuePipeline.cs</span>（194 行，纯函数，无 IO）</div>
+</div>
+
+<!-- ═══════════ STEP 5 ═══════════ -->
+<h2>第五步：数据分发（两个去向同时写）</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">5</span>Dispatcher 双写：SQLite + Buffer</div>
+
+<div class="code">// DataDispatcher.DispatchAsync()
+// 写两个地方，互相独立，一个失败不阻塞另一个
+
+// ── 去向一：SQLite measurements 表（持久化）──
+await _timeSeries.WriteAsync(snapshots);
+// → SQLite: INSERT INTO measurements (...) VALUES (...)
+// 存下来的数据，网页上的"历史数据"就是从这里查的
+
+// ── 去向二：forward_buffer 表（转发队列）──
+var batch = new BatchMeasurements { DeviceId:"abc-123", Records:[3条] };
+await _buffer.EnqueueAsync(batch);
+// → SQLite: INSERT INTO forward_buffer (status='Pending') VALUES (...)
+// Forwarder 每 5 秒从这张表取数据，发 MQTT</div>
+
+<div class="note"><strong>关键文件</strong>：<span class="file-ref">DataDispatcher.cs</span>（77 行）、<span class="file-ref">SqliteMeasurementStore.cs</span>（132 行，裸 SQL 批量写入）</div>
+</div>
+
+<!-- ═══════════ STEP 6 ═══════════ -->
+<h2>第六步：健康上报</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">6</span>HealthReporter 告诉 Monitor："这一轮 3 个成功"</div>
+
+<div class="code">// HealthReporter.Report(deviceId, 3 成功, 0 失败, null)
+_healthMonitor.ReportSuccess(deviceId);
+// → SuccessCount++ → 连续 3 次 → 触发 Online 事件
+// → IDeviceManager.UpdateStatusAsync(deviceId, Online)</div>
+
+<div class="note">如果某轮采集全部失败（比如网线拔了），<code>ReportFailure</code> 被调，FailCount++，连续 10 次失败 → 触发 Offline → 设备的 Status 从 Online 变成 Offline → 仪表盘上那个绿色标签变成红色。</div>
+</div>
+
+<!-- ═══════════ STEP 7 ═══════════ -->
+<h2>第七步：转发到云端（每 5 秒一次）</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">7</span>Forwarder 把 Buffer 里的数据发到 MQTT</div>
+
+<div class="flow-row">
+<div class="flow-box"><div class="who">Scheduler</div><div class="what">每 5000ms</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">Forwarder</div><div class="what">Dequeue → JSON → MQTT</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">MQTT Broker</div><div class="what">云端</div></div>
+</div>
+
+<div class="code">// Forwarder.ForwardBatchAsync()
+// 1. 从 Buffer 取待发送数据
+var batches = await _buffer.DequeueAsync(int.MaxValue);
+// → SQL: SELECT FROM forward_buffer WHERE status='Pending'
+
+// 2. JSON 序列化
+var json = JsonSerializer.Serialize(batch);
+// → {"deviceId":"abc-123","records":[{"value":21.0,"quality":"Good"},...]}
+
+// 3. 通过 MQTT 发出去
+await _mqtt.PublishAsync("nitrogateway/abc-123/measurements", jsonBytes, qos:1);
+// → MQTT Broker 收到 → 云端的任何一个消费者都能订阅这个 Topic
+
+// 4. 确认成功，删除 Buffer 里的记录
+await _buffer.CommitAsync(confirmedIds);
+// → SQL: DELETE FROM forward_buffer WHERE id IN (...)</div>
+
+<div class="note"><strong>关键设计：两阶段提交</strong><br>
+Dequeue 不移除数据 → 发送成功后才 Commit 删除。发送失败的数据留在 Buffer 里，下一轮重新发。这就是为什么 Buffer 不怕断网。</div>
+</div>
+
+<!-- ═══════════ STEP 8 ═══════════ -->
+<h2>第八步：浏览器上看到数据</h2>
+
+<div class="step">
+<div class="step-title"><span class="step-num">8</span>仪表盘 / 实时监控 / 历史数据</div>
+
+<div class="flow-row">
+<div class="flow-box"><div class="who">浏览器</div><div class="what">http://localhost:5173</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">Webapi</div><div class="what">REST + SignalR</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">SQLite</div><div class="what">查询</div></div>
+</div>
+
+<div class="code">// 仪表盘页面加载时
+axios.get('/api/status/devices')        → DevicesController → SQLite → 返回 1 台设备 Online
+axios.get('/api/status/system')         → StatusController  → 返回缓冲队列积压 0 批
+
+// 实时监控
+SignalR 连接 /hubs/live
+→ 订阅设备 abc-123
+→ 每次采集完成，后端推 PointSnapshot[] 给前端
+→ 页面上 3 张数据卡片实时刷新：21.0 / 0.5 / true
+
+// 历史数据
+选择时间范围 → GET /api/measurements/history?deviceId=abc-123&pointId=pt-2&from=...&to=...
+→ MeasurementsController → SqliteMeasurementStore.QueryAsync()
+→ 返回 PointSnapshot 列表 → ECharts 画折线图</div>
+</div>
+
+<!-- ═══════════ SUMMARY ═══════════ -->
+<h2>全程一次采集的完整链路图</h2>
+
+<div class="flow-row" style="margin:2rem 0">
+<div class="flow-box"><div class="who">PLC 寄存器</div><div class="what">40001=60.5</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">ModbusTCP</div><div class="what">发帧/收帧</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">Driver</div><div class="what">ushort[]→值</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">Pipeline</div><div class="what">缩放+死区</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">SQLite</div><div class="what">存下来</div></div>
+<div class="flow-arrow">↘</div>
+</div>
+<div class="flow-row" style="margin:2rem 0">
+<div class="flow-box"><div class="who">Buffer</div><div class="what">转发队列</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">MQTT</div><div class="what">发云端</div></div>
+<div class="flow-box" style="margin-left:2rem"><div class="who">Webapi</div><div class="what">REST查询</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-box"><div class="who">浏览器</div><div class="what">看图表</div></div>
+</div>
+
+<!-- ═══════════ FAKE vs REAL ═══════════ -->
+<h2>现在（模拟） vs 将来（真实）的区别</h2>
+
+<div class="step">
+<table style="width:100%;border-collapse:collapse">
+<tr style="border-bottom:1px solid var(--border);background:#f0f2f5"><th style="padding:8px 12px;text-align:left">环节</th><th style="padding:8px 12px;text-align:left">现在（开发中）</th><th style="padding:8px 12px;text-align:left">将来（部署）</th></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px"><strong>PLC</strong></td><td>FakeModbusDevice 软件模拟</td><td>真实西门子 PLC</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px"><strong>网络</strong></td><td>127.0.0.1 本机</td><td>192.168.1.x 工厂内网</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px"><strong>设备配置</strong></td><td>Host 启动自动插入</td><td>管理员在网页上手动添加</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px"><strong>数据值</strong></td><td>随机漂移（±0.3 噪声）</td><td>真实传感器（温度/压力/流量）</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px"><strong>MQTT</strong></td><td>可以没有（Host 跳过）</td><td>4G 路由器 → 云端 MQTT Broker</td></tr>
+<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px"><strong>浏览器</strong></td><td>localhost:5173 开发模式</td><td>部署到内网 Web 服务器</td></tr>
+<tr><td style="padding:8px 12px"><strong>网关代码</strong></td><td colspan="2" style="color:var(--green);font-weight:700">完全一样，一行不改</td></tr>
+</table>
+</div>
+
+<div class="footer">NitroGateway · 16 个项目 · 4600 行代码 · 2026-06</div>
+</body>
+</html>

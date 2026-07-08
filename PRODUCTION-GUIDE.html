@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NitroGateway 生产就绪指导手册</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d2991d;
+    --red: #f85149;
+    --purple: #a371f7;
+    --tag-bg: #1c2128;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 24px 120px;
+  }
+  h1 { font-size: 2rem; margin-bottom: 8px; color: #fff; }
+  h1 small { font-size: 1rem; color: var(--text-dim); font-weight: normal; display: block; margin-top: 4px; }
+  h2 {
+    font-size: 1.35rem; margin: 48px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border); color: #f0f6fc;
+  }
+  h3 { font-size: 1.05rem; margin: 24px 0 10px; color: #e6edf3; }
+  p { margin-bottom: 12px; color: var(--text); }
+  ul, ol { margin: 8px 0 16px 20px; }
+  li { margin-bottom: 6px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: 0.78rem; font-weight: 600; margin-right: 6px;
+  }
+  .badge-p0 { background: var(--red); color: #fff; }
+  .badge-p1 { background: var(--orange); color: #000; }
+  .badge-p2 { background: var(--accent); color: #fff; }
+  .badge-p3 { background: var(--purple); color: #fff; }
+  .badge-ok  { background: var(--green); color: #000; }
+
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px; margin: 20px 0 32px;
+  }
+  .summary-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; text-align: center;
+  }
+  .summary-card .num { font-size: 2rem; font-weight: 700; color: #fff; }
+  .summary-card .label { font-size: 0.82rem; color: var(--text-dim); margin-top: 4px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 0.9rem; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--surface); color: #e6edf3; font-weight: 600; position: sticky; top: 0; }
+  tr:hover { background: #1a1f2b; }
+  td:first-child { white-space: nowrap; }
+
+  .phase { margin: 20px 0 36px; }
+  .phase-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    padding: 14px 18px; background: var(--surface); border-radius: 8px; border-left: 4px solid var(--accent);
+  }
+  .phase-header .num { font-size: 1.8rem; font-weight: 800; color: var(--accent); min-width: 48px; }
+  .phase-header h4 { font-size: 1.1rem; color: #fff; margin: 0; }
+
+  .task-list { list-style: none; margin-left: 0; }
+  .task-list li {
+    padding: 8px 12px; margin: 4px 0; border-radius: 6px;
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .task-list li .todo { color: var(--orange); font-weight: 700; min-width: 24px; }
+  .task-list li .done { color: var(--green); font-weight: 700; min-width: 24px; }
+  .task-list li .info { color: var(--accent); font-weight: 700; min-width: 24px; }
+
+  code {
+    background: var(--tag-bg); padding: 1px 6px; border-radius: 4px;
+    font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace; font-size: 0.85em;
+  }
+  pre {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; overflow-x: auto; font-size: 0.84rem; margin: 12px 0 20px;
+    font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  }
+
+  .callout {
+    border-left: 4px solid var(--accent); padding: 12px 16px; margin: 16px 0;
+    background: #1a2332; border-radius: 0 8px 8px 0;
+  }
+  .callout-warn {
+    border-left-color: var(--orange); background: #2b2416;
+  }
+  .callout-good {
+    border-left-color: var(--green); background: #162916;
+  }
+
+  .toc { columns: 2; margin: 16px 0 32px; }
+  .toc a { display: block; padding: 4px 0; font-size: 0.9rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 36px 0; }
+
+  .prog-bar {
+    height: 8px; border-radius: 4px; background: var(--surface);
+    overflow: hidden; margin: 10px 0;
+  }
+  .prog-bar .fill { height: 100%; border-radius: 4px; transition: width .4s; }
+</style>
+</head>
+<body>
+
+<h1>
+  NitroGateway 生产就绪指导手册
+  <small>从原型到生产 — 差距分析 · 路线图 · 最佳实践</small>
+</h1>
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="num">10</div><div class="label">功能维度差距</div>
+  </div>
+  <div class="summary-card" style="border-color:#f8514933">
+    <div class="num" style="color:var(--red)">P0</div><div class="label">阻塞项（安全）</div>
+  </div>
+  <div class="summary-card" style="border-color:#d2991d33">
+    <div class="num" style="color:var(--orange)">P1</div><div class="label">高危项（容错+可观测）</div>
+  </div>
+  <div class="summary-card">
+    <div class="num" style="color:var(--green)">~40%</div><div class="label">当前生产覆盖度（估）</div>
+  </div>
+</div>
+
+<div class="toc">
+  <a href="#s1">一、当前状态评估</a>
+  <a href="#s2">二、P0 — 安全（阻塞上线）</a>
+  <a href="#s3">三、P1 — 容错与弹性</a>
+  <a href="#s4">四、P1 — 可观测性</a>
+  <a href="#s5">五、P2 — 功能补齐</a>
+  <a href="#s6">六、P2 — 数据面增强</a>
+  <a href="#s7">七、P3 — 多协议 & 写操作</a>
+  <a href="#s8">八、P3 — 集群化</a>
+  <a href="#s9">九、测试体系</a>
+  <a href="#s10">十、参考架构 & 技术选型</a>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s1">一、当前状态评估</h2>
+
+<h3>1.1 做得好的地方 ✅</h3>
+<ul>
+  <li><strong>分层清晰</strong> — Domain / Protocol / Collection / Forwarder / Transport / Storage 各司其职</li>
+  <li><strong>Result 模式</strong> — 全项目 <code>OperationResult&lt;T&gt;</code> 而非异常驱动控制流</li>
+  <li><strong>接口隔离</strong> — <code>IProtocolDriver</code> / <code>IMeasurementStore</code> / <code>IForwardBuffer</code> 都有清晰边界</li>
+  <li><strong>两阶段提交</strong> — ForwardBuffer Enqueue→Dequeue→Commit，断电不丢</li>
+  <li><strong>BackgroundService</strong> — 采集引擎生命周期由框架管理，而非手写线程</li>
+  <li><strong>死区过滤</strong> — 有 Deadband 概念，减少无意义上报</li>
+  <li><strong>健康监控</strong> — DeviceHealthMonitor 连续失败检测 + 自动 Offline/恢复</li>
+  <li><strong>前端面板</strong> — Vue 3 + SignalR，有基础的设备管理和实时监控</li>
+</ul>
+
+<h3>1.2 当前覆盖度雷达</h3>
+
+<table>
+  <tr><th>维度</th><th>覆盖度</th><th>关键缺口</th></tr>
+  <tr>
+    <td>采集引擎</td>
+    <td><span class="badge badge-ok">70%</span></td>
+    <td>无重试、无熔断、无限流</td>
+  </tr>
+  <tr>
+    <td>协议驱动</td>
+    <td><span class="badge badge-p1">35%</span></td>
+    <td>OPC UA 半成品、S7 缺失、写操作未通</td>
+  </tr>
+  <tr>
+    <td>转发</td>
+    <td><span class="badge badge-ok">60%</span></td>
+    <td>无死信队列、无恢复限速</td>
+  </tr>
+  <tr>
+    <td>存储</td>
+    <td><span class="badge badge-p1">40%</span></td>
+    <td>SQLite 单文件、逐条 INSERT、无分区</td>
+  </tr>
+  <tr>
+    <td>安全性</td>
+    <td><span class="badge badge-p0">5%</span></td>
+    <td>无认证、无 TLS、无审计</td>
+  </tr>
+  <tr>
+    <td>可观测性</td>
+    <td><span class="badge badge-p0">10%</span></td>
+    <td>无指标、无健康检查、无追踪</td>
+  </tr>
+  <tr>
+    <td>告警</td>
+    <td><span class="badge badge-p0">0%</span></td>
+    <td>Alarm 模块为空目录</td>
+  </tr>
+  <tr>
+    <td>测试</td>
+    <td><span class="badge badge-p0">0%</span></td>
+    <td>0 个测试</td>
+  </tr>
+  <tr>
+    <td>配置管理</td>
+    <td><span class="badge badge-p2">25%</span></td>
+    <td>无热加载、无点位模板导入</td>
+  </tr>
+  <tr>
+    <td>运维</td>
+    <td><span class="badge badge-p2">15%</span></td>
+    <td>无优雅关闭、无远程运维</td>
+  </tr>
+</table>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s2">二、P0 — 安全（阻塞上线）<span class="badge badge-p0">P0</span></h2>
+
+<div class="callout callout-warn">
+  生产环境公网或企业内网部署，安全是绝对底线。没有认证、没有加密，绝对不允许上线。
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">2.1</div><h4>API 认证 — JWT Bearer Token</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 添加 <code>Microsoft.AspNetCore.Authentication.JwtBearer</code> NuGet 包</li>
+    <li><span class="todo">☐</span> 实现登录接口 <code>POST /api/auth/login</code>，返回 access_token + refresh_token</li>
+    <li><span class="todo">☐</span> 配置 <code>AddAuthentication().AddJwtBearer()</code></li>
+    <li><span class="todo">☐</span> Controller 添加 <code>[Authorize]</code> 特性</li>
+    <li><span class="todo">☐</span> SignalR Hub 连接时校验 Token：<code>OnConnectedAsync</code> 中读取 <code>access_token</code> query param</li>
+    <li><span class="todo">☐</span> Token 过期刷新机制</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">2.2</div><h4>MQTT TLS</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> <code>MqttConnectionOptions</code> 增加 TLS 配置：CA 证书路径、客户端证书、是否忽略证书错误</li>
+    <li><span class="todo">☐</span> <code>MqttClientWrapper</code> 在 Connect 时使用 <code>MqttClientOptionsBuilderTlsParameters</code></li>
+    <li><span class="todo">☐</span> 生产默认要求 TLS 1.2+，开发环境允许不加密</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">2.3</div><h4>配置与凭证外部化</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 所有连接字符串、密钥从 <code>appsettings.json</code> + 环境变量读取，零硬编码</li>
+    <li><span class="todo">☐</span> <code>Program.cs</code> 中 <code>builder.Configuration.AddEnvironmentVariables("NITRO_")</code></li>
+    <li><span class="todo">☐</span> 敏感字段（MQTT 密码、JWT 密钥）支持通过文件挂载读取（Docker Secrets / K8s）</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">2.4</div><h4>审计日志</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 实现 <code>AuditMiddleware</code>：记录每次 API 调用的 User、IP、Action、Timestamp、Result</li>
+    <li><span class="todo">☐</span> 敏感操作（设备增删、点位修改、状态变更）记录到 <code>audit_log</code> 表</li>
+  </ul>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s3">三、P1 — 容错与弹性 <span class="badge badge-p1">P1</span></h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">3.1</div><h4>重试策略 — Polly</h4>
+  </div>
+  <pre>// 在 DeviceReader 中包装驱动调用
+services.AddResiliencePipeline("device-read", builder =>
+{
+    builder.AddRetry(new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 3,
+        BackoffType       = DelayBackoffType.Exponential,
+        Delay             = TimeSpan.FromMilliseconds(200),
+        MaxDelay          = TimeSpan.FromSeconds(5),
+        ShouldHandle      = args => args.Outcome.Exception is not OperationCanceledException
+                                     ? PredicateResult.True()
+                                     : PredicateResult.False()
+    });
+});</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> <code>DeviceReader.ReadDeviceAsync</code> 通过 Polly pipeline 调用驱动，失败自动重试</li>
+    <li><span class="todo">☐</span> Forwarder MQTT Publish 失败重试（区分网络错误和业务错误）</li>
+    <li><span class="todo">☐</span> 重试计数计入 <code>DeviceHealthMonitor</code>，与熔断联动</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">3.2</div><h4>熔断器 — Circuit Breaker（每设备独立）</h4>
+  </div>
+  <pre>// 每设备独立熔断器注册表
+public class CircuitBreakerRegistry
+{
+    private readonly ConcurrentDictionary&lt;Guid, CircuitBreakerPolicy&gt; _breakers = new();
+
+    public CircuitBreakerPolicy GetOrCreate(Guid deviceId) { /* ... */ }
+
+    // 配置：连续失败 5 次 → 断开 30s → 半开探测 1 次 → 成功则关闭，失败继续断开
+}</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 熔断后跳过该设备采集，避免无效连接拖慢整个采集周期</li>
+    <li><span class="todo">☐</span> 熔断/恢复事件记录日志 + 触发告警</li>
+    <li><span class="todo">☐</span> 熔断器状态通过 Metrics 暴露</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">3.3</div><h4>并发行限流</h4>
+  </div>
+  <pre>// DeviceCollector 添加信号量
+private readonly SemaphoreSlim _concurrencyLimit = new(8); // 最多同时采集 8 台设备
+
+public async Task CollectOnceAsync(CancellationToken ct)
+{
+    var devices = await _deviceManager.GetByStatusAsync(DeviceStatus.Online, ct);
+    var tasks = devices.Value!.Select(async device =>
+    {
+        await _concurrencyLimit.WaitAsync(ct);
+        try { await CollectDeviceAsync(device, ct); }
+        finally { _concurrencyLimit.Release(); }
+    });
+    await Task.WhenAll(tasks);
+}</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 并发数可配置，默认 = CPU 核心数</li>
+    <li><span class="todo">☐</span> 避免 200 台 Modbus TCP 设备同时建立连接</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">3.4</div><h4>死信队列 (DLQ)</h4>
+  </div>
+  <pre>// IForwardBuffer 扩展
+public interface IForwardBuffer
+{
+    // 现有方法...
+    Task&lt;OperationResult&gt; MoveToDeadLetterAsync(Guid batchId, string reason, CancellationToken ct);
+    Task&lt;OperationResult&lt;IReadOnlyList&lt;DeadLetterEntry&gt;&gt;&gt; GetDeadLettersAsync(int maxCount, CancellationToken ct);
+    Task&lt;OperationResult&gt; RetryDeadLetterAsync(Guid batchId, CancellationToken ct);
+}</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 转发失败超过 N 次（如 5 次）→ 移入死信队列，保留原因和时间</li>
+    <li><span class="todo">☐</span> 管理面板可查看死信、手动重放或丢弃</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">3.5</div><h4>优雅关闭 (Graceful Shutdown)</h4>
+  </div>
+  <pre>// Program.cs
+var app = builder.Build();
+
+// 注册生命周期钩子
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    logger.LogInformation("收到停止信号，开始优雅关闭...");
+    // 1. 停止接收新采集任务
+    // 2. 等待进行中的采集完成（最长 30s）
+    // 3. Flush ForwardBuffer（确保未提交数据落盘）
+    // 4. Disconnect MQTT（发送 LWT 遗嘱消息）
+    // 5. 释放所有资源
+});</pre>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">3.6</div><h4>MQTT 断连衔接续传</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> <code>IMqttClient.StateChanged</code> 事件监听：Connected → 标记在线，Disconnected → 标记离线</li>
+    <li><span class="todo">☐</span> 离线期间 Forwarder 数据继续入缓冲（现有 ForwardBuffer 已支持）</li>
+    <li><span class="todo">☐</span> 恢复连接后，Forwarder 按限速（如每秒 100 条）追补积压数据</li>
+    <li><span class="todo">☐</span> 避免恢复瞬间冲垮 MQTT Broker</li>
+  </ul>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s4">四、P1 — 可观测性 <span class="badge badge-p1">P1</span></h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">4.1</div><h4>Prometheus 指标</h4>
+  </div>
+  <pre>// 建议暴露的指标
+// Counter
+nitro_collection_total{device,status}       // 采集总次数（按设备+成败）
+nitro_forward_total{status}                 // 转发总次数（按成败）
+nitro_mqtt_reconnects_total                 // MQTT 重连次数
+
+// Gauge
+nitro_devices_online                        // 在线设备数
+nitro_buffer_backlog                        // 转发缓冲积压数
+nitro_collection_duration_ms{device}        // 单设备采集耗时
+
+// Histogram
+nitro_collection_duration_seconds           // 采集周期耗时分布</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 引用 <code>prometheus-net.AspNetCore</code></li>
+    <li><span class="todo">☐</span> 在 <code>CollectionEngine</code> / <code>DeviceCollector</code> / <code>Forwarder</code> 关键路径埋点</li>
+    <li><span class="todo">☐</span> 暴露 <code>/metrics</code> 端点</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">4.2</div><h4>健康检查</h4>
+  </div>
+  <pre>// Program.cs
+builder.Services.AddHealthChecks()
+    .AddCheck("sqlite", () => { /* 检查 SQLite 连接 */ })
+    .AddCheck("mqtt",    () => { /* 检查 MQTT 连接状态 */ });
+
+app.MapHealthChecks("/healthz", new HealthCheckOptions
+{
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
+app.MapGet("/readyz", async (IMqttClient mqtt) =>
+    mqtt.State == MqttConnectionState.Connected ? Results.Ok() : Results.StatusCode(503)
+);</pre>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">4.3</div><h4>结构化日志</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 使用 <code>Serilog</code> 替代默认 Logger，输出 JSON 格式</li>
+    <li><span class="todo">☐</span> 每条日志带上 <code>TraceId</code>（一次采集周期内共享，贯穿 Read→Pipeline→Dispatch→Forward）</li>
+    <li><span class="todo">☐</span> 同时输出到 Console（开发）和 File（生产），可选 Seq/ELK</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">4.4</div><h4>OpenTelemetry 链路追踪</h4>
+  </div>
+  <pre>// 一次采集的 Span 树
+CollectionEngine.ExecuteAsync
+ └─ CollectOnceAsync
+     ├─ DeviceCollector.CollectDeviceAsync (device="PLC-01")
+     │   ├─ DeviceReader.ReadDeviceAsync          ~120ms
+     │   ├─ PointValuePipeline.Process            ~2ms
+     │   ├─ DataDispatcher.DispatchAsync
+     │   │   ├─ SqliteMeasurementStore.WriteAsync ~15ms
+     │   │   └─ SqliteForwardBuffer.EnqueueAsync  ~3ms
+     │   └─ HealthReporter.Report                 ~1ms
+     └─ DeviceCollector.CollectDeviceAsync (device="PLC-02")
+         └─ ...</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 添加 <code>OpenTelemetry.Extensions.Hosting</code></li>
+    <li><span class="todo">☐</span> 配置 OTLP Exporter → Jaeger / Tempo</li>
+  </ul>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s5">五、P2 — 功能补齐 <span class="badge badge-p2">P2</span></h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">5.1</div><h4>告警引擎 — Alarm 模块落地</h4>
+  </div>
+  <pre>// 领域模型
+public class AlarmRule
+{
+    public Guid Id { get; init; }
+    public Guid DeviceId { get; init; }
+    public Guid PointId { get; init; }
+    public string Operator { get; set; }   // ">", "<", ">=", "<=", "==", "!="
+    public double Threshold { get; set; }
+    public TimeSpan Duration { get; set; }  // 持续时间阈值（防抖）
+    public AlarmSeverity Severity { get; set; }  // Info, Warning, Critical
+}
+
+public enum AlarmSeverity { Info, Warning, Critical, Emergency }
+
+public class Alarm
+{
+    public Guid Id { get; init; }
+    public Guid RuleId { get; init; }
+    public string Message { get; init; }
+    public AlarmSeverity Severity { get; init; }
+    public DateTime OccurredAt { get; init; }
+    public DateTime? AcknowledgedAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+}</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 告警规则 CRUD API</li>
+    <li><span class="todo">☐</span> <code>AlarmEvaluator</code>：每当 Dispatcher 产出 PointSnapshot，异步评估关联规则</li>
+    <li><span class="todo">☐</span> 告警生命周期：触发 → 确认 → 恢复</li>
+    <li><span class="todo">☐</span> 告警通知渠道：MQTT 推送 + Web 弹窗 + （未来）短信/钉钉</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">5.2</div><h4>配置热加载</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 设备/点位变更后，<code>DeviceManager</code> 发出事件，<code>CollectionEngine</code> 监听并刷新设备列表缓存</li>
+    <li><span class="todo">☐</span> 不需要重启服务即可生效</li>
+    <li><span class="todo">☐</span> 注意：正在采集的设备不受影响，下一轮采集周期自动使用新配置</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">5.3</div><h4>点位批量导入</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> Excel/CSV 导入：自动创建点位（地址自动计算偏移）</li>
+    <li><span class="todo">☐</span> Modbus 模板：选择寄存器类型(HR/IR/Coil) + 起始地址 + 数量 + 数据类型 → 批量生成</li>
+    <li><span class="todo">☐</span> OPC UA 模板：指定 NodeId 前缀 → 浏览子树 → 批量导入</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">5.4</div><h4>告警通知渠道</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> <code>IAlarmNotifier</code> 接口，支持多种渠道</li>
+    <li><span class="todo">☐</span> MQTT 推送（实时）</li>
+    <li><span class="todo">☐</span> Webhook 回调</li>
+    <li><span class="todo">☐</span> 钉钉/企业微信 Bot（国内工厂标配）</li>
+  </ul>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s6">六、P2 — 数据面增强 <span class="badge badge-p2">P2</span></h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">6.1</div><h4>本地预聚合</h4>
+  </div>
+  <pre>// 每 1 分钟跑一次
+public class AggregateWorker : BackgroundService
+{
+    // 1. 从 MeasurementStore 读取最近 1 分钟的 PointSnapshot
+    // 2. 按 (DeviceId, PointId) 分组计算 min/max/avg/sum/count
+    // 3. 写入 aggregate 表（或发送到 MQTT topic nitrogateway/{deviceId}/aggregates）
+}</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 减少上报数据量：边缘算完分钟级聚合，云端只存聚合结果</li>
+    <li><span class="todo">☐</span> 配置维度：1min / 5min / 15min / 1h</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">6.2</div><h4>时序存储优化</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> <code>SqliteMeasurementStore</code> 改用真正的批量 INSERT（多 VALUES 拼接或使用 <code>SqliteBlob</code>）</li>
+    <li><span class="todo">☐</span> 按天分表：<code>measurements_20260702</code>，自动创建和清理</li>
+    <li><span class="todo">☐</span> <code>PurgeAsync</code> 删除旧表而非 DELETE WHERE（DROP TABLE 远快于 DELETE）</li>
+    <li><span class="todo">☐</span> SQLite WAL 模式、synchronous=NORMAL、适当增大 cache_size</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">6.3</div><h4>定时清理策略</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 在 Scheduler 注册 <code>PurgeTask</code>：每天凌晨清理 N 天前的数据</li>
+    <li><span class="todo">☐</span> 配置保留策略：measurements 保留 30 天，aggregates 保留 365 天</li>
+    <li><span class="todo">☐</span> 清理时检查磁盘空间，低于阈值暂停写入（边缘设备存储有限）</li>
+  </ul>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s7">七、P3 — 多协议 & 写操作 <span class="badge badge-p3">P3</span></h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">7.1</div><h4>协议补齐</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> <strong>Modbus RTU</strong> — <code>ModbusRtuDriver</code> 代码已有，补齐串口库 + DI 注册 + 配置</li>
+    <li><span class="todo">☐</span> <strong>OPC UA</strong> — 当前只有基础读取，补齐：证书管理、订阅(Subscription)模式、安全策略</li>
+    <li><span class="todo">☐</span> <strong>Siemens S7</strong> — 国内工厂第一优先级缺失协议。用 <code>Sharp7</code> 或 <code>S7netplus</code>，实现 <code>IProtocolDriver</code></li>
+    <li><span class="todo">☐</span> <strong>BACnet</strong>（楼宇）和 <strong>EtherNet/IP</strong>（罗克韦尔）按需补充</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">7.2</div><h4>写操作全链路</h4>
+  </div>
+  <pre>// API: POST /api/devices/{deviceId}/points/{pointId}/write  { "value": 23.5 }
+//   → 权限校验（写操作比读操作更需要审计）
+//   → DeviceManager.VerifyWriteAccess(deviceId, pointId)
+//   → IProtocolDriver.WriteAsync(point, value)
+//   → 审计日志
+//   → 返回结果 + 新值确认（写后读验证）</pre>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 写入前权限校验</li>
+    <li><span class="todo">☐</span> 写入后读回验证（可选，对关键控制）</li>
+    <li><span class="todo">☐</span> 前端写操作 UI</li>
+  </ul>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s8">八、P3 — 集群化 <span class="badge badge-p3">P3</span></h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">8.1</div><h4>Leader Election（防重复采集）</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 多实例部署时，同一台设备只应被一个节点采集</li>
+    <li><span class="todo">☐</span> 轻量方案：基于数据库的表锁选举（<code>INSERT OR FAIL INTO leader_lock</code>）</li>
+    <li><span class="todo">☐</span> 进阶方案：Redis RedLock 或 etcd</li>
+    <li><span class="todo">☐</span> Collector 启动时获取锁，只有持锁节点执行采集</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">8.2</div><h4>设备分片</h4>
+  </div>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 按 deviceId 一致性哈希分配到不同节点</li>
+    <li><span class="todo">☐</span> 节点离线时，其设备自动迁移到其他节点（故障转移）</li>
+    <li><span class="todo">☐</span> 这个需求 90% 的边缘部署不需要，先不急着做</li>
+  </ul>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s9">九、测试体系 <span class="badge badge-p0">必须</span></h2>
+
+<div class="phase">
+  <div class="phase-header">
+    <div class="num">9.1</div><h4>三层测试策略</h4>
+  </div>
+
+  <h4>单元测试</h4>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> <code>PointValuePipeline</code>：缩放计算、死区过滤、各 DataType 转换</li>
+    <li><span class="todo">☐</span> <code>ModbusAddressParser</code>：各种地址格式解析</li>
+    <li><span class="todo">☐</span> <code>DeviceHealthMonitor</code>：阈值触发逻辑</li>
+    <li><span class="todo">☐</span> <code>DataDispatcher</code>：双写互不阻塞逻辑</li>
+  </ul>
+
+  <h4>集成测试</h4>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> Mock Modbus TCP 设备（用 <code>EasyModbus</code> 或手写 TCP 服务器模拟 PLC）</li>
+    <li><span class="todo">☐</span> DeviceReader → Pipeline → Dispatcher 完整链路</li>
+    <li><span class="todo">☐</span> SqliteForwardBuffer Enqueue → Dequeue → Commit 流程</li>
+    <li><span class="todo">☐</span> DeviceHealthMonitor 连续失败触发 Offline 状态变更</li>
+  </ul>
+
+  <h4>端到端测试</h4>
+  <ul class="task-list">
+    <li><span class="todo">☐</span> 启动完整应用 → 注册设备 → 等待采集 → 验证 SQLite 有数据 → 验证 ForwardBuffer 有数据</li>
+    <li><span class="todo">☐</span> Mock MQTT Broker（用 <code>Moq</code> 或内存实现）</li>
+  </ul>
+</div>
+
+<div class="callout callout-good">
+  <strong>快速起步建议：</strong>先写一个 Mock Modbus TCP 服务器（几十行代码），然后基于它写一个集成测试覆盖 "注册设备 → 采集 → 存入 SQLite" 这条黄金路径。这个测试的价值远大于 100 个孤立单元测试。
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="s10">十、参考架构与技术选型</h2>
+
+<h3>10.1 推荐技术栈</h3>
+
+<table>
+  <tr><th>领域</th><th>当前</th><th>生产推荐</th><th>理由</th></tr>
+  <tr>
+    <td>运行时</td><td>.NET 10</td><td>.NET 10 ✅</td><td>已经是最新，保持</td>
+  </tr>
+  <tr>
+    <td>容错</td><td>无</td><td>Polly / Microsoft.Extensions.Resilience</td><td>.NET 官方推荐，与 DI 深度集成</td>
+  </tr>
+  <tr>
+    <td>调度</td><td>自研 SchedulerEngine</td><td>BackgroundService + PeriodicTimer（就够用）</td><td>边缘场景不需要 Quartz，自研轻量没问题</td>
+  </tr>
+  <tr>
+    <td>日志</td><td>Microsoft.Extensions.Logging</td><td>Serilog</td><td>结构化日志 + Sink 生态（File/Seq/ES）</td>
+  </tr>
+  <tr>
+    <td>指标</td><td>无</td><td>prometheus-net</td><td>工业标准，Grafana 直接对接</td>
+  </tr>
+  <tr>
+    <td>追踪</td><td>无</td><td>OpenTelemetry .NET SDK</td><td>CNCF 标准，未来可扩展</td>
+  </tr>
+  <tr>
+    <td>数据库</td><td>SQLite</td><td>SQLite（边缘）+ TimescaleDB（云端）</td><td>边缘 SQLite 够了，云端单独考虑</td>
+  </tr>
+  <tr>
+    <td>MQTT</td><td>MQTTnet</td><td>MQTTnet ✅</td><td>目前最成熟的 .NET MQTT 库</td>
+  </tr>
+  <tr>
+    <td>Modbus</td><td>自研</td><td>自研 ✅</td><td>已够用，如需完善可用 NModbus4</td>
+  </tr>
+  <tr>
+    <td>OPC UA</td><td>自研</td><td>OPCFoundation/UA-.NETStandard</td><td>官方 SDK，功能完整但依赖重</td>
+  </tr>
+  <tr>
+    <td>前端</td><td>Vue 3</td><td>Vue 3 ✅</td><td>保持</td>
+  </tr>
+</table>
+
+<h3>10.2 生产部署目标架构</h3>
+<pre>
+                    ┌────────────────────────────────┐
+                    │        Cloud / On-Prem          │
+                    │  ┌──────────┐  ┌────────────┐  │
+                    │  │  MQTT    │  │ TimeScaleDB │  │
+                    │  │  Broker  │  │   / Influx  │  │
+                    │  └────┬─────┘  └──────┬─────┘  │
+                    └───────┼───────────────┼────────┘
+                            │               │
+          ══════════════════╪═══════════════╪══════════
+                            │  MQTT/TLS     │
+    ┌───────────────────────┴───────────────┴─────────┐
+    │              NitroGateway Edge Node             │
+    │  ┌─────────────────────────────────────────┐    │
+    │  │  ASP.NET Core Host                       │    │
+    │  │  ┌──────────┐ ┌────────┐ ┌───────────┐  │    │
+    │  │  │Collector │→│Pipeline│→│Dispatcher │  │    │
+    │  │  │  1s      │ │Scale+  │ │TS+Buffer  │  │    │
+    │  │  │          │ │Deadband│ │           │  │    │
+    │  │  └──────────┘ └────────┘ └─────┬─────┘  │    │
+    │  │                                │        │    │
+    │  │  ┌──────────────────────────────┼─────┐  │    │
+    │  │  │  SQLite (WAL mode)           │     │  │    │
+    │  │  │  ├ measurements (按天分表)   │     │  │    │
+    │  │  │  ├ forward_buffer ◄─────────┘     │  │    │
+    │  │  │  ├ alarm_rules                     │  │    │
+    │  │  │  └ audit_log                       │  │    │
+    │  │  └────────────────────────────────────┘  │    │
+    │  │                                           │    │
+    │  │  ┌──────────┐ ┌─────────┐ ┌───────────┐  │    │
+    │  │  │ Forwarder│ │ Alarm   │ │ Webapi    │  │    │
+    │  │  │ 5s       │ │ Engine  │ │ REST+     │  │    │
+    │  │  │          │ │         │ │ SignalR   │  │    │
+    │  │  └──────────┘ └─────────┘ └───────────┘  │    │
+    │  │  ┌──────────────────────────────────┐    │    │
+    │  │  │  /healthz  /readyz  /metrics     │    │    │
+    │  │  └──────────────────────────────────┘    │    │
+    │  └─────────────────────────────────────────┘    │
+    │                      │                          │
+    │  ┌───────────────────┴──────────────────────┐   │
+    │  │  Modbus TCP ─── PLC-01, PLC-02, ...      │   │
+    │  │  OPC UA ─────── SCADA Server             │   │
+    │  │  S7 ─────────── S7-1200, S7-1500         │   │
+    │  └──────────────────────────────────────────┘   │
+    └─────────────────────────────────────────────────┘
+</pre>
+
+<h3>10.3 实施路线图</h3>
+
+<table>
+  <tr><th>阶段</th><th>内容</th><th>预估工时</th></tr>
+  <tr>
+    <td><span class="badge badge-p0">P0</span></td>
+    <td>JWT 认证 + MQTT TLS + 配置外部化 + 审计日志</td>
+    <td>1-2 周</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p1">P1.1</span></td>
+    <td>Polly 重试 + 熔断器 + 并发限流</td>
+    <td>1-2 周</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p1">P1.2</span></td>
+    <td>死信队列 + 优雅关闭 + MQTT 断线续传</td>
+    <td>1 周</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p1">P1.3</span></td>
+    <td>Prometheus 指标 + 健康检查 + Serilog + OpenTelemetry</td>
+    <td>1-2 周</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p2">P2.1</span></td>
+    <td>告警引擎（Alarm 模块落地）</td>
+    <td>1-2 周</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p2">P2.2</span></td>
+    <td>配置热加载 + 点位批量导入 + 预聚合 + 存储优化</td>
+    <td>2-3 周</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p3">P3.1</span></td>
+    <td>S7 协议 + 写操作全链路</td>
+    <td>2-3 周</td>
+  </tr>
+  <tr>
+    <td>测试</td>
+    <td>单元测试 + 集成测试 + Mock Modbus 模拟器</td>
+    <td>贯穿全程</td>
+  </tr>
+  <tr style="background:#1a2332">
+    <td><strong>合计</strong></td>
+    <td><strong>单人全职约 2-3 个月可达到"勉强能上生产"</strong></td>
+    <td><strong>~10-16 周</strong></td>
+  </tr>
+</table>
+
+<div class="callout">
+  <strong>一点建议：</strong>不要试图一次性落地所有 P0-P3。优先让一条"采集→存储→转发"的链路在认证 + 重试 + 熔断 + 指标的保护下跑通，然后逐步加功能。工业场景最重要的是<strong>稳定性</strong>——先保证不出事，再想怎么做得更全。
+</div>
+
+<hr>
+
+<footer style="margin-top:60px; padding-top:20px; border-top:1px solid var(--border); color: var(--text-dim); font-size:0.82rem;">
+  NitroGateway Production Readiness Guide · Generated 2026-07-02 · Target: .NET 10
+</footer>
+
+</body>
+</html>

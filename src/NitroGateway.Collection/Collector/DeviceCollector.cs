@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using NitroGateway.Collection.Cache;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Telemetry;
@@ -9,12 +10,13 @@ namespace NitroGateway.Collection;
 
 /// <summary>
 /// 设备采集器实现。
-/// 每轮采集：获取在线设备 → 并发采集每台设备（受信号量限流）。
-/// 每台设备：熔断检查 → Reader → Pipeline → Dispatcher → HealthReporter。
+/// 每轮采集：从内存缓存读取 Online 设备 → 并发采集（受信号量限流）。
+/// 配置变更是低频操作，缓存通过 IDeviceChangeSink 增量同步，无需每轮查数据库。
 /// </summary>
 internal sealed class DeviceCollector : IDeviceCollector
 {
     private readonly IDeviceManager _deviceManager;
+    private readonly DeviceCache _cache;
     private readonly IDeviceReader _reader;
     private readonly IPointValuePipeline _pipeline;
     private readonly IDataDispatcher _dispatcher;
@@ -26,6 +28,7 @@ internal sealed class DeviceCollector : IDeviceCollector
     /// <summary>创建设备采集器</summary>
     public DeviceCollector(
         IDeviceManager deviceManager,
+        DeviceCache cache,
         IDeviceReader reader,
         IPointValuePipeline pipeline,
         IDataDispatcher dispatcher,
@@ -35,6 +38,7 @@ internal sealed class DeviceCollector : IDeviceCollector
         int maxConcurrency = 5)
     {
         _deviceManager = deviceManager;
+        _cache = cache;
         _reader = reader;
         _pipeline = pipeline;
         _dispatcher = dispatcher;
@@ -121,14 +125,7 @@ internal sealed class DeviceCollector : IDeviceCollector
     /// <inheritdoc />
     public async Task CollectOnceAsync(CancellationToken ct)
     {
-        var devicesResult = await _deviceManager.GetByStatusAsync(DeviceStatus.Online, ct);
-        if (devicesResult.IsFailure)
-        {
-            _logger.LogWarning("获取在线设备失败: {Error}", devicesResult.Error!.Message);
-            return;
-        }
-
-        var devices = devicesResult.Value!;
+        var devices = _cache.GetOnlineDevices();
         NitroMetrics.DevicesOnline.Set(devices.Count);
 
         if (devices.Count == 0)

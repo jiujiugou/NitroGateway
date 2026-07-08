@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Domain.Events;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Configuration;
 
@@ -9,12 +10,27 @@ namespace NitroGateway.DeviceManagement;
 public sealed class PointManager : IPointManager
 {
     private readonly IPointRepository _repository;
+    private readonly IEnumerable<IDeviceChangeSink> _sinks;
     private readonly ILogger<PointManager> _logger;
 
-    public PointManager(IPointRepository repository, ILogger<PointManager> logger)
+    public PointManager(
+        IPointRepository repository,
+        IEnumerable<IDeviceChangeSink> sinks,
+        ILogger<PointManager> logger)
     {
         _repository = repository;
+        _sinks = sinks;
         _logger = logger;
+    }
+
+    private void NotifySinks(Guid deviceId)
+    {
+        var e = new DeviceChangeEvent { Type = DeviceChangeType.PointsChanged, DeviceId = deviceId };
+        foreach (var sink in _sinks)
+        {
+            try { sink.OnDeviceChanged(e); }
+            catch (Exception ex) { _logger.LogError(ex, "DeviceChangeSink 异常"); }
+        }
     }
 
     public async Task<OperationResult<DevicePoint>> AddAsync(
@@ -25,12 +41,14 @@ public sealed class PointManager : IPointManager
 
         await _repository.SaveAsync(deviceId, point, ct);
         _logger.LogInformation("点位已添加: {PointName} [{PointId}] → Device {DeviceId}", point.Name, point.Id, deviceId);
+        NotifySinks(deviceId);
         return point;
     }
 
     public async Task<OperationResult> RemoveAsync(Guid deviceId, Guid pointId, CancellationToken ct = default)
     {
         await _repository.DeleteAsync(deviceId, pointId, ct);
+        NotifySinks(deviceId);
         return OperationResult.Success();
     }
 
@@ -38,6 +56,7 @@ public sealed class PointManager : IPointManager
         Guid deviceId, DevicePoint point, CancellationToken ct = default)
     {
         await _repository.SaveAsync(deviceId, point, ct);
+        NotifySinks(deviceId);
         return OperationResult.Success();
     }
 

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
+using NitroGateway.Collection.Cache;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Forwarder;
 using NitroGateway.Host;
@@ -72,6 +73,13 @@ var app = builder.Build();
 
 // ── 建表 ──
 MigrationRunner.Run($"Data Source={dbPath}");
+
+// ── DeviceCache 初始化（从 DB 全量加载到内存）──
+{
+    var cache = app.Services.GetRequiredService<DeviceCache>();
+    var dm = app.Services.GetRequiredService<IDeviceManager>();
+    await cache.LoadAsync(dm);
+}
 
 // ── HealthMonitor ↔ CircuitBreaker 联动 ──
 // 设备恢复 Online → 强制重置熔断器为 Closed

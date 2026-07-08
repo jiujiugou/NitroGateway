@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NitroGateway.Collection.Cache;
 using NitroGateway.DeviceManagement;
+using NitroGateway.Domain.Events;
 
 namespace NitroGateway.Collection;
 
@@ -21,34 +23,39 @@ public static class CollectionServiceCollectionExtensions
         int circuitBreakerThreshold = 5,
         int circuitBreakerOpenSeconds = 30)
     {
-        // 熔断器注册表（Singleton，跨采集轮次保持状态）
+        // ── 设备运行时缓存（Singleton，采集线程读内存不查 DB）──
+        services.AddSingleton<DeviceCache>();
+        services.AddSingleton<IDeviceChangeSink>(sp => sp.GetRequiredService<DeviceCache>());
+
+        // ── 熔断器注册表（Singleton，跨采集轮次保持状态）──
         services.AddSingleton<ICircuitBreakerRegistry>(_ =>
             new CircuitBreakerRegistry(
                 failureThreshold: circuitBreakerThreshold,
                 openDuration: TimeSpan.FromSeconds(circuitBreakerOpenSeconds),
                 maxOpenDuration: TimeSpan.FromMinutes(5)));
 
-        // 采集管道各组件（Singleton，无状态或自行管理状态）
+        // ── 采集管道各组件（Singleton，无状态或自行管理状态）──
         services.AddSingleton<IDeviceReader, DeviceReader>();
         services.AddSingleton<IPointValuePipeline, PointValuePipeline>();
         services.AddSingleton<IDataDispatcher, DataDispatcher>();
         services.AddSingleton<IHealthReporter, HealthReporter>();
 
-        // DeviceCollector 为 Scoped（与 DeviceManager 一致，因消费 DbContext）
+        // ── DeviceCollector（Scoped，与 DeviceManager 一致）──
         services.AddScoped<IDeviceCollector>(sp =>
         {
             return new DeviceCollector(
                 sp.GetRequiredService<IDeviceManager>(),
+                sp.GetRequiredService<DeviceCache>(),
                 sp.GetRequiredService<IDeviceReader>(),
                 sp.GetRequiredService<IPointValuePipeline>(),
                 sp.GetRequiredService<IDataDispatcher>(),
                 sp.GetRequiredService<IHealthReporter>(),
                 sp.GetRequiredService<ICircuitBreakerRegistry>(),
-                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CollectionEngine>>(),
+                sp.GetRequiredService<ILogger<CollectionEngine>>(),
                 maxConcurrency);
         });
 
-        // 采集引擎 BackgroundService
+        // ── 采集引擎 BackgroundService ──
         services.AddHostedService<CollectionEngine>();
 
         return services;

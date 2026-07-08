@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Domain.Events;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Configuration;
 
@@ -9,12 +10,27 @@ namespace NitroGateway.DeviceManagement;
 public sealed class DeviceManager : IDeviceManager
 {
     private readonly IDeviceRepository _repository;
+    private readonly IEnumerable<IDeviceChangeSink> _sinks;
     private readonly ILogger<DeviceManager> _logger;
 
-    public DeviceManager(IDeviceRepository repository, ILogger<DeviceManager> logger)
+    public DeviceManager(
+        IDeviceRepository repository,
+        IEnumerable<IDeviceChangeSink> sinks,
+        ILogger<DeviceManager> logger)
     {
         _repository = repository;
+        _sinks = sinks;
         _logger = logger;
+    }
+
+    private void NotifySinks(DeviceChangeType type, Guid deviceId)
+    {
+        var e = new DeviceChangeEvent { Type = type, DeviceId = deviceId };
+        foreach (var sink in _sinks)
+        {
+            try { sink.OnDeviceChanged(e); }
+            catch (Exception ex) { _logger.LogError(ex, "DeviceChangeSink 异常"); }
+        }
     }
 
     public async Task<OperationResult<Device>> RegisterAsync(Device device, CancellationToken ct = default)
@@ -26,6 +42,7 @@ public sealed class DeviceManager : IDeviceManager
         if (result.IsFailure) return result.Error!;
 
         _logger.LogInformation("设备已注册: {DeviceName} [{DeviceId}]", device.Name, device.Id);
+        NotifySinks(DeviceChangeType.Added, device.Id);
         return device;
     }
 
@@ -36,6 +53,7 @@ public sealed class DeviceManager : IDeviceManager
 
         await _repository.DeleteAsync(deviceId, ct);
         _logger.LogInformation("设备已注销: {DeviceId}", deviceId);
+        NotifySinks(DeviceChangeType.Removed, deviceId);
         return OperationResult.Success();
     }
 
@@ -71,6 +89,7 @@ public sealed class DeviceManager : IDeviceManager
         await _repository.SaveAsync(device, ct);
 
         _logger.LogInformation("设备状态变更: {DeviceId} {Old} → {New}", deviceId, oldStatus, status);
+        NotifySinks(DeviceChangeType.Updated, deviceId);
         return OperationResult.Success();
     }
 
