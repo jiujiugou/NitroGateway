@@ -1,86 +1,102 @@
+using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using NitroGateway.DeviceManagement;
-using NitroGateway.Domain.Devices;
-using DomainDevice = NitroGateway.Domain.Devices.Device;
-
+using NitroGateway.Host;
+using NitroGateway.Storage.Buffer;
+using NitroGateway.Telemetry.Tracing;
+using NitroGateway.Transport.MQTT;
 namespace NitroGateway.Collection;
 
 /// <summary>采集引擎。串联 DeviceReader → Pipeline → Dispatcher → HealthReporter</summary>
-public sealed class CollectionEngine
+public sealed class CollectionEngine : BackgroundService
 {
-    private readonly IDeviceManager _deviceManager;
-    private readonly IDeviceReader _reader;
-    private readonly IPointValuePipeline _pipeline;
-    private readonly IDataDispatcher _dispatcher;
-    private readonly IHealthReporter _reporter;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IMqttClient _mqttClient;
+    private Task? _currentRound;
+    private GatewayLifecycle _lifecycle;
+    private CancellationTokenSource? _roundCts;
     private readonly ILogger<CollectionEngine> _logger;
 
     /// <summary>创建采集引擎</summary>
     public CollectionEngine(
-        IDeviceManager deviceManager,
-        IDeviceReader reader,
-        IPointValuePipeline pipeline,
-        IDataDispatcher dispatcher,
-        IHealthReporter reporter,
+        IServiceScopeFactory scopeFactory,
+        IMqttClient mqttClient,
+        GatewayLifecycle lifecycle,
+        IForwardBuffer forwardBuffer,
         ILogger<CollectionEngine> logger)
     {
-        _deviceManager = deviceManager;
-        _reader = reader;
-        _pipeline = pipeline;
-        _dispatcher = dispatcher;
-        _reporter = reporter;
+        _scopeFactory = scopeFactory;
+        _mqttClient = mqttClient;
+        _lifecycle = lifecycle;
         _logger = logger;
     }
 
-    /// <summary>对一台设备执行一轮完整采集</summary>
-    public async Task CollectDeviceAsync(Guid deviceId, CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var deviceResult = await _deviceManager.GetAsync(deviceId, ct);
-        if (deviceResult.IsFailure)
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        try
         {
-            _logger.LogWarning("获取设备失败 {DeviceId}: {Error}", deviceId, deviceResult.Error!.Message);
-            return;
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+
+                    var collector =
+                        scope.ServiceProvider.GetRequiredService<IDeviceCollector>();
+                    _roundCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    _currentRound = collector.CollectOnceAsync(_roundCts.Token);
+                    if (_currentRound != null)
+                        await _currentRound;
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                finally
+                {
+                    _roundCts?.Dispose();
+                    _roundCts = null;
+                    _currentRound = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "采集循环发生异常。");
         }
 
-        var device = deviceResult.Value!;
-        if (device.Points.All(p => !p.Enabled))
-            return;
 
-        // 1. 读
-        var readResult = await _reader.ReadDeviceAsync(device, ct);
-        if (readResult.IsFailure)
-        {
-            _reporter.Report(deviceId, 0, 1, readResult.Error!.Message);
-            _logger.LogWarning("设备 {DeviceId} 读取失败: {Error}", deviceId, readResult.Error!.Message);
-            return;
-        }
-
-        // 2. 转换
-        var snapshots = _pipeline.Process(deviceId, readResult.Value!);
-
-        // 3. 分发
-        if (snapshots.Count > 0)
-            await _dispatcher.DispatchAsync(deviceId, snapshots, ct);
-
-        // 4. 健康上报
-        var successCount = snapshots.Count(s => s.Quality == QualityCode.Good);
-        var failCount = snapshots.Count - successCount;
-
-        if (snapshots.Count > 0)
-            _logger.LogInformation("采集完成: {Success}/{Total} OK, 值={Values}",
-                successCount, snapshots.Count,
-                string.Join(", ", snapshots.Select(s => $"{s.Value ?? s.ErrorMessage}")));
-
-        _reporter.Report(deviceId, successCount, failCount, null);
+        _logger.LogInformation("CollectionEngine Stopped.");
     }
-
-    /// <summary>对所有 Online 设备执行一轮采集。由 Scheduler 定时调用</summary>
-    public async Task CollectAllOnlineAsync(CancellationToken ct = default)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        var devicesResult = await _deviceManager.GetByStatusAsync(DeviceStatus.Online, ct);
-        if (devicesResult.IsFailure) return;
+        _logger.LogInformation("CollectionEngine Stopping...");
+        _lifecycle.RequestStop();
+        var current = _currentRound;
 
-        foreach (var device in devicesResult.Value!)
-            await CollectDeviceAsync(device.Id, ct);
+        if (current != null)
+        {
+            _logger.LogInformation("等待当前采集轮完成...");
+
+            var completed = await Task.WhenAny(
+                current,
+                Task.Delay(TimeSpan.FromSeconds(30), cancellationToken));
+
+            if (completed != current)
+            {
+                _logger.LogWarning("当前采集轮超时，开始取消。");
+                _roundCts?.Cancel();
+                await Task.WhenAny(
+                    current,
+                    Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                _lifecycle.MarkDraining();
+            }
+        }
+
+        await _mqttClient.DisconnectAsync();
+        _lifecycle.MarkStopped();
+        await base.StopAsync(cancellationToken);
     }
 }

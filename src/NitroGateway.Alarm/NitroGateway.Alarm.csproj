@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+  </ItemGroup>
+
+</Project>

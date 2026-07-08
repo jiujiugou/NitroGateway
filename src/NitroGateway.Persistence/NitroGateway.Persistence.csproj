@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="*" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="*" />
+    <PackageReference Include="FluentMigrator" Version="*" />
+    <PackageReference Include="FluentMigrator.Runner.SQLite" Version="*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\Configuration\NitroGateway.Storage.Configuration.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
+    <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
+  </ItemGroup>
+
+</Project>

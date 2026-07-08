@@ -10,7 +10,14 @@ public class DevicesController : ControllerBase
 {
     private readonly IDeviceManager _devices;
     private readonly IPointManager _points;
-    public DevicesController(IDeviceManager devices, IPointManager points) { _devices = devices; _points = points; }
+    private readonly IDeviceHealthMonitor _healthMonitor;
+
+    public DevicesController(IDeviceManager devices, IPointManager points, IDeviceHealthMonitor healthMonitor)
+    {
+        _devices = devices;
+        _points = points;
+        _healthMonitor = healthMonitor;
+    }
 
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<DeviceDto>>>> GetAll()
@@ -57,6 +64,7 @@ public class DevicesController : ControllerBase
         var s = Enum.Parse<DeviceStatus>(status);
         var r = await _devices.UpdateStatusAsync(id, s);
         if (r.IsFailure) return BadRequest(ApiResponse<DeviceDto>.Fail("Status", r.Error!.Message));
+        _healthMonitor.UpdateStatus(id, s);
         var device = await _devices.GetAsync(id);
         return Ok(ApiResponse<DeviceDto>.Ok(Map(device.Value!)));
     }

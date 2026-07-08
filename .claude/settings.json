@@ -22,7 +22,17 @@
       "Bash(npm run *)",
       "Bash(npm install *)",
       "Bash(npx vue-tsc *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(rm -rf web/)",
+      "Bash(git commit *)",
+      "Bash(git rm *)",
+      "Bash(mv web/NitroGateway.Admin/* web/NitroGateway.Admin/.gitignore web/NitroGateway.Admin/.vscode web/)",
+      "Bash(rm -rf web/NitroGateway.Admin)",
+      "Bash(taskkill /F /IM NitroGateway.Host.exe)",
+      "Bash(taskkill /F /IM NitroGateway.Webapi.exe)",
+      "Bash(git checkout *)",
+      "Bash(wc -l \"D:/resource/Modbus.project/Modbus.Project/FrmModbusTCP.cs\" \"D:/resource/Modbus.project/ModbusTCP/ModbusTcp.cs\" \"D:/resource/Modbus.project/ModbusTCP/ByteArray.cs\" \"D:/resource/Modbus.project/Modbus.Project/Program.cs\" 2>/dev/null)",
+      "Read(//d/resource/Modbus.project/Modbus.Project/**)"
     ]
   }
 }

@@ -17,7 +17,7 @@
       </div>
       <el-form-item label="描述"><el-input v-model="f.description" type="textarea" rows="2" /></el-form-item>
       <div style="display:flex;gap:12px;margin-top:8px">
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
         <el-button @click="$router.back()">取消</el-button>
       </div>
     </el-form>
@@ -26,12 +26,29 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getDevice, createDevice, updateDevice } from '../../api/devices'
 const route = useRoute(); const router = useRouter()
 const isEdit = ref(!!route.params.id)
-const f = ref({name:'',description:'',protocol:{name:'Modbus',dialect:'TCP'},connection:{endpoint:'127.0.0.1:502',connectTimeoutMs:3000,requestTimeoutMs:5000,retryCount:3,retryIntervalMs:1000},status:'Online'})
-onMounted(async () => { if (isEdit.value) { const d = await getDevice(route.params.id as string); if (d) f.value = d as any } })
-async function save() { try { if (isEdit.value) await updateDevice(route.params.id as string, f.value as any); else await createDevice(f.value as any); router.push('/devices') } catch {} }
+const saving = ref(false)
+const f = ref({name:'',description:'',protocol:{name:'Modbus',dialect:'TCP'},connection:{endpoint:'127.0.0.1:502',connectTimeoutMs:3000,requestTimeoutMs:5000,retryCount:3,retryIntervalMs:1000,parameters:{}},status:'Online'})
+onMounted(async () => { if (isEdit.value) { const d = await getDevice(route.params.id as string); if (d) { f.value = { ...f.value, ...d as any, protocol: {...(d as any).protocol}, connection: {...(d as any).connection, parameters: (d as any).connection?.parameters ?? {}} } } } })
+async function save() {
+  saving.value = true
+  try {
+    const payload = JSON.parse(JSON.stringify(f.value))
+    if (isEdit.value) await updateDevice(route.params.id as string, payload)
+    else await createDevice(payload)
+    ElMessage.success('保存成功')
+    router.push('/devices')
+  } catch (e: any) {
+    saving.value = false
+    const msg = e?.response?.data?.error?.message ?? e?.response?.data?.title ?? e?.message ?? '未知错误'
+    const status = e?.response?.status ?? ''
+    ElMessage.error(`保存失败 [${status}]: ${msg}`)
+    console.error('DeviceForm save error:', e)
+  }
+}
 </script>
 <style scoped>
 .page-title { margin-bottom:0; }

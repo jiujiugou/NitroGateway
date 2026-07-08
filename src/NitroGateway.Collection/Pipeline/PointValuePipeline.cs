@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
+using NitroGateway.Telemetry.Tracing;
 
 namespace NitroGateway.Collection;
 
@@ -13,6 +15,10 @@ public sealed class PointValuePipeline : IPointValuePipeline
     public IReadOnlyList<PointSnapshot> Process(
         Guid deviceId, IReadOnlyList<RawPointValue> rawValues)
     {
+        using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.Pipeline);
+        activity?.SetTag(GatewayActivityTags.DeviceId, deviceId.ToString());
+        activity?.SetTag(GatewayActivityTags.SnapshotCount, rawValues.Count);
+
         var results = new List<PointSnapshot>(rawValues.Count);
         foreach (var raw in rawValues)
         {
@@ -20,6 +26,7 @@ public sealed class PointValuePipeline : IPointValuePipeline
             if (snapshot is not null)
                 results.Add(snapshot);
         }
+        activity?.SetStatus(ActivityStatusCode.Ok);
         return results;
     }
 

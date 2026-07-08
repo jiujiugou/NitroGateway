@@ -5,13 +5,28 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" Version="*" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="*" />
+    <PackageReference Include="Serilog.Sinks.File" Version="*" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="*" />
+    <PackageReference Include="Serilog.Enrichers.Thread" Version="*" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="*" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
     <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\NitroGateway.Device\NitroGateway.Device.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Configuration\NitroGateway.Storage.Configuration.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
-    <ProjectReference Include="..\NitroGateway.Infrastructure.Sqlite\NitroGateway.Infrastructure.Sqlite.csproj" />
+    <ProjectReference Include="..\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+    <ProjectReference Include="..\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
+    <ProjectReference Include="..\NitroGateway.Collection\NitroGateway.Collection.csproj" />
+    <ProjectReference Include="..\NitroGateway.Forwarder\NitroGateway.Forwarder.csproj" />
+    <ProjectReference Include="..\NitroGateway.Host\NitroGateway.Host.csproj" />
+    <ProjectReference Include="..\NitroGateway.Protocol\Modbus\NitroGateway.Protocol.Modbus.csproj" />
+    <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
   </ItemGroup>
 </Project>

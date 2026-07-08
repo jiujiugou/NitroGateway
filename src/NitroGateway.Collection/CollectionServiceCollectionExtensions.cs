@@ -1,36 +1,55 @@
 using Microsoft.Extensions.DependencyInjection;
-using NitroGateway.Scheduler;
+using Microsoft.Extensions.Logging;
+using NitroGateway.DeviceManagement;
 
 namespace NitroGateway.Collection;
 
 /// <summary>Collection 模块 DI 注册</summary>
 public static class CollectionServiceCollectionExtensions
 {
-    /// <summary>注册采集引擎及子模块，并注册到调度器</summary>
+    /// <summary>
+    /// 注册采集引擎及子模块。
+    /// </summary>
+    /// <param name="intervalMs">采集间隔（毫秒），实际由 <see cref="CollectionEngine"/> 控制</param>
+    /// <param name="maxConcurrency">最大并发采集设备数。默认 5</param>
+    /// <param name="circuitBreakerThreshold">熔断器连续失败阈值。默认 5</param>
+    /// <param name="circuitBreakerOpenSeconds">熔断打开冷却秒数。默认 30</param>
     public static IServiceCollection AddNitroCollection(
-        this IServiceCollection services, int intervalMs)
+        this IServiceCollection services,
+        int intervalMs,
+        int maxConcurrency = 5,
+        int circuitBreakerThreshold = 5,
+        int circuitBreakerOpenSeconds = 30)
     {
+        // 熔断器注册表（Singleton，跨采集轮次保持状态）
+        services.AddSingleton<ICircuitBreakerRegistry>(_ =>
+            new CircuitBreakerRegistry(
+                failureThreshold: circuitBreakerThreshold,
+                openDuration: TimeSpan.FromSeconds(circuitBreakerOpenSeconds),
+                maxOpenDuration: TimeSpan.FromMinutes(5)));
+
+        // 采集管道各组件（Singleton，无状态或自行管理状态）
         services.AddSingleton<IDeviceReader, DeviceReader>();
         services.AddSingleton<IPointValuePipeline, PointValuePipeline>();
         services.AddSingleton<IDataDispatcher, DataDispatcher>();
         services.AddSingleton<IHealthReporter, HealthReporter>();
 
-        // CollectionEngine 依赖 Scoped 的 IDeviceManager → 也是 Scoped
-        services.AddScoped<CollectionEngine>();
-
-        // Scheduler 每次执行时通过 IServiceScopeFactory 创建 scope
-        services.AddSingleton(sp =>
+        // DeviceCollector 为 Scoped（与 DeviceManager 一致，因消费 DbContext）
+        services.AddScoped<IDeviceCollector>(sp =>
         {
-            var scheduler = sp.GetRequiredService<IScheduler>();
-            var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-            scheduler.Register("CollectAllOnline", intervalMs, async ct =>
-            {
-                using var scope = scopeFactory.CreateScope();
-                var engine = scope.ServiceProvider.GetRequiredService<CollectionEngine>();
-                await engine.CollectAllOnlineAsync(ct);
-            });
-            return scheduler;
+            return new DeviceCollector(
+                sp.GetRequiredService<IDeviceManager>(),
+                sp.GetRequiredService<IDeviceReader>(),
+                sp.GetRequiredService<IPointValuePipeline>(),
+                sp.GetRequiredService<IDataDispatcher>(),
+                sp.GetRequiredService<IHealthReporter>(),
+                sp.GetRequiredService<ICircuitBreakerRegistry>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CollectionEngine>>(),
+                maxConcurrency);
         });
+
+        // 采集引擎 BackgroundService
+        services.AddHostedService<CollectionEngine>();
 
         return services;
     }

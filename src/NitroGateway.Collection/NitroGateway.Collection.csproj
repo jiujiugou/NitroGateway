@@ -7,13 +7,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
     <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\NitroGateway.Device\NitroGateway.Device.csproj" />
     <ProjectReference Include="..\NitroGateway.Protocol\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
-    <ProjectReference Include="..\NitroGateway.Scheduler\NitroGateway.Scheduler.csproj" />
+    <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
+    <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+    <ProjectReference Include="..\NitroGateway.Host\NitroGateway.Host.csproj" />
   </ItemGroup>
 
 </Project>

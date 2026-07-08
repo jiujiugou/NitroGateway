@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Shared;
+using NitroGateway.Telemetry;
+using NitroGateway.Telemetry.Tracing;
 using MqttNet = MQTTnet;
 
 namespace NitroGateway.Transport.MQTT;
@@ -124,8 +127,15 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// <inheritdoc />
     public async Task<OperationResult> PublishAsync(string topic, byte[] payload, int qos = 1, CancellationToken ct = default)
     {
+        using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.MqttPublish);
+        activity?.SetTag(GatewayActivityTags.MqttTopic, topic);
+
         if (State != MqttConnectionState.Connected)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag(GatewayActivityTags.ErrorMessage, "MQTT 未连接");
             return OperationalError.Unavailable($"MQTT 未连接，无法发布到 {topic}");
+        }
 
         try
         {
@@ -146,12 +156,19 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             var result = await _inner.PublishAsync(msg, ct);
 
             if (result.ReasonCode == MqttNet.MqttClientPublishReasonCode.Success)
+            {
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 return OperationResult.Success();
+            }
 
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag(GatewayActivityTags.ErrorMessage, $"MQTT 发布失败: {result.ReasonCode}");
             return OperationalError.General($"MQTT 发布失败: {result.ReasonCode} - {result.ReasonString}");
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag(GatewayActivityTags.ErrorMessage, ex.ToString());
             return OperationalError.General($"MQTT 发布异常: {ex.Message}");
         }
     }
@@ -222,6 +239,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         if (State == state) return;
         var old = State;
         State = state;
+        NitroMetrics.MqttState.Set((int)state);
         _logger.LogDebug("MQTT 状态变更: {Old} → {New}", old, state);
         StateChanged?.Invoke(state);
     }

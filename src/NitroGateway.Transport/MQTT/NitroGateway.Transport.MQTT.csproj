@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
   </ItemGroup>
 
   <ItemGroup>
