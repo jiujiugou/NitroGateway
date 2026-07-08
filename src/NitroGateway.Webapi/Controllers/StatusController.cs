@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Storage.Buffer;
@@ -7,6 +8,7 @@ using NitroGateway.Webapi.Models;
 namespace NitroGateway.Webapi.Controllers;
 
 [ApiController, Route("api/[controller]")]
+[Authorize(Roles = "Admin,Operator,Viewer")]
 public class StatusController : ControllerBase
 {
     private readonly IDeviceManager _devices;

@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <router-view v-if="$route.path === '/login'" />
+  <div v-else class="app-layout">
     <aside class="sidebar">
       <div class="sidebar-brand">
         <div class="brand-icon">⚡</div>
@@ -41,6 +42,7 @@
       </div>
     </main>
   </div>
+</div>
 </template>
 
 <script setup lang="ts">

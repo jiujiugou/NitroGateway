@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.Storage.TimeSeries;
 using NitroGateway.Webapi.Models;
@@ -5,6 +6,7 @@ using NitroGateway.Webapi.Models;
 namespace NitroGateway.Webapi.Controllers;
 
 [ApiController, Route("api/[controller]")]
+[Authorize(Roles = "Admin,Operator,Viewer")]
 public class MeasurementsController : ControllerBase
 {
     private readonly IMeasurementStore _store;

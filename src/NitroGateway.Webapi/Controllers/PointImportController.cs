@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
@@ -7,6 +8,7 @@ namespace NitroGateway.Webapi.Controllers;
 
 /// <summary>点位批量导入/导出 API</summary>
 [ApiController, Route("api/devices/{deviceId}/points")]
+[Authorize(Roles = "Admin,Operator")]
 public class PointImportController : ControllerBase
 {
     private readonly IPointManager _points;

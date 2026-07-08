@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/login', name: 'Login', component: () => import('../views/Login/LoginView.vue') },
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'Dashboard', component: () => import('../views/Dashboard/DashboardView.vue') },
     { path: '/devices', name: 'Devices', component: () => import('../views/Devices/DeviceListView.vue') },
@@ -13,6 +14,18 @@ const router = createRouter({
     { path: '/monitoring', name: 'Monitoring', component: () => import('../views/Monitoring/MonitoringView.vue') },
     { path: '/history', name: 'History', component: () => import('../views/History/HistoryView.vue') },
   ]
+})
+
+// 导航守卫：未登录跳 /login
+router.beforeEach((to, from, next) => {
+  const token = localStorage.getItem('token')
+  if (to.path !== '/login' && !token) {
+    next('/login')
+  } else if (to.path === '/login' && token) {
+    next('/dashboard')
+  } else {
+    next()
+  }
 })
 
 export default router

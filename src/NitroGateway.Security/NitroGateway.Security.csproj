@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="*" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="*" />
+    <PackageReference Include="FluentValidation" Version="*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

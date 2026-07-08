@@ -2,6 +2,9 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
 using NitroGateway.Collection.Cache;
+using NitroGateway.Security;
+using NitroGateway.Security.Audit;
+using NitroGateway.Security.Auth;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Forwarder;
 using NitroGateway.Host;
@@ -47,6 +50,21 @@ try
     builder.Host.UseSerilog();
 
 // ── DI ──
+// ── 安全 ──
+var jwtConfig = new JwtConfig
+{
+    SecretKey = builder.Configuration["Security:JwtSecretKey"] ?? "NitroGateway-DevKey-ChangeMe-In-Production-32chars!"
+};
+
+var users = builder.Configuration.GetSection("Security:Users").Get<List<UserConfig>>() ?? new List<UserConfig>
+{
+    new() { Username = "admin", Password = "admin123", Role = Roles.Admin },
+    new() { Username = "operator", Password = "oper123", Role = Roles.Operator },
+    new() { Username = "viewer", Password = "view123", Role = Roles.Viewer }
+};
+
+builder.Services.AddNitroSecurity(jwtConfig, users);
+
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
@@ -104,6 +122,9 @@ _ = Task.Run(async () =>
 });
 
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseMiddleware<AuditMiddleware>();
 app.MapHealthChecks("/healthz", new() { Predicate = _ => true });
 app.MapHealthChecks("/readyz", new() { Predicate = r => r.Tags.Contains("ready") });
 app.MapMetrics();

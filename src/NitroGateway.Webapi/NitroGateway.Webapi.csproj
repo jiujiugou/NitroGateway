@@ -23,6 +23,7 @@
     <ProjectReference Include="..\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
     <ProjectReference Include="..\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
+    <ProjectReference Include="..\NitroGateway.Security\NitroGateway.Security.csproj" />
     <ProjectReference Include="..\NitroGateway.Collection\NitroGateway.Collection.csproj" />
     <ProjectReference Include="..\NitroGateway.Forwarder\NitroGateway.Forwarder.csproj" />
     <ProjectReference Include="..\NitroGateway.Host\NitroGateway.Host.csproj" />

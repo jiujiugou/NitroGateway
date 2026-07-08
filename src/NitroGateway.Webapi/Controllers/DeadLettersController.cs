@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
@@ -7,6 +8,7 @@ namespace NitroGateway.Webapi.Controllers;
 
 /// <summary>死信队列管理 API</summary>
 [ApiController, Route("api/[controller]")]
+[Authorize(Roles = "Admin,Operator")]
 public class DeadLettersController : ControllerBase
 {
     private readonly IForwardBuffer _buffer;
