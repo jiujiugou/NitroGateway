@@ -32,7 +32,8 @@
       "Bash(taskkill /F /IM NitroGateway.Webapi.exe)",
       "Bash(git checkout *)",
       "Bash(wc -l \"D:/resource/Modbus.project/Modbus.Project/FrmModbusTCP.cs\" \"D:/resource/Modbus.project/ModbusTCP/ModbusTcp.cs\" \"D:/resource/Modbus.project/ModbusTCP/ByteArray.cs\" \"D:/resource/Modbus.project/Modbus.Project/Program.cs\" 2>/dev/null)",
-      "Read(//d/resource/Modbus.project/Modbus.Project/**)"
+      "Read(//d/resource/Modbus.project/Modbus.Project/**)",
+      "Bash(git commit -m 'feat: CSV 导入/导出 + 批量点位生成 *)"
     ]
   }
 }

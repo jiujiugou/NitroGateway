@@ -19,6 +19,9 @@ public static class DeviceServiceCollectionExtensions
         services.AddScoped<IDeviceManager, DeviceManager>();
         services.AddScoped<IPointManager, PointManager>();
 
+        // 点位批量服务（Singleton，无状态）
+        services.AddSingleton<PointBatchService>();
+
         // HealthMonitor — Singleton，可配置阈值
         services.AddSingleton<IDeviceHealthMonitor>(sp =>
             new DeviceHealthMonitor(
