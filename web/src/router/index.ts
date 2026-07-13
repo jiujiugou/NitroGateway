@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/devices/:id/edit', name: 'DeviceEdit', component: () => import('../views/Devices/DeviceForm.vue') },
     { path: '/devices/:deviceId/points', name: 'Points', component: () => import('../views/Points/PointList.vue') },
     { path: '/monitoring', name: 'Monitoring', component: () => import('../views/Monitoring/MonitoringView.vue') },
+    { path: '/system', name: 'SystemStatus', component: () => import('../views/System/SystemStatus.vue') },
     { path: '/history', name: 'History', component: () => import('../views/History/HistoryView.vue') },
   ]
 })

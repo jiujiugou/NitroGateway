@@ -2,7 +2,7 @@ using System.Diagnostics;
 using NitroGateway.Domain.Protocols;
 using NitroGateway.Shared;
 using DomainDevice = NitroGateway.Domain.Devices.Device;
-using NitroGateway.Protocol;
+using NitroGateway.Protocols;
 using NitroGateway.Telemetry.Tracing;
 using Microsoft.Extensions.Logging;
 
@@ -27,7 +27,7 @@ public sealed class DeviceReader : IDeviceReader
         activity?.SetTag(GatewayActivityTags.DeviceId, device.Id.ToString());
         activity?.SetTag(GatewayActivityTags.DeviceProtocol, device.Protocol.Name);
 
-        _logger.LogInformation("开始读取设备：{device}", device.Name);
+        _logger.LogDebug("开始读取设备：{device}", device.Name);
         var points = device.Points.Where(p => p.Enabled).ToList();
         if (points.Count == 0)
             return Array.Empty<RawPointValue>();
@@ -57,9 +57,9 @@ public sealed class DeviceReader : IDeviceReader
             catch (Exception ex)
             {
                 lastError = ex;
-                _logger.LogWarning(ex,
-                    "设备读取失败，第 {try} 次重试：{device}",
-                    i + 1, device.Name);
+                _logger.LogDebug(ex,
+                    "设备读取失败，第 {try}/{max} 次重试：{device}",
+                    i + 1, maxRetry, device.Name);
 
                 if (i < maxRetry - 1)
                     await Task.Delay(delay * (1 << i), ct); // 指数退避
@@ -69,6 +69,7 @@ public sealed class DeviceReader : IDeviceReader
                 await driver.DisconnectAsync(ct);
             }
         }
-        throw new Exception("设备读取失败", lastError);
+        return OperationalError.Timeout(
+            $"设备读取失败，{maxRetry} 次重试后仍不可达: {lastError?.Message}");
     }
 }

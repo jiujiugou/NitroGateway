@@ -1,5 +1,5 @@
 using NitroGateway.Domain.Devices;
-using NitroGateway.Protocol.Modbus;
+using NitroGateway.Protocols.Modbus;
 using Xunit;
 
 namespace NitroGateway.UnitTests;

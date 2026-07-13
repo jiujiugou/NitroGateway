@@ -10,6 +10,29 @@ public class PointValuePipelineTests
     private readonly Guid _deviceId = Guid.NewGuid();
     private readonly PointValuePipeline _pipeline = new();
 
+    /// <summary>
+    /// bool类型不应该经过缩放或偏移处理，应该直接传递原始值。
+    /// </summary>
+    [Fact]
+    public void Bool_Value_Should_Pass_Through()
+    {
+        var pt = MakePoint(DataType.Bool, 1.0, 0);
+        var raw = new RawPointValue { Point = pt, Value = true, Timestamp = DateTime.UtcNow };
+        var result = _pipeline.Process(_deviceId, [raw]);
+        Assert.Single(result);
+        Assert.Equal(true, result[0].Value);
+        Assert.Equal(QualityCode.Good, result[0].Quality);
+    }
+    [Fact]
+    public void Numeric_Value_Should_Be_Scaled()
+    {
+        var pt = MakePoint(DataType.Int16, 2.0, 5);
+        var raw = new RawPointValue { Point = pt, Value = 10, Timestamp = DateTime.UtcNow };
+        var result = _pipeline.Process(_deviceId, [raw]);
+        Assert.Single(result);
+        Assert.Equal(25.0, (double)result[0].Value!, 2); // (10 * 2) + 5 = 25
+        Assert.Equal(QualityCode.Good, result[0].Quality);
+    }
     [Fact]
     public void Float_NoScale_ReturnsEngineeringValue()
     {

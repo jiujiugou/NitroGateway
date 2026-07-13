@@ -14,7 +14,7 @@ public class DeviceHealthMonitorTests
     {
         var triggered = false;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
-        monitor.ThresholdReached += (_, s) => { if (s == DeviceStatus.Offline) triggered = true; };
+        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Offline) triggered = true; };
 
         for (var i = 0; i < 9; i++) monitor.ReportFailure(_deviceId, "timeout");
         Assert.False(triggered);
@@ -28,7 +28,7 @@ public class DeviceHealthMonitorTests
     {
         var triggered = false;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
-        monitor.ThresholdReached += (_, s) => { if (s == DeviceStatus.Online) triggered = true; };
+        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Online) triggered = true; };
 
         // 先触发离线
         for (var i = 0; i < 10; i++) monitor.ReportFailure(_deviceId, "timeout");
@@ -49,7 +49,7 @@ public class DeviceHealthMonitorTests
         monitor.ReportSuccess(_deviceId);   // 重置失败计数
 
         var triggered = false;
-        monitor.ThresholdReached += (_, s) => { if (s == DeviceStatus.Offline) triggered = true; };
+        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Offline) triggered = true; };
         monitor.ReportFailure(_deviceId, "timeout");
         Assert.False(triggered);  // 不会触发，因为之前被重置了
     }
@@ -61,7 +61,7 @@ public class DeviceHealthMonitorTests
         for (var i = 0; i < 2; i++) monitor.ReportSuccess(_deviceId);
 
         var triggered = false;
-        monitor.ThresholdReached += (_, s) => { if (s == DeviceStatus.Online) triggered = true; };
+        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Online) triggered = true; };
         monitor.ReportFailure(_deviceId, "timeout"); // 重置成功计数
         monitor.ReportSuccess(_deviceId);
         Assert.False(triggered);  // 只成功了1次，不够3次

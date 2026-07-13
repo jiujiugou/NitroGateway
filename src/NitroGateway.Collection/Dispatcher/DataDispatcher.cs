@@ -10,18 +10,18 @@ using NitroGateway.Telemetry.Tracing;
 
 namespace NitroGateway.Collection;
 
-/// <summary>数据分发实现。双写时序库 + 转发缓冲，互不阻塞</summary>
+/// <summary>数据分发实现。双写时序库 + 转发缓冲，互不阻塞。事件通过 SinkDispatcher Channel 异步推送。</summary>
 public sealed class DataDispatcher : IDataDispatcher
 {
     private readonly IMeasurementStore _timeSeries;
     private readonly IForwardBuffer _buffer;
-    private readonly IEnumerable<IPointStoredSink> _sinks;
+    private readonly SinkDispatcher _sinks;
     private readonly ILogger<DataDispatcher> _logger;
 
     public DataDispatcher(
         IMeasurementStore timeSeries,
         IForwardBuffer buffer,
-        IEnumerable<IPointStoredSink> sinks,
+        SinkDispatcher sinks,
         ILogger<DataDispatcher> logger)
     {
         _timeSeries = timeSeries;
@@ -78,8 +78,8 @@ public sealed class DataDispatcher : IDataDispatcher
                 _logger.LogWarning("缓冲入队失败: {Message}", err.Message);
         }
 
-        // ── 通知订阅方（不阻塞主流程）──
-        _ = NotifySinksAsync(deviceId, snapshots, ct);
+        // ── 通知订阅方（Channel 推送，非阻塞）──
+        _sinks.Post(new PointStoredEvent { DeviceId = deviceId, Snapshots = snapshots });
 
         if (tsOk && bufOk)
         {
@@ -95,19 +95,6 @@ public sealed class DataDispatcher : IDataDispatcher
         activity?.SetStatus(ActivityStatusCode.Error);
         activity?.SetTag(GatewayActivityTags.ErrorMessage, worst.Message);
         return worst;
-    }
-
-    // ── 事件通知（不阻塞主流程）──
-    private async Task NotifySinksAsync(Guid deviceId, IReadOnlyList<PointSnapshot> snapshots, CancellationToken ct)
-    {
-        if (!_sinks.Any()) return;
-
-        var e = new PointStoredEvent { DeviceId = deviceId, Snapshots = snapshots };
-        foreach (var sink in _sinks)
-        {
-            try { await sink.OnStoredAsync(e, ct); }
-            catch { /* sink 异常不影响采集 */ }
-        }
     }
 
     private static BatchMeasurements ToBatchMeasurements(

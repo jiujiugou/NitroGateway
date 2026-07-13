@@ -1,6 +1,6 @@
 using NitroGateway.Domain.Devices;
 
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>
 /// Modbus 协议工具类。TCP 和 RTU 驱动共享的解码/分组/编码逻辑。

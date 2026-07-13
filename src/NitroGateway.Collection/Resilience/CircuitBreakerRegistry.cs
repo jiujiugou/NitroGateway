@@ -43,4 +43,10 @@ public sealed class CircuitBreakerRegistry : ICircuitBreakerRegistry
             breaker.Reset();
         }
     }
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<Guid, ICircuitBreaker> GetAll()
+    {
+        return _map.ToDictionary(kv => Guid.Parse(kv.Key), kv => kv.Value);
+    }
 }

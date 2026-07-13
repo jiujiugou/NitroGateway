@@ -8,6 +8,7 @@ namespace NitroGateway.Telemetry.Tracing;
 /// </summary>
 public static class GatewayActivitySource
 {
-    /// <summary>NitroGateway 全局 ActivitySource。名称固定为 "NitroGateway"，版本 1.0</summary>
-    public static readonly ActivitySource Source = new("NitroGateway", "1.0.0");
+    public const string Name = "NitroGateway";
+    /// <summary>NitroGateway 全局 ActivitySource。名称固定为 "NitroGateway"</summary>
+    public static readonly ActivitySource Source = new(Name);
 }

@@ -27,8 +27,12 @@ public sealed class CircuitBreaker : ICircuitBreaker
     private int _failureCount;
     private int _consecutiveSuccesses;
     private DateTime _openUntil = DateTime.MinValue;
+    private DateTime _probeStarted = DateTime.MinValue;
     private TimeSpan _currentOpenDuration;
     private bool _probing;
+
+    /// <summary>探测请求超时（30s），超时后自动释放 _probing 锁</summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// 创建熔断器。
@@ -67,9 +71,17 @@ public sealed class CircuitBreaker : ICircuitBreaker
 
                 if (state == CircuitState.HalfOpen)
                 {
+                    // 探测超时保护：如果上一个探测卡住超过 30s，自动释放
+                    if (_probing && DateTime.UtcNow - _probeStarted > ProbeTimeout)
+                    {
+                        _probing = false;
+                    }
+
                     if (_probing)
                         return true;   // 已有探测在进行，拒绝新的
-                    _probing = true;    // 第一次进入 HalfOpen：放行
+
+                    _probing = true;     // 第一次进入 HalfOpen：放行
+                    _probeStarted = DateTime.UtcNow;
                     return false;
                 }
 
@@ -92,6 +104,7 @@ public sealed class CircuitBreaker : ICircuitBreaker
                 _state = CircuitState.Closed;
                 _currentOpenDuration = _baseOpenDuration;
                 _probing = false;
+                _probeStarted = DateTime.MinValue;
             }
         }
     }
@@ -112,6 +125,7 @@ public sealed class CircuitBreaker : ICircuitBreaker
                     Math.Min(_currentOpenDuration.Ticks * 2, _maxOpenDuration.Ticks));
                 _openUntil = DateTime.UtcNow + _currentOpenDuration;
                 _probing = false;
+                _probeStarted = DateTime.MinValue;
             }
             else if (_state == CircuitState.Closed && _failureCount >= _failureThreshold)
             {
@@ -134,6 +148,7 @@ public sealed class CircuitBreaker : ICircuitBreaker
             _consecutiveSuccesses = 0;
             _currentOpenDuration = _baseOpenDuration;
             _probing = false;
+            _probeStarted = DateTime.MinValue;
         }
     }
 

@@ -1,4 +1,4 @@
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>Modbus 数据功能区</summary>
 public enum ModbusArea

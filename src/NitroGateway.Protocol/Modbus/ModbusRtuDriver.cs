@@ -5,7 +5,7 @@ using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
 using NitroGateway.Shared;
 
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>
 /// Modbus RTU 协议驱动，基于 FluentModbus ModbusRtuClient。
@@ -14,7 +14,7 @@ namespace NitroGateway.Protocol.Modbus;
 public sealed class ModbusRtuDriver : IProtocolDriver, IDisposable
 {
     private readonly DeviceConnection _connection;
-    private readonly ILogger<ModbusRtuDriver> _logger;
+    private readonly ILogger _logger;
     private readonly ModbusAddressParser _addressParser = new();
     private readonly ModbusRtuClient _client = new();
     private byte _unitId = 1;
@@ -31,7 +31,7 @@ public sealed class ModbusRtuDriver : IProtocolDriver, IDisposable
     public DriverCapability Capability => ModbusDriverCapability.Instance;
 
     /// <summary>创建 Modbus RTU 驱动实例</summary>
-    public ModbusRtuDriver(DeviceConnection connection, ILogger<ModbusRtuDriver> logger)
+    public ModbusRtuDriver(DeviceConnection connection, ILogger logger)
     {
         _connection = connection;
         _logger = logger;

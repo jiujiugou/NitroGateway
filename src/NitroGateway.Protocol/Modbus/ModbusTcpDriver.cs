@@ -4,7 +4,7 @@ using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
 using NitroGateway.Shared;
 
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>
 /// Modbus TCP 协议驱动，基于 FluentModbus ModbusTcpClient 实现。
@@ -13,7 +13,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
 {
     private readonly DeviceConnection _connection;
     private readonly ModbusEndian _endian;
-    private readonly ILogger<ModbusTcpDriver> _logger;
+    private readonly ILogger _logger;
     private readonly ModbusAddressParser _addressParser = new();
     private readonly ModbusTcpClient _client = new();
     private byte _unitId = 1;
@@ -27,7 +27,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IAsyncDisposable
     /// <summary>创建 Modbus 驱动实例</summary>
     /// <param name="connection">设备连接参数（Endpoint、超时、UnitId、Endian 等）</param>
     /// <param name="logger">日志记录器</param>
-    public ModbusTcpDriver(DeviceConnection connection, ILogger<ModbusTcpDriver> logger)
+    public ModbusTcpDriver(DeviceConnection connection, ILogger logger)
     {
         _connection = connection;
         _logger = logger;

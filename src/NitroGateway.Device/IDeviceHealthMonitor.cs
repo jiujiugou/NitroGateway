@@ -25,5 +25,5 @@ public interface IDeviceHealthMonitor
     IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots();
 
     /// <summary>触发状态变更时调用此回调（Offline / Online）</summary>
-    event Action<Guid, Domain.Devices.DeviceStatus>? ThresholdReached;
+    event Action<Guid, Domain.Devices.DeviceStatus>? StatusChanged;
 }

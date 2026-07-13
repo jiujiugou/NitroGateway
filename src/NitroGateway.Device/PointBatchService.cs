@@ -197,11 +197,22 @@ public sealed class PointBatchService
     {
         if (padLen == 0) return template;
 
+        // 优先查找 {###} 模式（花括号包裹的占位符）
+        var hashStr = new string('#', padLen);
+        var braced = "{" + hashStr + "}";
+        var idx = template.IndexOf(braced, StringComparison.Ordinal);
+        if (idx >= 0)
+        {
+            var replaced = value.ToString().PadLeft(padLen, '0');
+            return template[..idx] + replaced + template[(idx + braced.Length)..];
+        }
+
+        // 回退：裸 ### 模式
         var placeholder = new string('#', padLen);
-        var replaced = value.ToString().PadLeft(padLen, '0');
-        var idx = template.IndexOf(placeholder, StringComparison.Ordinal);
+        idx = template.IndexOf(placeholder, StringComparison.Ordinal);
         if (idx < 0) return template;
 
-        return template[..idx] + replaced + template[(idx + padLen)..];
+        var repl = value.ToString().PadLeft(padLen, '0');
+        return template[..idx] + repl + template[(idx + padLen)..];
     }
 }

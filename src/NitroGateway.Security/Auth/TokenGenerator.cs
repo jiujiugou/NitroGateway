@@ -19,7 +19,7 @@ public sealed class TokenGenerator
 
     public TokenGenerator(
         JwtConfig config,
-        IEnumerable<UserConfig> users,
+        IReadOnlyList<UserConfig> users,
         ILogger<TokenGenerator> logger)
     {
         _config = config;
@@ -31,7 +31,7 @@ public sealed class TokenGenerator
     public string? IssueToken(string username, string password)
     {
         var user = _users.FirstOrDefault(u =>
-            string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
+           u.Username==username);
 
         if (user is null)
         {
@@ -48,7 +48,7 @@ public sealed class TokenGenerator
             return null;
         }
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config.SecretKey));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config.JwtSecretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]

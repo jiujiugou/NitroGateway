@@ -1,0 +1,21 @@
+# NitroGateway 演示环境
+# 启动: docker compose up -d
+# 停止: docker compose down
+
+services:
+  # MQTT Broker (Mosquitto 2.0)
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"    # MQTT
+      - "9001:9001"    # WebSocket (前端可选)
+    volumes:
+      - ./tools/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+
+  # 时序数据库 (可选，Grafana 展示用)
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   ports: ["3000:3000"]

@@ -273,7 +273,11 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// <summary>MQTTnet 断开回调：如配置了自动重连则启动重连流程</summary>
     private async Task OnDisconnectedAsync(MqttNet.MqttClientDisconnectedEventArgs e)
     {
-        _logger.LogWarning("MQTT 意外断开: {Reason}", e.Reason);
+        // 从未连接成功过的断开是初始连接失败，不是"意外断开"
+        if (State is MqttConnectionState.Connecting or MqttConnectionState.Disconnected)
+            _logger.LogDebug("MQTT 连接失败: {Reason}", e.Reason);
+        else
+            _logger.LogWarning("MQTT 意外断开: {Reason}", e.Reason);
 
         // Faulted/Disconnected → 不重连（已经放弃或主动断开）
         if (State is MqttConnectionState.Faulted or MqttConnectionState.Disconnected)

@@ -1,4 +1,4 @@
-namespace NitroGateway.Protocol;
+namespace NitroGateway.Protocols;
 
 /// <summary>协议地址解析器。每种协议提供一个实现</summary>
 public interface IAddressParser

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NitroGateway.Collection;
 using NitroGateway.DeviceManagement;
+using NitroGateway.Forwarder;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Transport.MQTT;
 using NitroGateway.Webapi.Models;
@@ -13,22 +15,28 @@ public class StatusController : ControllerBase
 {
     private readonly IDeviceManager _devices;
     private readonly IDeviceHealthMonitor _healthMonitor;
-    private readonly IForwardBuffer? _buffer;
-    private readonly IMqttClient? _mqtt;
+    private readonly IForwardBuffer _buffer;
+    private readonly IMqttClient _mqtt;
+    private readonly ForwardingThrottle _throttle;
+    private readonly ICircuitBreakerRegistry _breakers;
 
     public StatusController(
         IDeviceManager devices,
         IDeviceHealthMonitor healthMonitor,
-        IForwardBuffer? buffer = null,
-        IMqttClient? mqtt = null)
+        IForwardBuffer buffer,
+        IMqttClient mqtt,
+        ForwardingThrottle throttle,
+        ICircuitBreakerRegistry breakers)
     {
         _devices = devices;
         _healthMonitor = healthMonitor;
         _buffer = buffer;
         _mqtt = mqtt;
+        _throttle = throttle;
+        _breakers = breakers;
     }
 
-    /// <summary>设备状态概览（来自 DeviceManager）</summary>
+    /// <summary>设备状态概览</summary>
     [HttpGet("devices")]
     public async Task<ActionResult<ApiResponse<List<DeviceStatusSummaryDto>>>> DeviceSummary()
     {
@@ -46,7 +54,7 @@ public class StatusController : ControllerBase
         return Ok(ApiResponse<List<DeviceStatusSummaryDto>>.Ok(summaries));
     }
 
-    /// <summary>设备健康详情（来自 DeviceHealthMonitor，含采集统计）</summary>
+    /// <summary>设备健康详情</summary>
     [HttpGet("devices/health")]
     public ActionResult<ApiResponse<List<DeviceHealthDto>>> DeviceHealth()
     {
@@ -64,14 +72,28 @@ public class StatusController : ControllerBase
         return Ok(ApiResponse<List<DeviceHealthDto>>.Ok(items));
     }
 
-    /// <summary>系统状态概览</summary>
+    /// <summary>系统状态面板（完整聚合）</summary>
     [HttpGet("system")]
     public ActionResult<ApiResponse<object>> SystemStatus()
     {
+        var breakerStates = _breakers.GetAll().Select(kv => new
+        {
+            DeviceId = kv.Key.ToString(),
+            State = kv.Value.State.ToString(),
+            IsOpen = kv.Value.IsOpen
+        }).ToList();
+
         return Ok(ApiResponse<object>.Ok(new
         {
-            BufferBacklog = _buffer?.Count ?? 0,
-            MqttConnected = _mqtt?.State == MqttConnectionState.Connected
+            MqttState = _mqtt.State.ToString(),
+            MqttConnected = _mqtt.State == MqttConnectionState.Connected,
+            BufferBacklog = _buffer.Count,
+            ThrottleBatchSize = _throttle.MaxBatchSize,
+            ThrottleDelayMs = _throttle.DelayMs,
+            OnlineDevices = _devices.GetByStatusAsync(Domain.Devices.DeviceStatus.Online).Result.IsSuccess
+                ? _devices.GetByStatusAsync(Domain.Devices.DeviceStatus.Online).Result.Value!.Count
+                : 0,
+            CircuitBreakers = breakerStates
         }));
     }
 }

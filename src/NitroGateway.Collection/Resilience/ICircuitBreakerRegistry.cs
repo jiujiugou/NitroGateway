@@ -8,4 +8,7 @@ public interface ICircuitBreakerRegistry
 
     /// <summary>重置指定设备的熔断器。如果不存在则无操作</summary>
     void Reset(Guid deviceId);
+
+    /// <summary>获取所有已知熔断器及对应设备 ID</summary>
+    IReadOnlyDictionary<Guid, ICircuitBreaker> GetAll();
 }

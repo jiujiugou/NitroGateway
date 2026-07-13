@@ -9,6 +9,8 @@
   <ItemGroup>
     <PackageReference Include="prometheus-net" Version="*" />
     <PackageReference Include="prometheus-net.AspNetCore" Version="*" />
+    <PackageReference Include="OpenTelemetry" Version="*" />
+    <PackageReference Include="OpenTelemetry" Version="*" />
   </ItemGroup>
 
 </Project>

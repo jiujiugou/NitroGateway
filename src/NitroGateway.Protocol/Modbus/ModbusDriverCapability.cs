@@ -1,6 +1,6 @@
 using NitroGateway.Domain.Protocols;
 
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>Modbus 驱动能力</summary>
 public static class ModbusDriverCapability

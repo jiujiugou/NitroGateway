@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.Configuration;
@@ -17,8 +18,10 @@ public static class SqliteServiceCollectionExtensions
     /// <param name="services">服务集合</param>
     /// <param name="connectionString">SQLite 连接字符串，如 "Data Source=nitrogateway.db"</param>
     public static IServiceCollection AddNitroSqlite(
-        this IServiceCollection services, string connectionString)
+        this IServiceCollection services, IConfiguration configuration)
     {
+        var connectionString = configuration.GetValue<string>("Persistence:ConnectionString")
+    ?? throw new InvalidOperationException("Persistence:ConnectionString 未配置。");
         // EF Core（Configuration）
         services.AddDbContext<NitroGatewayDbContext>(options =>
             options.UseSqlite(connectionString));

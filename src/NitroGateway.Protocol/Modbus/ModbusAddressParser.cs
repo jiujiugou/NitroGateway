@@ -1,6 +1,6 @@
 using NitroGateway.Domain.Devices;
 
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>Modbus 地址解析器</summary>
 public sealed class ModbusAddressParser : IAddressParser

@@ -34,7 +34,7 @@ public static class DeviceServiceCollectionExtensions
         {
             var monitor = (DeviceHealthMonitor)sp.GetRequiredService<IDeviceHealthMonitor>();
             var factory = sp.GetRequiredService<IServiceScopeFactory>();
-            monitor.ThresholdReached += async (deviceId, status) =>
+            monitor.StatusChanged += async (deviceId, status) =>
             {
                 monitor.UpdateStatus(deviceId, status);
                 using var scope = factory.CreateScope();

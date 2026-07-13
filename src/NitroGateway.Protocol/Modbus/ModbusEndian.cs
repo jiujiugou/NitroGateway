@@ -1,4 +1,4 @@
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>
 /// Modbus 多寄存器字节序。

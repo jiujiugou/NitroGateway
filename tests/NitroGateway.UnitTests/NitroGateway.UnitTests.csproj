@@ -18,6 +18,11 @@
     <ProjectReference Include="..\..\src\NitroGateway.Protocol\Modbus\NitroGateway.Protocol.Modbus.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Device\NitroGateway.Device.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Forwarder\NitroGateway.Forwarder.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Security\NitroGateway.Security.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

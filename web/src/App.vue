@@ -22,6 +22,9 @@
         <router-link to="/history" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📈</span><span>历史数据</span>
         </router-link>
+        <router-link to="/system" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">🖥️</span><span>系统状态</span>
+        </router-link>
       </nav>
       <div class="sidebar-footer">
         <div class="version-tag">v1.0.0</div>
@@ -42,14 +45,18 @@
       </div>
     </main>
   </div>
-</div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { getSystemStatus } from './api/status'
+const route = useRoute()
 const mqttConnected = ref(false); const backlog = ref(0)
-onMounted(async () => { try { const s = await getSystemStatus(); mqttConnected.value = s.mqttConnected; backlog.value = s.bufferBacklog } catch {} })
+onMounted(async () => {
+  if (route.path === '/login') return
+  try { const s = await getSystemStatus(); mqttConnected.value = s.mqttConnected; backlog.value = s.bufferBacklog } catch {}
+})
 </script>
 
 <style scoped>

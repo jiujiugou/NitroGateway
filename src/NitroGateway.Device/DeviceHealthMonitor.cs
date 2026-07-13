@@ -18,7 +18,7 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
     public int RecoveryThreshold { get; }
 
     /// <inheritdoc />
-    public event Action<Guid, Domain.Devices.DeviceStatus>? ThresholdReached;
+    public event Action<Guid, Domain.Devices.DeviceStatus>? StatusChanged;
 
     public DeviceHealthMonitor(
         ILogger<DeviceHealthMonitor> logger,
@@ -52,7 +52,7 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
         {
             _successes.TryRemove(deviceId, out _);
             _logger.LogInformation("设备 {DeviceId} 连续成功 {Count} 次，触发恢复", deviceId, count);
-            ThresholdReached?.Invoke(deviceId, Domain.Devices.DeviceStatus.Online);
+            StatusChanged?.Invoke(deviceId, Domain.Devices.DeviceStatus.Online);
         }
     }
 
@@ -77,7 +77,7 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
         {
             _failures.TryRemove(deviceId, out _);
             _logger.LogWarning("设备 {DeviceId} 连续失败 {Count} 次，触发离线", deviceId, count);
-            ThresholdReached?.Invoke(deviceId, Domain.Devices.DeviceStatus.Offline);
+            StatusChanged?.Invoke(deviceId, Domain.Devices.DeviceStatus.Offline);
         }
     }
 

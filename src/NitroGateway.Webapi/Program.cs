@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
-using NitroGateway.Collection.Cache;
 using NitroGateway.Security;
 using NitroGateway.Security.Audit;
 using NitroGateway.Security.Auth;
@@ -10,7 +9,7 @@ using NitroGateway.Forwarder;
 using NitroGateway.Host;
 using NitroGateway.Persistence;
 using NitroGateway.Persistence.Sqlite;
-using NitroGateway.Protocol.Modbus;
+using NitroGateway.Protocols;
 using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 using NitroGateway.Webapi.HealthChecks;
@@ -19,59 +18,31 @@ using Prometheus;
 using Serilog;
 using NitroGateway.Webapi;
 
+var builder = WebApplication.CreateBuilder(args);
 // ── 参数 ──
-var dbPath = Path.GetFullPath("nitrogateway.db");
-var remainingArgs = new List<string>();
-for (var i = 0; i < args.Length; i++)
-{
-    if (args[i] == "--db" && i + 1 < args.Length) dbPath = Path.GetFullPath(args[++i]);
-    else remainingArgs.Add(args[i]);
-}
+var dbPath = builder.Configuration["Persistence:DbPath"];
 
 // ── Serilog ──
-Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-    .Enrich.FromLogContext()
-    .Enrich.WithMachineName()
-    .Enrich.WithThreadId()
-    .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter())
-    .WriteTo.File(
-        new Serilog.Formatting.Compact.CompactJsonFormatter(),
-        "logs/nitrogateway-.log",
-        rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 7)
-    .CreateLogger();
 
-try
+builder.Host.UseSerilog((context, services, configuration) =>
 {
-    var builder = WebApplication.CreateBuilder([.. remainingArgs]);
-
-    builder.Host.UseSerilog();
+    configuration.ReadFrom.Configuration(context.Configuration)
+                 .ReadFrom.Services(services)
+                 .Enrich.FromLogContext();
+});
 
 // ── DI ──
 // ── 安全 ──
-var jwtConfig = new JwtConfig
-{
-    SecretKey = builder.Configuration["Security:JwtSecretKey"] ?? "NitroGateway-DevKey-ChangeMe-In-Production-32chars!"
-};
 
-var users = builder.Configuration.GetSection("Security:Users").Get<List<UserConfig>>() ?? new List<UserConfig>
-{
-    new() { Username = "admin", Password = "admin123", Role = Roles.Admin },
-    new() { Username = "operator", Password = "oper123", Role = Roles.Operator },
-    new() { Username = "viewer", Password = "view123", Role = Roles.Viewer }
-};
-
-builder.Services.AddNitroSecurity(jwtConfig, users);
+builder.Services.AddNitroSecurity(builder.Configuration);
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
 builder.Services.AddNitroGatewayHost();
-builder.Services.AddNitroSqlite($"Data Source={dbPath}");
+builder.Services.AddNitroSqlite(builder.Configuration);
 builder.Services.AddNitroDevice();
-builder.Services.AddNitroModbus();
+builder.Services.AddNitroProtocol();
 builder.Services.AddNitroAlarm();
 builder.Services.AddNitroCollection(intervalMs: 1000);
 builder.Services.AddNitroForwarder(intervalMs: 5000);
@@ -86,32 +57,13 @@ builder.Services.AddHealthChecks()
 
 builder.Services.AddSignalR();
 builder.Services.AddControllers();
-
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 // ── 建表 ──
-MigrationRunner.Run($"Data Source={dbPath}");
-
-// ── DeviceCache 初始化（从 DB 全量加载到内存）──
-{
-    var cache = app.Services.GetRequiredService<DeviceCache>();
-    var dm = app.Services.GetRequiredService<IDeviceManager>();
-    await cache.LoadAsync(dm);
-}
-
-// ── HealthMonitor ↔ CircuitBreaker 联动 ──
-// 设备恢复 Online → 强制重置熔断器为 Closed
-{
-    var monitor = app.Services.GetRequiredService<IDeviceHealthMonitor>();
-    var breakers = app.Services.GetRequiredService<ICircuitBreakerRegistry>();
-    monitor.ThresholdReached += (deviceId, status) =>
-    {
-        if (status == NitroGateway.Domain.Devices.DeviceStatus.Online)
-        {
-            breakers.Reset(deviceId);
-        }
-    };
-}
+//MigrationRunner.Run($"Data Source={dbPath}");
+app.InitializeDatabase();
 
 // ── MQTT（后台）──
 _ = Task.Run(async () =>
@@ -131,13 +83,6 @@ app.MapMetrics();
 app.MapControllers();
 app.MapHub<LiveDataHub>("/hubs/live");
 
-    app.Run();
-}
-catch (Exception ex)
-{
-    Log.Fatal(ex, "应用启动失败");
-}
-finally
-{
-    Log.CloseAndFlush();
-}
+app.Run();
+
+

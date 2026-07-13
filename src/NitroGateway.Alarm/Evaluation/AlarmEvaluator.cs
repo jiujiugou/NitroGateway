@@ -12,6 +12,15 @@ public sealed class AlarmEvaluator
     private readonly ConcurrentDictionary<Guid, RuleState> _states = new();
 
     /// <summary>
+    /// 清除指定规则的运行时状态。应在规则被删除时调用，
+    /// 避免 _states 字典只增不减导致的内存泄漏。
+    /// </summary>
+    public void ClearState(Guid ruleId)
+    {
+        _states.TryRemove(ruleId, out _);
+    }
+
+    /// <summary>
     /// 评估一个点位的采集值，返回触发的告警（新触发或恢复）。
     /// 调用方应处理返回结果：持久化新告警、更新状态、发送通知。
     /// </summary>

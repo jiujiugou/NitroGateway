@@ -1,4 +1,4 @@
-namespace NitroGateway.Protocol.Modbus;
+namespace NitroGateway.Protocols.Modbus;
 
 /// <summary>Modbus 地址</summary>
 public sealed record ModbusAddress(
