@@ -79,4 +79,9 @@ public static class NitroMetrics
     public static readonly Gauge DevicesOnline = Metrics.CreateGauge(
         "nitro_devices_online",
         "当前在线设备数");
+
+    /// <summary>可用设备数</summary>
+    public static readonly Gauge DevicesAvailable = Metrics.CreateGauge(
+        "nitro_devices_available",
+        "当前可用设备数");
 }

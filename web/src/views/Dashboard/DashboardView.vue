@@ -19,15 +19,38 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getDevices } from '../../api/devices'
+import { createLiveConnection } from '../../api/signalr'
 import type { Device } from '../../api/types'
+import type { HubConnection } from '@microsoft/signalr'
 import StatusTag from '../../components/DeviceStatusTag.vue'
+
 const devices = ref<Device[]>([])
+const latestData = ref<Record<string, any>>({})
+let conn: HubConnection | null = null
+
 const online = computed(() => devices.value.filter(d=>d.status==='Online').length)
 const offline = computed(() => devices.value.filter(d=>d.status==='Offline'||d.status==='Error').length)
 const totalPoints = computed(() => devices.value.reduce((s,d)=>s+(d.points?.length??0), 0))
-onMounted(async () => { try { devices.value = await getDevices() } catch {} })
+
+onMounted(async () => {
+  try { devices.value = await getDevices() } catch {}
+  conn = createLiveConnection()
+  conn.on('Measurement', (data: any[]) => {
+    data.forEach((m: any) => { latestData.value[m.pointId] = m })
+  })
+  conn.on('DeviceStatusChanged', (d: { deviceId: string; status: string }) => {
+    const dev = devices.value.find(x => x.id === d.deviceId)
+    if (dev) dev.status = d.status
+  })
+  try { await conn.start() } catch (e) { console.warn('SignalR:', e) }
+  devices.value.filter(d => d.status === 'Online').forEach(d => {
+    conn?.invoke('SubscribeDevice', d.id).catch(() => {})
+  })
+})
+
+onUnmounted(() => { conn?.stop() })
 </script>
 <style scoped>
 .page-title { margin-bottom:24px; }

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Dapper;
 using Microsoft.Data.Sqlite;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Shared;
@@ -8,30 +9,16 @@ namespace NitroGateway.Persistence.Sqlite;
 
 /// <summary>
 /// SQLite 转发缓冲实现。FIFO 队列，两阶段提交，带死信队列。
-/// 转发失败的消息累加重试计数，达到上限后自动移入 DeadLetter 状态。
 /// </summary>
 public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly int _maxRetries;
-    private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    /// <summary>当前 Pending 批次数（不含死信）</summary>
-    public int Count
-    {
-        get
-        {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'";
-            return Convert.ToInt32(cmd.ExecuteScalar());
-        }
-    }
+    public int Count =>
+        _connection.ExecuteScalar<int>("SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'");
 
-    /// <summary>
-    /// 创建 SQLite 转发缓冲。
-    /// </summary>
-    /// <param name="connection">已配置但未打开的 SQLite 连接。构造函数内 Open</param>
-    /// <param name="maxRetries">最大重试次数，超过后移入死信队列。默认 5</param>
     public SqliteForwardBuffer(SqliteConnection connection, int maxRetries = 5)
     {
         _connection = connection;
@@ -39,72 +26,77 @@ public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
         _connection.Open();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  入队 / 出队 / 提交
-    // ═══════════════════════════════════════════════════════════════
-
-    /// <inheritdoc />
     public async Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
     {
-        var payload = JsonSerializer.Serialize(batch, _jsonOptions);
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
-            INSERT INTO forward_buffer (id, payload, status, retry_count, enqueued_at)
-            VALUES (@id, @payload, 'Pending', 0, @ts)";
-        cmd.Parameters.AddWithValue("@id", batch.Id.ToString());
-        cmd.Parameters.AddWithValue("@payload", payload);
-        cmd.Parameters.AddWithValue("@ts", DateTime.UtcNow.ToString("O"));
-
-        await cmd.ExecuteNonQueryAsync(ct);
+        var payload = JsonSerializer.Serialize(batch, _json);
+        await _connection.ExecuteAsync(
+            "INSERT INTO forward_buffer (id, payload, status, retry_count, enqueued_at) VALUES (@id, @payload, 'Pending', 0, @ts)",
+            new { id = batch.Id.ToString(), payload, ts = DateTime.UtcNow.ToString("O") });
         return OperationResult.Success();
     }
 
-    /// <inheritdoc />
     public async Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(
-        int maxCount, CancellationToken ct = default)
+    int maxCount,
+    CancellationToken ct = default)
     {
-        var results = new List<BatchMeasurements>();
+        await using var tx = await _connection.BeginTransactionAsync(ct);
 
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
-            SELECT id, payload FROM forward_buffer
-            WHERE status = 'Pending'
-            ORDER BY enqueued_at ASC
-            LIMIT @max";
-        cmd.Parameters.AddWithValue("@max", maxCount);
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        try
         {
-            var payload = reader.GetString(1);
-            var batch = JsonSerializer.Deserialize<BatchMeasurements>(payload, _jsonOptions);
-            if (batch is not null) results.Add(batch);
-        }
+            // ① 查询待发送的数据
+            var rows = (await _connection.QueryAsync<BufferRow>(
+                new CommandDefinition(@"SELECT id, payload FROM forward_buffer WHERE status = 'Pending'
+                  ORDER BY enqueued_at ASC LIMIT @max",
+                    new { max = maxCount },
+                    transaction: tx,
+                    cancellationToken: ct)))
+                .ToList();
 
-        return results;
+            if (rows.Count == 0)
+            {
+                await tx.CommitAsync(ct);
+                return Array.Empty<BatchMeasurements>();
+            }
+
+            // ② 标记为 InFlight
+            await _connection.ExecuteAsync(
+                new CommandDefinition( @"UPDATE forward_buffer SET status = 'InFlight' 
+                    WHERE id IN @ids",
+                    new
+                    {
+                        ids = rows.Select(r => r.Id)
+                    },
+                    transaction: tx,
+                    cancellationToken: ct));
+
+            await tx.CommitAsync(ct);
+
+            // ③ 反序列化
+            var result = rows
+                .Select(r => JsonSerializer.Deserialize<BatchMeasurements>(r.Payload, _json))
+                .Where(b => b is not null)
+                .Cast<BatchMeasurements>()
+                .ToList();
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync(ct);
+            return SqliteErrorClassifier.Classify(ex, "Buffer 出队失败");
+        }
     }
 
-    /// <inheritdoc />
     public async Task<OperationResult> CommitAsync(IReadOnlyList<Guid> batchIds, CancellationToken ct = default)
     {
         if (batchIds.Count == 0) return OperationResult.Success();
 
         await using var tx = await _connection.BeginTransactionAsync(ct);
-
         try
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.Transaction = (SqliteTransaction)tx;
-
-            foreach (var id in batchIds)
-            {
-                cmd.CommandText = "DELETE FROM forward_buffer WHERE id = @id";
-                cmd.Parameters.Clear();
-                cmd.Parameters.AddWithValue("@id", id.ToString());
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
-
+            await _connection.ExecuteAsync(
+                "DELETE FROM forward_buffer WHERE id IN @ids",
+                new { ids = batchIds.Select(id => id.ToString()) }, tx);
             await tx.CommitAsync(ct);
             return OperationResult.Success();
         }
@@ -115,34 +107,38 @@ public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  死信队列
-    // ═══════════════════════════════════════════════════════════════
-
-    /// <inheritdoc />
     public async Task<OperationResult> MarkFailedAsync(
-        Guid batchId, string reason, CancellationToken ct = default)
+    Guid batchId,
+    string reason,
+    CancellationToken ct = default)
     {
         try
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
-                UPDATE forward_buffer
-                SET retry_count = retry_count + 1,
+            // 失败以后恢复 Pending
+            await _connection.ExecuteAsync(
+                @"UPDATE forward_buffer
+              SET
+                    status = 'Pending',
+                    retry_count = retry_count + 1,
                     last_error = @error
-                WHERE id = @id";
-            cmd.Parameters.AddWithValue("@id", batchId.ToString());
-            cmd.Parameters.AddWithValue("@error", reason);
-            await cmd.ExecuteNonQueryAsync(ct);
+              WHERE id = @id",
+                new
+                {
+                    id = batchId.ToString(),
+                    error = reason
+                });
 
-            cmd.CommandText = @"
-                UPDATE forward_buffer
-                SET status = 'DeadLetter'
-                WHERE id = @id AND retry_count >= @maxRetries";
-            cmd.Parameters.Clear();
-            cmd.Parameters.AddWithValue("@id", batchId.ToString());
-            cmd.Parameters.AddWithValue("@maxRetries", _maxRetries);
-            await cmd.ExecuteNonQueryAsync(ct);
+            // 超过重试次数进入死信
+            await _connection.ExecuteAsync(
+                @"UPDATE forward_buffer
+              SET status = 'DeadLetter'
+              WHERE id = @id
+                AND retry_count >= @max",
+                new
+                {
+                    id = batchId.ToString(),
+                    max = _maxRetries
+                });
 
             return OperationResult.Success();
         }
@@ -152,89 +148,47 @@ public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
         }
     }
 
-    /// <inheritdoc />
-    public async Task<OperationResult<IReadOnlyList<DeadLetterEntry>>> GetDeadLettersAsync(
-        int maxCount, CancellationToken ct = default)
+    public async Task<OperationResult<IReadOnlyList<DeadLetterEntry>>> GetDeadLettersAsync(int maxCount, CancellationToken ct = default)
     {
-        var results = new List<DeadLetterEntry>();
+        var rows = await _connection.QueryAsync(
+            "SELECT id, payload, retry_count, last_error, enqueued_at FROM forward_buffer WHERE status = 'DeadLetter' ORDER BY enqueued_at ASC LIMIT @max",
+            new { max = maxCount });
 
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
-            SELECT id, payload, retry_count, last_error, enqueued_at
-            FROM forward_buffer
-            WHERE status = 'DeadLetter'
-            ORDER BY enqueued_at ASC
-            LIMIT @max";
-        cmd.Parameters.AddWithValue("@max", maxCount);
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        return rows.Select(r =>
         {
-            var batchId = Guid.Parse(reader.GetString(0));
-            var payload = reader.GetString(1);
-            var retryCount = reader.GetInt32(2);
-            var lastError = reader.IsDBNull(3) ? null : reader.GetString(3);
-            var enqueuedAt = DateTime.Parse(reader.GetString(4));
-
-            var batch = JsonSerializer.Deserialize<BatchMeasurements>(payload, _jsonOptions);
-
-            results.Add(new DeadLetterEntry
+            var batch = JsonSerializer.Deserialize<BatchMeasurements>((string)r.payload, _json);
+            return new DeadLetterEntry
             {
-                BatchId = batchId,
+                BatchId = Guid.Parse((string)r.id),
                 DeviceId = batch?.DeviceId ?? Guid.Empty,
                 RecordCount = batch?.Records.Count ?? 0,
-                RetryCount = retryCount,
-                LastError = lastError,
-                EnqueuedAt = enqueuedAt
-            });
-        }
-
-        return results;
+                RetryCount = (int)r.retry_count,
+                LastError = r.last_error as string,
+                EnqueuedAt = DateTime.Parse((string)r.enqueued_at)
+            };
+        }).ToList();
     }
 
-    /// <inheritdoc />
     public async Task<OperationResult> RetryDeadLetterAsync(Guid batchId, CancellationToken ct = default)
     {
-        try
-        {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
-                UPDATE forward_buffer
-                SET status = 'Pending',
-                    retry_count = 0,
-                    last_error = NULL
-                WHERE id = @id AND status = 'DeadLetter'";
-            cmd.Parameters.AddWithValue("@id", batchId.ToString());
-            var rows = await cmd.ExecuteNonQueryAsync(ct);
+        var rows = await _connection.ExecuteAsync(
+            "UPDATE forward_buffer SET status = 'Pending', retry_count = 0, last_error = NULL WHERE id = @id AND status = 'DeadLetter'",
+            new { id = batchId.ToString() });
 
-            return rows > 0
-                ? OperationResult.Success()
-                : OperationalError.NotFound($"死信 {batchId} 不存在或已不是 DeadLetter 状态");
-        }
-        catch (Exception ex)
-        {
-            return SqliteErrorClassifier.Classify(ex, "重放死信异常");
-        }
+        return rows > 0
+            ? OperationResult.Success()
+            : OperationalError.NotFound($"死信 {batchId} 不存在");
     }
 
-    /// <inheritdoc />
     public async Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default)
     {
-        try
-        {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM forward_buffer WHERE id = @id AND status = 'DeadLetter'";
-            cmd.Parameters.AddWithValue("@id", batchId.ToString());
-            var rows = await cmd.ExecuteNonQueryAsync(ct);
+        var rows = await _connection.ExecuteAsync(
+            "DELETE FROM forward_buffer WHERE id = @id AND status = 'DeadLetter'",
+            new { id = batchId.ToString() });
 
-            return rows > 0
-                ? OperationResult.Success()
-                : OperationalError.NotFound($"死信 {batchId} 不存在或已不是 DeadLetter 状态");
-        }
-        catch (Exception ex)
-        {
-            return SqliteErrorClassifier.Classify(ex, "丢弃死信异常");
-        }
+        return rows > 0
+            ? OperationResult.Success()
+            : OperationalError.NotFound($"死信 {batchId} 不存在");
     }
 
     public void Dispose() => _connection.Dispose();

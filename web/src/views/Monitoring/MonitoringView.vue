@@ -19,14 +19,42 @@ import { ref, onMounted } from 'vue'
 import { getDevices } from '../../api/devices'
 import { createLiveConnection } from '../../api/signalr'
 import type { Device, PointSnapshot } from '../../api/types'
-const devices = ref<Device[]>([]); const selDevice = ref(''); const snapshots = ref<PointSnapshot[]>([]); const connected = ref(false)
-onMounted(async () => { try { devices.value = await getDevices() } catch {} })
-const conn = createLiveConnection()
-conn.on('OnDataReceived', (s:PointSnapshot[]) => snapshots.value = Array.isArray(s)?s:[s])
-conn.onreconnected(()=>connected.value=true); conn.onclose(()=>connected.value=false)
-conn.start().then(()=>connected.value=true)
-async function subscribe() { if(selDevice.value) await conn.invoke('SubscribeDevice', selDevice.value) }
-function formatValue(v:unknown):string { if (typeof v==='number') return v.toFixed(2); if (typeof v==='boolean') return v?'ON':'OFF'; return String(v??'--') }
+const devices = ref<Device[]>([]); const selDevice = ref(''); const snapshots = ref<any[]>([]); const connected = ref(false)
+let conn: any = null
+
+onMounted(async () => {
+  try { devices.value = await getDevices() } catch {}
+  conn = createLiveConnection()
+  conn.on('Measurement', (s: any) => {
+    snapshots.value = Array.isArray(s) ? s : [s]
+  })
+  conn.onreconnected(() => { connected.value = true; console.log('重连') })
+  conn.onclose(() => { connected.value = false; console.log('断开') })
+  try {
+    await conn.start()
+    connected.value = true
+    console.log('SignalR 已连接')
+  } catch (e) {
+    console.error('SignalR 连接失败:', e)
+    connected.value = false
+  }
+})
+
+async function subscribe() {
+  if (!selDevice.value || !conn) return
+  try {
+    await conn.invoke('SubscribeDevice', selDevice.value)
+    console.log('已订阅设备:', selDevice.value)
+  } catch (e) {
+    console.error('订阅失败:', e)
+  }
+}
+
+function formatValue(v:unknown):string {
+  if (typeof v==='number') return v.toFixed(2)
+  if (typeof v==='boolean') return v?'ON':'OFF'
+  return String(v??'--')
+}
 </script>
 <style scoped>
 .page-title { margin-bottom:20px; }

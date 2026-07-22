@@ -22,6 +22,12 @@
         <router-link to="/history" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📈</span><span>历史数据</span>
         </router-link>
+        <router-link to="/alarms" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">🔔</span><span>告警管理</span>
+        </router-link>
+        <router-link to="/deadletters" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">📬</span><span>死信管理</span>
+        </router-link>
         <router-link to="/system" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🖥️</span><span>系统状态</span>
         </router-link>

@@ -29,6 +29,7 @@ public sealed class DeviceReader : IDeviceReader
 
         _logger.LogDebug("开始读取设备：{device}", device.Name);
         var points = device.Points.Where(p => p.Enabled).ToList();
+        //_logger.LogInformation("设备 {device} 有 {count} 个启用的点位", device.Name, points.Count);
         if (points.Count == 0)
             return Array.Empty<RawPointValue>();
 
@@ -50,8 +51,10 @@ public sealed class DeviceReader : IDeviceReader
                 var readResult = await driver.ReadBatchAsync(points, ct);
 
                 if (readResult.IsSuccess)
+                {
+                    //_logger.LogInformation("设备 {device} 读取成功，共 {count} 个点位", device.Name, readResult.Value!.Count);
                     return readResult;
-
+                }
                 throw new Exception(readResult.Error!.Message);
             }
             catch (Exception ex)

@@ -15,6 +15,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="*" />
     <PackageReference Include="FluentMigrator" Version="*" />
     <PackageReference Include="FluentMigrator.Runner.SQLite" Version="*" />
+    <PackageReference Include="Dapper" Version="*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +25,7 @@
     <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
     <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
+    <ProjectReference Include="..\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
   </ItemGroup>
 
 </Project>

@@ -68,7 +68,7 @@ internal sealed class DeviceCollector : IDeviceCollector
             activity?.SetStatus(ActivityStatusCode.Ok);
             return;
         }
-
+        _logger.LogDebug("开始采集设备 {Device}",device.Name);
         // ── 1. 读 ──
         var readResult = await _reader.ReadDeviceAsync(device, ct);
         if (readResult.IsFailure)
@@ -83,13 +83,21 @@ internal sealed class DeviceCollector : IDeviceCollector
             _logger.LogWarning("设备 {DeviceId} 读取失败: {Error}", device.Name, readResult.Error!.Message);
             return;
         }
-
+        _logger.LogDebug("原始点位数量：{Count}", readResult.Value!.Count);
         // ── 2. 转换 ──
         var snapshots = _pipeline.Process(device.Id, readResult.Value!);
-
+        //_logger.LogInformation("设备 {DeviceId} 采集完成，{Count} 个点位", device.Name, snapshots.Count);
+        _logger.LogDebug("转换后点位数量：{Count}", snapshots.Count);
         // ── 3. 分发 ──
         if (snapshots.Count > 0)
+        {
+            _logger.LogDebug("设备 {DeviceId} 开始数据分发",device.Name);
             await _dispatcher.DispatchAsync(device.Id, snapshots, ct);
+        }
+        else
+        {
+            _logger.LogWarning("设备 {DeviceId} 没有有效点位数据，跳过分发", device.Name);
+        }
 
         // ── 4. 健康上报 ──
         var goodCount = snapshots.Count(s => s.Quality == QualityCode.Good);
@@ -113,22 +121,24 @@ internal sealed class DeviceCollector : IDeviceCollector
     /// <inheritdoc />
     public async Task CollectOnceAsync(CancellationToken ct)
     {
-        var devicesResult = await _deviceManager.GetByStatusAsync(DeviceStatus.Online, ct);
+        _logger.LogDebug("CollectOnce 开始");
+        // 获取所有设备（含 Offline）——熔断器负责决定是否实际采集
+        var devicesResult = await _deviceManager.GetAllAsync(ct);
         if (devicesResult.IsFailure)
         {
-            _logger.LogWarning("获取在线设备失败: {Error}", devicesResult.Error!.Message);
+            _logger.LogWarning("获取设备列表失败: {Error}", devicesResult.Error!.Message);
             return;
         }
-        var devices = devicesResult.Value!;
-        NitroMetrics.DevicesOnline.Set(devices.Count);
+        var devices = devicesResult.Value!.Where(d => d.Status != DeviceStatus.Maintenance).ToList();
+        NitroMetrics.DevicesAvailable.Set(devices.Count);
 
         if (devices.Count == 0)
         {
-            _logger.LogDebug("没有在线设备需要采集");
+            _logger.LogDebug("没有设备需要采集");
             return;
         }
 
-        _logger.LogDebug("采集轮次，共 {Count} 台 Online 设备", devices.Count);
+        _logger.LogDebug("采集轮次，共 {Count} 台设备", devices.Count);
 
         using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.CollectRound);
         activity?.SetTag(GatewayActivityTags.DeviceCount, devices.Count);
@@ -153,6 +163,7 @@ internal sealed class DeviceCollector : IDeviceCollector
 
             await Task.WhenAll(tasks);
             activity?.SetStatus(ActivityStatusCode.Ok);
+            _logger.LogDebug("CollectOnce 结束");
         }
         catch (OperationCanceledException)
         {

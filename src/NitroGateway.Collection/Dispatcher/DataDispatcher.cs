@@ -13,18 +13,19 @@ namespace NitroGateway.Collection;
 /// <summary>数据分发实现。双写时序库 + 转发缓冲，互不阻塞。事件通过 SinkDispatcher Channel 异步推送。</summary>
 public sealed class DataDispatcher : IDataDispatcher
 {
-    private readonly IMeasurementStore _timeSeries;
+    private readonly MeasurementWriteHost _measurement;
     private readonly IForwardBuffer _buffer;
     private readonly SinkDispatcher _sinks;
+
     private readonly ILogger<DataDispatcher> _logger;
 
     public DataDispatcher(
-        IMeasurementStore timeSeries,
+        MeasurementWriteHost measurement,
         IForwardBuffer buffer,
         SinkDispatcher sinks,
         ILogger<DataDispatcher> logger)
     {
-        _timeSeries = timeSeries;
+        _measurement = measurement;
         _buffer = buffer;
         _sinks = sinks;
         _logger = logger;
@@ -43,33 +44,17 @@ public sealed class DataDispatcher : IDataDispatcher
             activity?.SetStatus(ActivityStatusCode.Ok);
             return OperationResult.Success();
         }
-
-        var tsOk = false;
-        var bufOk = false;
-
         // ── 写时序库 ──
-        var tsResult = await _timeSeries.WriteAsync(snapshots, ct);
-        if (tsResult.IsSuccess)
+        var posted=_measurement.Post(snapshots);
+        if (!posted)
         {
-            tsOk = true;
-        }
-        else
-        {
-            var err = tsResult.Error!;
-            if (err.Severity >= OperationalSeverity.Error)
-                _logger.LogError("时序写入失败 [{Code}] {Message}", err.Code, err.Message);
-            else
-                _logger.LogWarning("时序写入失败: {Message}", err.Message);
+            _logger.LogWarning("Measurement Channel 已满，丢弃数据");
         }
 
         // ── 入转发缓冲 ──
         var batch = ToBatchMeasurements(deviceId, snapshots);
         var bufResult = await _buffer.EnqueueAsync(batch, ct);
-        if (bufResult.IsSuccess)
-        {
-            bufOk = true;
-        }
-        else
+        if (bufResult.IsFailure)
         {
             var err = bufResult.Error!;
             if (err.Severity >= OperationalSeverity.Error)
@@ -81,20 +66,9 @@ public sealed class DataDispatcher : IDataDispatcher
         // ── 通知订阅方（Channel 推送，非阻塞）──
         _sinks.Post(new PointStoredEvent { DeviceId = deviceId, Snapshots = snapshots });
 
-        if (tsOk && bufOk)
-        {
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return OperationResult.Success();
-        }
 
-        // 取两个错误中严重性更高的作为返回值
-        var worst = !tsOk && !bufOk
-            ? (tsResult.Error!.Severity >= bufResult.Error!.Severity ? tsResult.Error : bufResult.Error)
-            : !tsOk ? tsResult.Error! : bufResult.Error!;
-
-        activity?.SetStatus(ActivityStatusCode.Error);
-        activity?.SetTag(GatewayActivityTags.ErrorMessage, worst.Message);
-        return worst;
+        activity?.SetStatus(ActivityStatusCode.Ok);
+        return OperationResult.Success();
     }
 
     private static BatchMeasurements ToBatchMeasurements(

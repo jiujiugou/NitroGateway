@@ -96,7 +96,6 @@ public sealed class PointValuePipeline : IPointValuePipeline
 
             _lastValues[point.Id] = engValue;
         }
-
         // 4. 组装
         return new PointSnapshot
         {

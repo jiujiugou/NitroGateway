@@ -49,18 +49,15 @@ public class DeviceManagerTests
         Assert.Contains("不能为空", result.Error!.Message);
     }
 
-    /// <summary>
-    /// 状态门控：Offline → Online 必须由 HealthMonitor 触发，手动调用应被拒绝。
-    /// 这是防止运维人员误操作的关键保护——设备离线后只有自动恢复机制能将其标记为上线。
-    /// </summary>
+    /// <summary>Offline → Online 状态变更（HealthMonitor 通过 PersistenceListener 调用）</summary>
     [Fact]
-    public async Task UpdateStatus_OfflineToOnline_ManuallyRejected()
+    public async Task UpdateStatus_OfflineToOnline_Succeeds()
     {
         var id = Guid.NewGuid();
         _repo.Devices[id] = MakeDevice("PLC", status: DeviceStatus.Offline);
         var result = await _manager.UpdateStatusAsync(id, DeviceStatus.Online);
-        Assert.False(result.IsSuccess);
-        Assert.Contains("HealthMonitor", result.Error!.Message);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DeviceStatus.Online, _repo.Devices[id].Status);
     }
 
     /// <summary>正常状态转换（Online → Maintenance）应成功。</summary>

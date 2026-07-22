@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Forwarder;
 
@@ -29,22 +30,34 @@ public sealed class ForwarderEngine : BackgroundService
     {
         using var timer = new PeriodicTimer(_interval);
 
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 using var scope = _scopeFactory.CreateScope();
+
+                var mqtt = scope.ServiceProvider.GetRequiredService<IMqttClient>();
+
+                // MQTT 未连接，不启动本轮转发
+                if (mqtt.State != MqttConnectionState.Connected)
+                {
+                    continue;
+                }
                 var forwarder = scope.ServiceProvider.GetRequiredService<IForwarder>();
-                await forwarder.ForwardBatchAsync(int.MaxValue, stoppingToken);
+
+                try
+                {
+                    await forwarder.ForwardBatchAsync(int.MaxValue, stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "转发循环发生异常。");
+                }
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "转发循环发生异常。");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Host 正常停止
         }
 
         _logger.LogInformation("ForwarderEngine Stopped.");

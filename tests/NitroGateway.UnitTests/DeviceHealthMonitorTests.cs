@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.DeviceManagement;
+using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Devices;
 using Xunit;
 
@@ -9,64 +10,70 @@ public class DeviceHealthMonitorTests
 {
     private readonly Guid _deviceId = Guid.NewGuid();
 
+    /// <summary>3 次失败（阈值=3）→ Listener 收到 Offline</summary>
     [Fact]
-    public void TenFailures_TriggersOffline()
+    public void ThreeFailures_TriggersOffline()
     {
-        var triggered = false;
+        DeviceHealthChanged? lastEvent = null;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
-        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Offline) triggered = true; };
+        monitor.UpdateStatus(_deviceId, DeviceStatus.Online);
+        monitor.AddListener(new TestListener(e => lastEvent = e));
 
-        for (var i = 0; i < 9; i++) monitor.ReportFailure(_deviceId, "timeout");
-        Assert.False(triggered);
+        for (var i = 0; i < 2; i++) monitor.ReportFailure(_deviceId, "timeout");
+        Assert.Null(lastEvent);
 
         monitor.ReportFailure(_deviceId, "timeout");
-        Assert.True(triggered);
+        Assert.NotNull(lastEvent);
+        Assert.Equal(DeviceStatus.Offline, lastEvent!.NewStatus);
     }
 
+    /// <summary>3 次成功 → Listener 收到 Online</summary>
     [Fact]
     public void ThreeSuccess_TriggersOnline()
     {
-        var triggered = false;
+        DeviceHealthChanged? lastEvent = null;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
-        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Online) triggered = true; };
+        for (var i = 0; i < 3; i++) monitor.ReportFailure(_deviceId, "timeout");
+        monitor.UpdateStatus(_deviceId, DeviceStatus.Offline);
+        monitor.AddListener(new TestListener(e => lastEvent = e));
 
-        // 先触发离线
-        for (var i = 0; i < 10; i++) monitor.ReportFailure(_deviceId, "timeout");
-
-        // 恢复
         for (var i = 0; i < 2; i++) monitor.ReportSuccess(_deviceId);
-        Assert.False(triggered);
+        Assert.Null(lastEvent);
 
         monitor.ReportSuccess(_deviceId);
-        Assert.True(triggered);
+        Assert.NotNull(lastEvent);
+        Assert.Equal(DeviceStatus.Online, lastEvent!.NewStatus);
     }
 
+    /// <summary>一次成功重置失败计数——3 次失败前有 1 次成功，不触发 Offline</summary>
     [Fact]
     public void SuccessResetsFailCount()
     {
+        DeviceHealthChanged? lastEvent = null;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
-        for (var i = 0; i < 9; i++) monitor.ReportFailure(_deviceId, "timeout");
-        monitor.ReportSuccess(_deviceId);   // 重置失败计数
-
-        var triggered = false;
-        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Offline) triggered = true; };
+        monitor.UpdateStatus(_deviceId, DeviceStatus.Online);
+        for (var i = 0; i < 2; i++) monitor.ReportFailure(_deviceId, "timeout");
+        monitor.ReportSuccess(_deviceId); // 重置
+        monitor.AddListener(new TestListener(e => lastEvent = e));
         monitor.ReportFailure(_deviceId, "timeout");
-        Assert.False(triggered);  // 不会触发，因为之前被重置了
+        Assert.Null(lastEvent);
     }
 
+    /// <summary>一次失败重置成功计数——2 次成功后一次失败，Online 不触发</summary>
     [Fact]
     public void FailureResetsSuccessCount()
     {
+        DeviceHealthChanged? lastEvent = null;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
+        monitor.UpdateStatus(_deviceId, DeviceStatus.Offline);
         for (var i = 0; i < 2; i++) monitor.ReportSuccess(_deviceId);
-
-        var triggered = false;
-        monitor.StatusChanged += (_, s) => { if (s == DeviceStatus.Online) triggered = true; };
-        monitor.ReportFailure(_deviceId, "timeout"); // 重置成功计数
+        monitor.ReportFailure(_deviceId, "reset");
+        monitor.AddListener(new TestListener(e => lastEvent = e));
         monitor.ReportSuccess(_deviceId);
-        Assert.False(triggered);  // 只成功了1次，不够3次
+        Assert.Null(lastEvent);
     }
 
+    /// <summary>连续失败次数正确</summary>
     [Fact]
     public void GetConsecutiveFailures_ReturnsCorrectCount()
     {
@@ -74,5 +81,14 @@ public class DeviceHealthMonitorTests
         monitor.ReportFailure(_deviceId, "a");
         monitor.ReportFailure(_deviceId, "b");
         Assert.Equal(2, monitor.GetConsecutiveFailures(_deviceId));
+    }
+
+    private sealed class TestListener(Action<DeviceHealthChanged> onChanged) : IDeviceHealthListener
+    {
+        public ValueTask OnHealthChangedAsync(DeviceHealthChanged e, CancellationToken ct = default)
+        {
+            onChanged(e);
+            return ValueTask.CompletedTask;
+        }
     }
 }

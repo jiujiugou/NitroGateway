@@ -45,7 +45,7 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
 
         if (entity is null)
             return OperationalError.General("设备不存在");
-
+        
         var device = DomainMapper.ToDomain(entity);
         foreach (var pe in entity.Points)
             device.AddPoint(DomainMapper.ToDomain(pe));

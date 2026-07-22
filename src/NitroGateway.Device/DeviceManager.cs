@@ -62,13 +62,6 @@ public sealed class DeviceManager : IDeviceManager
 
         if (oldStatus == status) return OperationResult.Success();
 
-        // 状态门控：不允许 Manual 切换到 Online（必须由 HealthMonitor 触发恢复）
-        if (status == DeviceStatus.Online && oldStatus == DeviceStatus.Offline)
-        {
-            _logger.LogWarning("设备 {DeviceId} 从 Offline 恢复为 Online 需通过 HealthMonitor", deviceId);
-            return OperationalError.Validation("Offline 设备必须通过 HealthMonitor 恢复");
-        }
-
         device.Status = status;
         await _repository.SaveAsync(device, ct);
 

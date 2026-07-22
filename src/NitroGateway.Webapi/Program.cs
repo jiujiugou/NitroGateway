@@ -1,22 +1,25 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
-using NitroGateway.Security;
-using NitroGateway.Security.Audit;
-using NitroGateway.Security.Auth;
 using NitroGateway.DeviceManagement;
+using NitroGateway.DeviceManagement.Events;
+using NitroGateway.Domain.Events;
 using NitroGateway.Forwarder;
 using NitroGateway.Host;
 using NitroGateway.Persistence;
 using NitroGateway.Persistence.Sqlite;
 using NitroGateway.Protocols;
+using NitroGateway.Security;
+using NitroGateway.Security.Audit;
+using NitroGateway.Security.Auth;
 using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
+using NitroGateway.Webapi;
 using NitroGateway.Webapi.HealthChecks;
 using NitroGateway.Webapi.Hubs;
 using Prometheus;
 using Serilog;
-using NitroGateway.Webapi;
 
 var builder = WebApplication.CreateBuilder(args);
 // ── 参数 ──
@@ -43,6 +46,7 @@ builder.Services.AddNitroGatewayHost();
 builder.Services.AddNitroSqlite(builder.Configuration);
 builder.Services.AddNitroDevice();
 builder.Services.AddNitroProtocol();
+builder.Services.AddNitroSignalR();
 builder.Services.AddNitroAlarm();
 builder.Services.AddNitroCollection(intervalMs: 1000);
 builder.Services.AddNitroForwarder(intervalMs: 5000);
@@ -58,11 +62,37 @@ builder.Services.AddHealthChecks()
 builder.Services.AddSignalR();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() { Title = "NitroGateway API", Version = "v1",
+        Description = "工业协议边缘网关 REST API — 设备管理、点位采集、告警、死信" });
+
+    // JWT Bearer 认证
+    c.AddSecurityDefinition("Bearer", new()
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "输入 JWT token: Bearer {token}"
+    });
+    c.AddSecurityRequirement(new()
+    {
+        {
+            new() { Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } },
+            Array.Empty<string>()
+        }
+    });
+
+    // XML 注释
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = System.IO.Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (System.IO.File.Exists(xmlPath)) c.IncludeXmlComments(xmlPath);
+});
 var app = builder.Build();
 
 // ── 建表 ──
-//MigrationRunner.Run($"Data Source={dbPath}");
 app.InitializeDatabase();
 
 // ── MQTT（后台）──
@@ -73,6 +103,8 @@ _ = Task.Run(async () =>
     if (r.IsSuccess) await mqtt.SubscribeAsync("nitrogateway/+/cmd");
 });
 
+app.UseSwagger();
+app.UseSwaggerUI();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -82,7 +114,6 @@ app.MapHealthChecks("/readyz", new() { Predicate = r => r.Tags.Contains("ready")
 app.MapMetrics();
 app.MapControllers();
 app.MapHub<LiveDataHub>("/hubs/live");
-
 app.Run();
 
 

@@ -1,14 +1,16 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using NitroGateway.DeviceManagement.Events;
 
 namespace NitroGateway.DeviceManagement;
 
-/// <summary>设备健康判定实现。计数 + 阈值触发 + 快照维护</summary>
+/// <summary>设备健康判定——唯一 SST。状态迁移时遍历 IDeviceHealthListener。</summary>
 public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
 {
     private readonly ConcurrentDictionary<Guid, int> _failures = new();
     private readonly ConcurrentDictionary<Guid, int> _successes = new();
     private readonly ConcurrentDictionary<Guid, DeviceHealthSnapshot> _snapshots = new();
+    private readonly ConcurrentBag<IDeviceHealthListener> _listeners = [];
     private readonly ILogger<DeviceHealthMonitor> _logger;
 
     /// <inheritdoc />
@@ -17,12 +19,9 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
     /// <inheritdoc />
     public int RecoveryThreshold { get; }
 
-    /// <inheritdoc />
-    public event Action<Guid, Domain.Devices.DeviceStatus>? StatusChanged;
-
     public DeviceHealthMonitor(
         ILogger<DeviceHealthMonitor> logger,
-        int failureThreshold = 10,
+        int failureThreshold = 3,
         int recoveryThreshold = 3)
     {
         _logger = logger;
@@ -30,9 +29,15 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
         RecoveryThreshold = recoveryThreshold;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  上报
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════ Listener 注册 ═══════
+
+    /// <inheritdoc />
+    public void AddListener(IDeviceHealthListener listener)
+    {
+        _listeners.Add(listener);
+    }
+
+    // ═══════ 上报 ═══════
 
     /// <inheritdoc />
     public void ReportSuccess(Guid deviceId)
@@ -42,17 +47,19 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
 
         UpdateSnapshot(deviceId, s => s with
         {
-            ConsecutiveFailures = 0,
-            ConsecutiveSuccesses = count,
-            LastCollectionAt = DateTime.UtcNow,
-            LastError = null
+            ConsecutiveFailures = 0, ConsecutiveSuccesses = count,
+            LastCollectionAt = DateTime.UtcNow, LastError = null
         });
 
         if (count == RecoveryThreshold)
         {
             _successes.TryRemove(deviceId, out _);
-            _logger.LogInformation("设备 {DeviceId} 连续成功 {Count} 次，触发恢复", deviceId, count);
-            StatusChanged?.Invoke(deviceId, Domain.Devices.DeviceStatus.Online);
+            var snap = GetSnapshot(deviceId);
+            if (snap?.Status != Domain.Devices.DeviceStatus.Online)
+            {
+                _logger.LogInformation("设备 {DeviceId} 恢复 ({From}→Online)", deviceId, snap?.Status);
+                NotifyListeners(deviceId, snap?.Status ?? Domain.Devices.DeviceStatus.Unknown, Domain.Devices.DeviceStatus.Online);
+            }
         }
     }
 
@@ -64,26 +71,19 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
 
         UpdateSnapshot(deviceId, s => s with
         {
-            ConsecutiveFailures = count,
-            ConsecutiveSuccesses = 0,
-            LastCollectionAt = DateTime.UtcNow,
-            LastError = reason
+            ConsecutiveFailures = count, ConsecutiveSuccesses = 0,
+            LastCollectionAt = DateTime.UtcNow, LastError = reason
         });
-
-        _logger.LogDebug("设备 {DeviceId} 采集失败 ({Count}/{Threshold}): {Reason}",
-            deviceId, count, FailureThreshold, reason);
 
         if (count == FailureThreshold)
         {
             _failures.TryRemove(deviceId, out _);
             _logger.LogWarning("设备 {DeviceId} 连续失败 {Count} 次，触发离线", deviceId, count);
-            StatusChanged?.Invoke(deviceId, Domain.Devices.DeviceStatus.Offline);
+            NotifyListeners(deviceId, Domain.Devices.DeviceStatus.Online, Domain.Devices.DeviceStatus.Offline);
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  查询
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════ 查询 ═══════
 
     /// <inheritdoc />
     public void UpdateStatus(Guid deviceId, Domain.Devices.DeviceStatus status)
@@ -99,29 +99,30 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
     public IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots()
         => _snapshots.Values.ToList();
 
-    /// <inheritdoc />
     public int GetConsecutiveFailures(Guid deviceId)
         => _failures.TryGetValue(deviceId, out var c) ? c : 0;
 
-    /// <inheritdoc />
     public int GetConsecutiveSuccesses(Guid deviceId)
         => _successes.TryGetValue(deviceId, out var c) ? c : 0;
 
-    // ═══════════════════════════════════════════════════════════════
-    //  内部
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════ 内部 ═══════
+
+    private void NotifyListeners(Guid deviceId, Domain.Devices.DeviceStatus old, Domain.Devices.DeviceStatus @new)
+    {
+        UpdateSnapshot(deviceId, s => s with { Status = @new });
+
+        var e = new DeviceHealthChanged { DeviceId = deviceId, OldStatus = old, NewStatus = @new };
+        foreach (var listener in _listeners)
+        {
+            _ = listener.OnHealthChangedAsync(e); // fire-and-forget，异常不传播
+        }
+    }
 
     private void UpdateSnapshot(Guid deviceId, Func<DeviceHealthSnapshot, DeviceHealthSnapshot> update)
     {
         _snapshots.AddOrUpdate(
             deviceId,
-            _ => update(new DeviceHealthSnapshot
-            {
-                DeviceId = deviceId,
-                Status = Domain.Devices.DeviceStatus.Unknown,
-                ConsecutiveFailures = 0,
-                ConsecutiveSuccesses = 0
-            }),
+            _ => update(new DeviceHealthSnapshot { DeviceId = deviceId, Status = Domain.Devices.DeviceStatus.Unknown }),
             (_, existing) => update(existing));
     }
 }

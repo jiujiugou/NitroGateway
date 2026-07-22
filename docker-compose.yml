@@ -1,21 +1,46 @@
-# NitroGateway 演示环境
+# NitroGateway — 一键部署
 # 启动: docker compose up -d
 # 停止: docker compose down
+# 查看: http://localhost:5170
 
 services:
-  # MQTT Broker (Mosquitto 2.0)
+  # ── MQTT Broker ──
   mqtt:
     image: eclipse-mosquitto:2
     ports:
-      - "1883:1883"    # MQTT
-      - "9001:9001"    # WebSocket (前端可选)
+      - "1883:1883"
     volumes:
       - ./tools/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    healthcheck:
-      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
-      interval: 10s
 
-  # 时序数据库 (可选，Grafana 展示用)
-  # grafana:
-  #   image: grafana/grafana:latest
-  #   ports: ["3000:3000"]
+  # ── 后端 API ──
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5100:5100"
+    volumes:
+      - gateway-data:/app/data
+      - gateway-logs:/app/logs
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+      - Persistence__ConnectionString=Data Source=/app/data/nitrogateway.db
+      - Security__JwtSecretKey=${JWT_SECRET:-NitroGateway-Production-ChangeMe!}
+    depends_on:
+      - mqtt
+    restart: unless-stopped
+
+  # ── 前端 ──
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "5170:80"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  gateway-data:
+  gateway-logs:
