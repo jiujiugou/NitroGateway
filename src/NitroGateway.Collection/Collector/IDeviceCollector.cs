@@ -7,8 +7,7 @@ namespace NitroGateway.Collection
 {
     public interface IDeviceCollector
     {
-        Task CollectOnceAsync(CancellationToken ct);
-
-        Task CollectDeviceAsync(Device device, CancellationToken ct);
+        public Task CollectDeviceAsync(Device device, CancellationToken ct);
+        public Task CollectOnceAsync(CancellationToken ct);
     }
 }

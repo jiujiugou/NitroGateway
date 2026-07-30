@@ -9,7 +9,7 @@ namespace NitroGateway.Domain.Protocols;
 /// 调用方无需关心底层协议细节，通过本接口即可操作任意协议的设备。
 /// 所有操作返回 <see cref="OperationResult"/>，不抛异常。
 /// </summary>
-public interface IProtocolDriver
+public interface IProtocolDriver : IDisposable
 {
     /// <summary>当前连接状态</summary>
     DriverState State { get; }

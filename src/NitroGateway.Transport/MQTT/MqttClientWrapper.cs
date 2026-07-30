@@ -75,10 +75,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             if (!string.IsNullOrEmpty(_options.Username))
                 builder.WithCredentials(_options.Username, _options.Password);
 
-            if (_options.Broker.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase))
-                builder.WithTcpServer(_options.Broker[6..]);
-            else
-                builder.WithTcpServer(_options.Broker);
+            builder.WithTcpServer(_options.Host, _options.Port);
 
             var result = await _inner.ConnectAsync(builder.Build(), ct);
 
@@ -155,7 +152,8 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
             var result = await _inner.PublishAsync(msg, ct);
 
-            if (result.ReasonCode == MqttNet.MqttClientPublishReasonCode.Success)
+            if (result.ReasonCode is MqttNet.MqttClientPublishReasonCode.Success or
+                MqttNet.MqttClientPublishReasonCode.NoMatchingSubscribers)
             {
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 return OperationResult.Success();
@@ -241,6 +239,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         State = state;
         NitroMetrics.MqttState.Set((int)state);
         _logger.LogDebug("MQTT 状态变更: {Old} → {New}", old, state);
+
         StateChanged?.Invoke(state);
     }
 

@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentModbus" Version="*" />
+    <PackageReference Include="HslCommunication" Version="*" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.DeviceManagement;
+using NitroGateway.DeviceManagement.Events;
 
 namespace NitroGateway.Collection;
 
@@ -10,13 +11,11 @@ public static class CollectionServiceCollectionExtensions
         this IServiceCollection services,
         int intervalMs,
         int maxConcurrency = 5,
-        int circuitBreakerThreshold = 5,
-        int circuitBreakerOpenSeconds = 30)
+        int circuitBreakerOpenSeconds = 5)
     {
         services.AddSingleton<ICircuitBreakerRegistry>(_ =>
             new CircuitBreakerRegistry(
-                failureThreshold: circuitBreakerThreshold,
-                openDuration: TimeSpan.FromSeconds(circuitBreakerOpenSeconds),
+                baseOpenDuration: TimeSpan.FromSeconds(circuitBreakerOpenSeconds),
                 maxOpenDuration: TimeSpan.FromMinutes(5)));
 
         services.AddSingleton<IDeviceReader, DeviceReader>();
@@ -27,10 +26,8 @@ public static class CollectionServiceCollectionExtensions
         services.AddSingleton<SinkDispatcher>();
         services.AddHostedService(sp => sp.GetRequiredService<SinkDispatcher>());
         services.AddSingleton<IHealthReporter, HealthReporter>();
-
-        // CircuitBreaker 监听器：Online → Reset
-        services.AddSingleton<CircuitBreakerHealthListener>();
-        services.AddHostedService<CircuitBreakerListenerRegistrar>();
+        // CircuitBreaker 监听 HealthMonitor 的 Online/Offline 信号
+        services.AddSingleton<IDeviceHealthListener, CircuitBreakerHealthListener>();
 
         services.AddScoped<IDeviceCollector>(sp => new DeviceCollector(
             sp.GetRequiredService<IDeviceManager>(),
@@ -39,7 +36,7 @@ public static class CollectionServiceCollectionExtensions
             sp.GetRequiredService<IDataDispatcher>(),
             sp.GetRequiredService<IHealthReporter>(),
             sp.GetRequiredService<ICircuitBreakerRegistry>(),
-            sp.GetRequiredService<ILogger<CollectionEngine>>(),
+            sp.GetRequiredService<ILogger<DeviceCollector>>(),
             maxConcurrency));
 
         services.AddHostedService(sp => new CollectionEngine(

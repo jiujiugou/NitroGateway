@@ -3,10 +3,10 @@ using NitroGateway.DeviceManagement.Events;
 
 namespace NitroGateway.DeviceManagement.Listeners;
 
-/// <summary>启动时将 PersistenceListener 注册到 HealthMonitor</summary>
-public sealed class PersistenceListenerRegistrar : IHostedService
+/// <summary>启动时将 DI 中所有 IDeviceHealthListener 注册到 HealthMonitor</summary>
+public sealed class HealthListenerRegistrar : IHostedService
 {
-    public PersistenceListenerRegistrar(
+    public HealthListenerRegistrar(
         IDeviceHealthMonitor monitor,
         IEnumerable<IDeviceHealthListener> listeners)
     {

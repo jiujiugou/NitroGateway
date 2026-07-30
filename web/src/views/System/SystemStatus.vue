@@ -71,7 +71,7 @@ async function refresh() {
   try {
     const { data: sys } = await client.get('/status/system')
     if (sys.data) {
-      mqtt.value = { state: sys.data.mqttState, connected: sys.data.mqttConnected }
+      mqtt.value = { state: sys.data.mqttState, connected: sys.data.mqttState === 'Connected' }
       backlog.value = sys.data.bufferBacklog
       throttle.value = { batch: sys.data.throttleBatchSize, delay: sys.data.throttleDelayMs }
       onlineDevices.value = sys.data.onlineDevices

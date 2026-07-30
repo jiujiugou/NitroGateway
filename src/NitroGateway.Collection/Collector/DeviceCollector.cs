@@ -9,7 +9,7 @@ namespace NitroGateway.Collection;
 
 /// <summary>
 /// 设备采集器实现。
-/// 每轮采集：获取 Online 设备 → 并发采集每台设备（受信号量限流）。
+/// 每轮采集：获取 Online 设备 → 熔断检查 → 并发采集每台设备（受信号量限流）。
 /// 每台设备：熔断检查 → Reader → Pipeline → Dispatcher → HealthReporter。
 /// </summary>
 internal sealed class DeviceCollector : IDeviceCollector
@@ -20,7 +20,7 @@ internal sealed class DeviceCollector : IDeviceCollector
     private readonly IDataDispatcher _dispatcher;
     private readonly IHealthReporter _reporter;
     private readonly ICircuitBreakerRegistry _circuitBreakerRegistry;
-    private readonly ILogger<CollectionEngine> _logger;
+    private readonly ILogger<DeviceCollector> _logger;
     private readonly SemaphoreSlim _concurrencyGate;
 
     /// <summary>创建设备采集器</summary>
@@ -31,7 +31,7 @@ internal sealed class DeviceCollector : IDeviceCollector
         IDataDispatcher dispatcher,
         IHealthReporter reporter,
         ICircuitBreakerRegistry circuitBreakerRegistry,
-        ILogger<CollectionEngine> logger,
+        ILogger<DeviceCollector> logger,
         int maxConcurrency = 5)
     {
         _deviceManager = deviceManager;
@@ -51,24 +51,17 @@ internal sealed class DeviceCollector : IDeviceCollector
         activity?.SetTag(GatewayActivityTags.DeviceId, device.Id.ToString());
         activity?.SetTag(GatewayActivityTags.DeviceName, device.Name);
 
-        var circuitBreaker = _circuitBreakerRegistry.Get(device.Id);
+        _logger.LogInformation("开始采集设备 {Device}", device.Name);
 
-        // ── 熔断检查 ──
+        // ── 熔断检查：Open 则跳过，HalfOpen 则放行一个探测 ──
+        var circuitBreaker = _circuitBreakerRegistry.Get(device.Id);
         if (circuitBreaker.IsOpen)
         {
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            _logger.LogDebug("设备 {DeviceId} 处于熔断状态（{State}），跳过本轮采集",
+            _logger.LogDebug("设备 {Device} 熔断中（{State}），跳过本轮采集",
                 device.Name, circuitBreaker.State);
             return;
         }
 
-        // 设备对象来自 DeviceCache，已包含完整 Points——无需再查 DB
-        if (device.Points.All(p => !p.Enabled))
-        {
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return;
-        }
-        _logger.LogDebug("开始采集设备 {Device}",device.Name);
         // ── 1. 读 ──
         var readResult = await _reader.ReadDeviceAsync(device, ct);
         if (readResult.IsFailure)
@@ -83,15 +76,17 @@ internal sealed class DeviceCollector : IDeviceCollector
             _logger.LogWarning("设备 {DeviceId} 读取失败: {Error}", device.Name, readResult.Error!.Message);
             return;
         }
-        _logger.LogDebug("原始点位数量：{Count}", readResult.Value!.Count);
+
+        _logger.LogInformation("原始点位数量：{Count}", readResult.Value!.Count);
+
         // ── 2. 转换 ──
         var snapshots = _pipeline.Process(device.Id, readResult.Value!);
-        //_logger.LogInformation("设备 {DeviceId} 采集完成，{Count} 个点位", device.Name, snapshots.Count);
-        _logger.LogDebug("转换后点位数量：{Count}", snapshots.Count);
+        _logger.LogInformation("转换后点位数量：{Count}", snapshots.Count);
+
         // ── 3. 分发 ──
         if (snapshots.Count > 0)
         {
-            _logger.LogDebug("设备 {DeviceId} 开始数据分发",device.Name);
+            _logger.LogInformation("设备 {DeviceId} 开始数据分发", device.Name);
             await _dispatcher.DispatchAsync(device.Id, snapshots, ct);
         }
         else
@@ -110,7 +105,7 @@ internal sealed class DeviceCollector : IDeviceCollector
 
         _reporter.Report(device.Id, goodCount, failCount, null);
 
-        // ── 5. 熔断恢复 ── 读成功就上报，即使部分点位质量差也不影响
+        // ── 5. 熔断恢复：读成功则上报，即使部分点位质量差也不影响探测判定 ──
         circuitBreaker.RecordSuccess();
         NitroMetrics.CollectionTotal.WithLabels(device.Id.ToString(), "success").Inc();
         NitroMetrics.CircuitBreakerState.WithLabels(device.Id.ToString())
@@ -121,8 +116,8 @@ internal sealed class DeviceCollector : IDeviceCollector
     /// <inheritdoc />
     public async Task CollectOnceAsync(CancellationToken ct)
     {
-        _logger.LogDebug("CollectOnce 开始");
-        // 获取所有设备（含 Offline）——熔断器负责决定是否实际采集
+        _logger.LogInformation("CollectOnce 开始");
+        // 获取所有设备（含 Offline）—— 熔断器决定是否实际采集
         var devicesResult = await _deviceManager.GetAllAsync(ct);
         if (devicesResult.IsFailure)
         {
@@ -134,11 +129,11 @@ internal sealed class DeviceCollector : IDeviceCollector
 
         if (devices.Count == 0)
         {
-            _logger.LogDebug("没有设备需要采集");
+            _logger.LogInformation("没有设备需要采集");
             return;
         }
 
-        _logger.LogDebug("采集轮次，共 {Count} 台设备", devices.Count);
+        _logger.LogInformation("采集轮次，共 {Count} 台设备", devices.Count);
 
         using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.CollectRound);
         activity?.SetTag(GatewayActivityTags.DeviceCount, devices.Count);
@@ -163,12 +158,12 @@ internal sealed class DeviceCollector : IDeviceCollector
 
             await Task.WhenAll(tasks);
             activity?.SetStatus(ActivityStatusCode.Ok);
-            _logger.LogDebug("CollectOnce 结束");
+            _logger.LogInformation("CollectOnce 结束");
         }
         catch (OperationCanceledException)
         {
             activity?.SetStatus(ActivityStatusCode.Error);
-            // 正常取消，不记日志
+            // 正常取消
         }
         catch (Exception ex)
         {
@@ -177,4 +172,5 @@ internal sealed class DeviceCollector : IDeviceCollector
             _logger.LogError(ex, "采集过程中发生异常");
         }
     }
+
 }

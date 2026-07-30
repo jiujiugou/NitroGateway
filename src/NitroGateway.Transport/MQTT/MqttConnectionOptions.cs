@@ -3,8 +3,14 @@ namespace NitroGateway.Transport.MQTT;
 /// <summary>MQTT 连接参数</summary>
 public sealed record MqttConnectionOptions
 {
-    /// <summary>Broker 地址，如 "tcp://192.168.1.1:1883"</summary>
-    public required string Broker { get; init; }
+    /// <summary>
+    /// 连接地址
+    /// </summary>
+    public string Host { get; set; } = "";
+    /// <summary>
+    /// 端口号
+    /// </summary>
+    public int Port { get; set; }
 
     /// <summary>客户端 ID。留空则自动生成</summary>
     public string? ClientId { get; init; }

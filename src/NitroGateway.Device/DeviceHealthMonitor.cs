@@ -1,6 +1,7 @@
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using NitroGateway.DeviceManagement.Events;
+using NitroGateway.Domain.Devices;
+using System.Collections.Concurrent;
 
 namespace NitroGateway.DeviceManagement;
 
@@ -78,8 +79,21 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
         if (count == FailureThreshold)
         {
             _failures.TryRemove(deviceId, out _);
-            _logger.LogWarning("设备 {DeviceId} 连续失败 {Count} 次，触发离线", deviceId, count);
-            NotifyListeners(deviceId, Domain.Devices.DeviceStatus.Online, Domain.Devices.DeviceStatus.Offline);
+
+            var snap = GetSnapshot(deviceId);
+
+            if (snap?.Status != DeviceStatus.Offline)
+            {
+                _logger.LogWarning(
+                    "设备 {DeviceId} 连续失败 {Count} 次，触发离线",
+                    deviceId,
+                    count);
+
+                NotifyListeners(
+                    deviceId,
+                    snap?.Status ?? DeviceStatus.Unknown,
+                    DeviceStatus.Offline);
+            }
         }
     }
 
@@ -109,6 +123,7 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
 
     private void NotifyListeners(Guid deviceId, Domain.Devices.DeviceStatus old, Domain.Devices.DeviceStatus @new)
     {
+        _logger.LogInformation("HealthListener 数量: {Count}", _listeners.Count);
         UpdateSnapshot(deviceId, s => s with { Status = @new });
 
         var e = new DeviceHealthChanged { DeviceId = deviceId, OldStatus = old, NewStatus = @new };

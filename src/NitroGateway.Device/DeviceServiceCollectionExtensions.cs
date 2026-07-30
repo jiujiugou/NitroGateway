@@ -27,9 +27,9 @@ public static class DeviceServiceCollectionExtensions
             return monitor;
         });
 
-        // ── Listener（本模块）──
-        services.AddSingleton<PersistenceListener>();
-        services.AddHostedService<PersistenceListenerRegistrar>();
+        // ── Listener ──
+        services.AddSingleton<IDeviceHealthListener, PersistenceListener>();
+        services.AddHostedService<HealthListenerRegistrar>();
 
         return services;
     }

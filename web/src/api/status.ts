@@ -6,7 +6,8 @@ export async function getDeviceSummary(): Promise<DeviceStatusSummary[]> {
   return data.data ?? []
 }
 
-export async function getSystemStatus(): Promise<{ bufferBacklog: number; mqttConnected: boolean }> {
-  const { data } = await client.get<ApiResponse<{ bufferBacklog: number; mqttConnected: boolean }>>('/status/system')
-  return data.data ?? { bufferBacklog: 0, mqttConnected: false }
+export async function getSystemStatus(): Promise<{ bufferBacklog: number; mqttState: string; mqttConnected: boolean }> {
+  const { data } = await client.get<ApiResponse<{ bufferBacklog: number; mqttState: string }>>('/status/system')
+  const d = data.data ?? { bufferBacklog: 0, mqttState: 'Disconnected' }
+  return { bufferBacklog: d.bufferBacklog, mqttState: d.mqttState, mqttConnected: d.mqttState === 'Connected' }
 }

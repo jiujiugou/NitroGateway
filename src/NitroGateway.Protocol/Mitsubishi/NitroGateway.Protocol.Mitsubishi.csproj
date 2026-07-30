@@ -12,8 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
-    <ProjectReference Include="..\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
     <ProjectReference Include="..\..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

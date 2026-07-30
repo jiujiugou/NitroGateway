@@ -134,6 +134,7 @@ public sealed class OperationalError
         };
     }
 }
+
 public enum OperationalSeverity
 {
     /// <summary>信息性错误（不影响采集流程）</summary>

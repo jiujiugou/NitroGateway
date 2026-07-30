@@ -4,18 +4,19 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Events;
+using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Webapi.Hubs;
 
 /// <summary>
 /// SignalR 统一出口。所有对外推送写入内部 Channel，由 OutboxConsumer 在单一线程消费后发送。
 /// </summary>
-public class SignalRDispatcher : IPointStoredSink, IDeviceHealthListener
+public class DeviceStatusDispatcher : IPointStoredSink, IDeviceHealthListener, IMqttStateListener
 {
     private readonly ChannelWriter<OutboxMessage> _writer;
-    private readonly ILogger<SignalRDispatcher> _logger;
+    private readonly ILogger<DeviceStatusDispatcher> _logger;
 
-    public SignalRDispatcher(Channel<OutboxMessage> channel, ILogger<SignalRDispatcher> logger)
+    public DeviceStatusDispatcher(Channel<OutboxMessage> channel, ILogger<DeviceStatusDispatcher> logger)
     {
         _writer = channel.Writer;
         _logger = logger;
@@ -48,6 +49,8 @@ public class SignalRDispatcher : IPointStoredSink, IDeviceHealthListener
 
     public ValueTask OnHealthChangedAsync(DeviceHealthChanged e, CancellationToken ct = default)
     {
+        _logger.LogInformation(
+    "SignalRDispatcher 收到 DeviceHealthChanged");
         if (!_writer.TryWrite(new OutboxMessage
         {
             Method = "DeviceStatusChanged",
@@ -57,6 +60,24 @@ public class SignalRDispatcher : IPointStoredSink, IDeviceHealthListener
         {
             _logger.LogWarning("SignalR Channel 已满，丢弃 StatusChanged: Device={DeviceId}", e.DeviceId);
         }
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask OnStateChangedAsync(MqttConnectionState state, CancellationToken ct = default)
+    {
+        if (!_writer.TryWrite(new OutboxMessage
+        {
+            Method = "MqttStateChanged",
+            TargetType = OutboxTarget.All,
+            Payload = new
+            {
+                state = state.ToString()
+            }
+        }))
+        {
+            _logger.LogWarning("SignalR Channel 已满，丢弃 MQTT 状态");
+        }
+
         return ValueTask.CompletedTask;
     }
 }

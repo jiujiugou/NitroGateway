@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Events;
+using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Webapi.Hubs;
 
@@ -18,9 +19,10 @@ public static class SignalRServiceCollectionExtensions
         });
 
         services.AddSingleton(channel);
-        services.AddSingleton<SignalRDispatcher>();
-        services.AddSingleton<IPointStoredSink>(sp => sp.GetRequiredService<SignalRDispatcher>());
-        services.AddSingleton<IDeviceHealthListener>(sp => sp.GetRequiredService<SignalRDispatcher>());
+        services.AddSingleton<DeviceStatusDispatcher>();
+        services.AddSingleton<IPointStoredSink>(sp => sp.GetRequiredService<DeviceStatusDispatcher>());
+        services.AddSingleton<IDeviceHealthListener>(sp => sp.GetRequiredService<DeviceStatusDispatcher>());
+        services.AddSingleton<IMqttStateListener>(sp => sp.GetRequiredService<DeviceStatusDispatcher>());
         services.AddHostedService<OutboxConsumer>();
 
         return services;

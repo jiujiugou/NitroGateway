@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
+using NitroGateway.Protocol.Abstractions;
 
 namespace NitroGateway.Protocols;
 
@@ -11,7 +11,15 @@ namespace NitroGateway.Protocols;
 /// </summary>
 public sealed class ProtocolDriverFactory : IProtocolDriverFactory
 {
-    private readonly Dictionary<string, Func<DeviceConnection, ILogger, IProtocolDriver>> _factories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Func<DeviceConnection, ILogger, IProtocolDriver>>
+        _factories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILoggerFactory _loggerFactory;
+
+    /// <param name="loggerFactory">日志工厂，用于为驱动和装饰器创建日志实例</param>
+    public ProtocolDriverFactory(ILoggerFactory loggerFactory)
+    {
+        _loggerFactory = loggerFactory;
+    }
 
     /// <summary>注册一个协议驱动的构造器</summary>
     /// <param name="protocolName">协议名称（匹配 ProtocolIdentifier.Name），如 "Modbus", "S7"</param>
@@ -25,7 +33,10 @@ public sealed class ProtocolDriverFactory : IProtocolDriverFactory
     public IProtocolDriver Create(ProtocolIdentifier protocol, DeviceConnection connection)
     {
         if (_factories.TryGetValue(protocol.Name, out var factory))
-            return factory(connection, NullLogger.Instance);
+        {
+            var inner = factory(connection, _loggerFactory.CreateLogger(protocol.Name));
+            return new ReliableProtocolDriver(inner, _loggerFactory.CreateLogger<ReliableProtocolDriver>());
+        }
 
         throw new NotSupportedException($"不支持的协议: {protocol.Name}");
     }

@@ -15,6 +15,9 @@ public interface ICircuitBreaker
     /// <summary>上报一次失败采集，用于断开判定</summary>
     void RecordFailure();
 
-    /// <summary>强制重置为闭合状态（外部干预：设备恢复 Online、手动重置）</summary>
+    /// <summary>强制打开熔断器（由 HealthMonitor Offline 信号触发）</summary>
+    void Trip();
+
+    /// <summary>强制重置为闭合状态（由 HealthMonitor Online 信号触发或手动干预）</summary>
     void Reset();
 }

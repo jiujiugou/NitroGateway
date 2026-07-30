@@ -3,7 +3,7 @@ namespace NitroGateway.Collection;
 /// <summary>熔断器状态</summary>
 public enum CircuitState
 {
-    /// <summary>正常通行，失败计数器累加中</summary>
+    /// <summary>正常通行</summary>
     Closed,
     /// <summary>断路，拒绝所有请求</summary>
     Open,
@@ -13,19 +13,28 @@ public enum CircuitState
 
 /// <summary>
 /// 单设备熔断器，线程安全。
-/// 三态：Closed →（连续失败 N 次）→ Open →（冷却到期）→ HalfOpen →（探测成功 → Closed / 探测失败 → Open）
-/// 每次重新打开时冷却时间翻倍，直到上限。
+/// <para><b>设计原则：HealthMonitor 是唯一的健康状态决策者。</b></para>
+/// <para>
+/// CircuitBreaker 只负责"保护执行"，不自己判定设备是否故障。
+/// <see cref="Trip"/> 由 HealthMonitor 的 Offline 信号触发，
+/// <see cref="Reset"/> 由 HealthMonitor 的 Online 信号触发。
+/// </para>
+/// <para><b>探测退避策略：</b></para>
+/// <list type="bullet">
+/// <item>Trip → Open（冷却 5s 起步）</item>
+/// <item>冷却到期 → HalfOpen → 放行 1 个探测</item>
+/// <item>探测成功 → Closed（恢复正常）</item>
+/// <item>探测失败 → Open，冷却翻倍（5s→10s→20s→40s→...→5min 封顶）</item>
+/// <item>下次 Trip 或 Reset → 冷却重置回 5s</item>
+/// </list>
 /// </summary>
 public sealed class CircuitBreaker : ICircuitBreaker
 {
     private readonly object _lock = new();
-    private readonly int _failureThreshold;
     private readonly TimeSpan _baseOpenDuration;
     private readonly TimeSpan _maxOpenDuration;
 
     private CircuitState _state = CircuitState.Closed;
-    private int _failureCount;
-    private int _consecutiveSuccesses;
     private DateTime _openUntil = DateTime.MinValue;
     private DateTime _probeStarted = DateTime.MinValue;
     private TimeSpan _currentOpenDuration;
@@ -37,16 +46,13 @@ public sealed class CircuitBreaker : ICircuitBreaker
     /// <summary>
     /// 创建熔断器。
     /// </summary>
-    /// <param name="failureThreshold">连续失败多少次后断开。默认 5</param>
-    /// <param name="openDuration">断开后冷却多久进入半开探测。默认 30 秒</param>
-    /// <param name="maxOpenDuration">最大冷却时间（指数退避上限）。默认 5 分钟</param>
+    /// <param name="baseOpenDuration">起步冷却时间。默认 5 秒</param>
+    /// <param name="maxOpenDuration">最大冷却时间（翻倍上限）。默认 5 分钟</param>
     public CircuitBreaker(
-        int failureThreshold = 5,
-        TimeSpan? openDuration = null,
+        TimeSpan? baseOpenDuration = null,
         TimeSpan? maxOpenDuration = null)
     {
-        _failureThreshold = failureThreshold > 0 ? failureThreshold : throw new ArgumentOutOfRangeException(nameof(failureThreshold));
-        _baseOpenDuration = openDuration ?? TimeSpan.FromSeconds(30);
+        _baseOpenDuration = baseOpenDuration ?? TimeSpan.FromSeconds(5);
         _maxOpenDuration = maxOpenDuration ?? TimeSpan.FromMinutes(5);
         _currentOpenDuration = _baseOpenDuration;
     }
@@ -66,41 +72,50 @@ public sealed class CircuitBreaker : ICircuitBreaker
             {
                 var state = ComputeState();
 
+                // Open: 冷却未到，拒绝
                 if (state == CircuitState.Open)
                     return true;
 
+                // HalfOpen: 仅放行第一个请求作为探测
                 if (state == CircuitState.HalfOpen)
                 {
-                    // 探测超时保护：如果上一个探测卡住超过 30s，自动释放
                     if (_probing && DateTime.UtcNow - _probeStarted > ProbeTimeout)
-                    {
-                        _probing = false;
-                    }
+                        _probing = false;            // 探测卡住超过 30s，自动释放
 
                     if (_probing)
-                        return true;   // 已有探测在进行，拒绝新的
+                        return true;                 // 已有探测在进行
 
-                    _probing = true;     // 第一次进入 HalfOpen：放行
+                    _probing = true;                 // 放行
                     _probeStarted = DateTime.UtcNow;
                     return false;
                 }
 
-                return false;   // Closed：放行
+                return false;                        // Closed
             }
         }
     }
 
     /// <inheritdoc />
+    /// <remarks>由 HealthMonitor Offline 信号触发，强制进入 Open，冷却复位到 5s。</remarks>
+    public void Trip()
+    {
+        lock (_lock)
+        {
+            _state = CircuitState.Open;
+            _currentOpenDuration = _baseOpenDuration;
+            _openUntil = DateTime.UtcNow + _currentOpenDuration;
+            _probing = false;
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>探测成功 → Closed，冷却重置回 5s。</remarks>
     public void RecordSuccess()
     {
         lock (_lock)
         {
-            _failureCount = 0;
-            _consecutiveSuccesses++;
-
-            if (_state == CircuitState.HalfOpen && _consecutiveSuccesses >= 1)
+            if (_state == CircuitState.HalfOpen)
             {
-                // 探测成功 → 恢复闭合，重置冷却时间
                 _state = CircuitState.Closed;
                 _currentOpenDuration = _baseOpenDuration;
                 _probing = false;
@@ -110,42 +125,32 @@ public sealed class CircuitBreaker : ICircuitBreaker
     }
 
     /// <inheritdoc />
+    /// <remarks>探测失败 → Open，冷却翻倍（上限 5min）。Closed 状态下忽略。</remarks>
     public void RecordFailure()
     {
         lock (_lock)
         {
-            _failureCount++;
-            _consecutiveSuccesses = 0;
+            if (_state != CircuitState.HalfOpen)
+                return;
 
-            if (_state == CircuitState.HalfOpen)
-            {
-                // 探测失败 → 重新打开，冷却时间翻倍
-                _state = CircuitState.Open;
-                _currentOpenDuration = TimeSpan.FromTicks(
-                    Math.Min(_currentOpenDuration.Ticks * 2, _maxOpenDuration.Ticks));
-                _openUntil = DateTime.UtcNow + _currentOpenDuration;
-                _probing = false;
-                _probeStarted = DateTime.MinValue;
-            }
-            else if (_state == CircuitState.Closed && _failureCount >= _failureThreshold)
-            {
-                // 连续失败达阈值 → 打开
-                _state = CircuitState.Open;
-                _openUntil = DateTime.UtcNow + _currentOpenDuration;
-            }
+            // 每次探测失败冷却翻倍
+            _currentOpenDuration = TimeSpan.FromTicks(
+                Math.Min(_currentOpenDuration.Ticks * 2, _maxOpenDuration.Ticks));
+
+            _state = CircuitState.Open;
+            _openUntil = DateTime.UtcNow + _currentOpenDuration;
+            _probing = false;
+            _probeStarted = DateTime.MinValue;
         }
     }
 
-    /// <summary>
-    /// 强制重置熔断器到闭合状态（用于设备恢复、手动干预）。
-    /// </summary>
+    /// <inheritdoc />
+    /// <remarks>由 HealthMonitor Online 信号触发，强制恢复到 Closed，冷却复位。</remarks>
     public void Reset()
     {
         lock (_lock)
         {
             _state = CircuitState.Closed;
-            _failureCount = 0;
-            _consecutiveSuccesses = 0;
             _currentOpenDuration = _baseOpenDuration;
             _probing = false;
             _probeStarted = DateTime.MinValue;
@@ -158,9 +163,7 @@ public sealed class CircuitBreaker : ICircuitBreaker
     private CircuitState ComputeState()
     {
         if (_state == CircuitState.Open && DateTime.UtcNow >= _openUntil)
-        {
             _state = CircuitState.HalfOpen;
-        }
         return _state;
     }
 }

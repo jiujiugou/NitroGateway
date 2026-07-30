@@ -5,6 +5,7 @@
     <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Configuration\NitroGateway.Storage.Configuration.csproj" />
     <ProjectReference Include="..\NitroGateway.Protocol\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
+    <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

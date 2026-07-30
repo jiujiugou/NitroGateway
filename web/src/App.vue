@@ -54,14 +54,44 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getSystemStatus } from './api/status'
-const route = useRoute()
-const mqttConnected = ref(false); const backlog = ref(0)
+import { createLiveConnection } from './api/signalr'
+import type { HubConnection } from '@microsoft/signalr'
+
+const mqttConnected = ref(false)
+const backlog = ref(0)
+
+let conn: HubConnection | null = null
+
 onMounted(async () => {
-  if (route.path === '/login') return
-  try { const s = await getSystemStatus(); mqttConnected.value = s.mqttConnected; backlog.value = s.bufferBacklog } catch {}
+  // 初始化状态
+  try {
+    const s = await getSystemStatus()
+    mqttConnected.value = s.mqttConnected
+    backlog.value = s.bufferBacklog
+  } catch {}
+
+  // 建立 SignalR
+  conn = createLiveConnection()
+
+  conn.on('MqttStateChanged', (d: { state: string }) => {
+    mqttConnected.value = d.state === 'Connected'
+  })
+
+  conn.on('BufferBacklogChanged', (d: { backlog: number }) => {
+    backlog.value = d.backlog
+  })
+
+  try {
+    await conn.start()
+  } catch (e) {
+    console.warn('SignalR:', e)
+  }
+})
+
+onUnmounted(() => {
+  conn?.stop()
 })
 </script>
 

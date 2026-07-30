@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.OpenApi;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
 using NitroGateway.DeviceManagement;
@@ -50,7 +51,7 @@ builder.Services.AddNitroSignalR();
 builder.Services.AddNitroAlarm();
 builder.Services.AddNitroCollection(intervalMs: 1000);
 builder.Services.AddNitroForwarder(intervalMs: 5000);
-builder.Services.AddNitroMqtt(new MqttConnectionOptions { Broker = "tcp://localhost:1883", ClientId = $"NitroGateway-{Environment.MachineName}" });
+builder.Services.AddNitroMqtt(builder.Configuration);
 
 builder.Services.AddNitroTelemetry();
 
@@ -77,13 +78,20 @@ builder.Services.AddSwaggerGen(c =>
         In = Microsoft.OpenApi.Models.ParameterLocation.Header,
         Description = "输入 JWT token: Bearer {token}"
     });
-    c.AddSecurityRequirement(new()
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+{
     {
+        new Microsoft.OpenApi.Models.OpenApiSecurityScheme
         {
-            new() { Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } },
-            Array.Empty<string>()
-        }
-    });
+            Reference = new Microsoft.OpenApi.Models.OpenApiReference
+            {
+                Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                Id = "Bearer"
+            }
+        },
+        Array.Empty<string>()
+    }
+});
 
     // XML 注释
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
@@ -94,14 +102,6 @@ var app = builder.Build();
 
 // ── 建表 ──
 app.InitializeDatabase();
-
-// ── MQTT（后台）──
-_ = Task.Run(async () =>
-{
-    var mqtt = app.Services.GetRequiredService<IMqttClient>();
-    var r = await mqtt.ConnectAsync();
-    if (r.IsSuccess) await mqtt.SubscribeAsync("nitrogateway/+/cmd");
-});
 
 app.UseSwagger();
 app.UseSwaggerUI();

@@ -18,12 +18,6 @@ public static class ModbusRegistration
 {
     public static void Register(ProtocolDriverFactory factory)
     {
-        factory.Register("Modbus", (conn, logger) =>
-        {
-            var dialect = conn.Parameters.GetValueOrDefault("Dialect")?.ToString() ?? "TCP";
-            return dialect.Equals("RTU", StringComparison.OrdinalIgnoreCase)
-                ? new ModbusRtuDriver(conn, logger)
-                : new ModbusTcpDriver(conn, logger);
-        });
+        factory.Register("Modbus", (conn, logger) => new ModbusTcpDriver(conn, logger));
     }
 }

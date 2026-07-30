@@ -8,71 +8,84 @@ using Microsoft.Extensions.Logging;
 
 namespace NitroGateway.Collection;
 
-/// <summary>从设备读取原始数据实现</summary>
+/// <summary>
+/// 设备数据读取器。
+/// 每轮采集通过 <see cref="IProtocolDriverFactory"/> 创建协议驱动实例，
+/// 由 <see cref="ReliableProtocolDriver"/> 内部处理建连/重试/断连，读完即释放。
+/// </summary>
+/// <remarks>
+/// <para><b>设计决策：短连接模式，不缓存驱动。</b></para>
+/// <para>
+/// 每轮采集新建一个驱动实例，读完后通过 <c>using</c> 立即释放。
+/// <see cref="ReliableProtocolDriver"/> 的 Polly 管线（3次重试 + 指数退避 + 5s超时）
+/// 已经覆盖了连接管理、失败重试和超时保护，不需要额外的全局连接池。
+/// </para>
+/// <para><b>为什么不用长连接？</b></para>
+/// <list type="bullet">
+/// <item>Modbus TCP / S7 握手开销 &lt;5ms，1000ms 采集间隔下可忽略。</item>
+/// <item>无状态：不需要处理连接缓存同步、设备 CRUD 变更、TCP 半开检测。</item>
+/// <item>工厂 + using 可确保每次读写后 TCP socket 立即回收，不堆积。</item>
+/// </list>
+/// </remarks>
 public sealed class DeviceReader : IDeviceReader
 {
     private readonly IProtocolDriverFactory _driverFactory;
     private readonly ILogger<DeviceReader> _logger;
 
+    /// <summary>创建数据读取器</summary>
+    /// <param name="driverFactory">协议驱动工厂，按设备协议和连接参数创建对应驱动</param>
+    /// <param name="logger">日志记录器</param>
     public DeviceReader(IProtocolDriverFactory driverFactory, ILogger<DeviceReader> logger)
     {
         _driverFactory = driverFactory;
         _logger = logger;
     }
 
+    /// <summary>
+    /// 对单台设备执行一轮采集。
+    /// 流程：取启用点位 → 工厂创建驱动 → 批量读取 → using 释放驱动。
+    /// </summary>
+    /// <param name="device">目标设备（含协议、连接参数、点位列表）</param>
+    /// <param name="ct">取消令牌</param>
+    /// <returns>原始点位值列表；设备无启用点位时返回空列表</returns>
     public async Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadDeviceAsync(
-        DomainDevice device, CancellationToken ct)
+    DomainDevice device,
+    CancellationToken ct)
     {
         using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.ReadDevice);
         activity?.SetTag(GatewayActivityTags.DeviceId, device.Id.ToString());
         activity?.SetTag(GatewayActivityTags.DeviceProtocol, device.Protocol.Name);
 
-        _logger.LogDebug("开始读取设备：{device}", device.Name);
+        _logger.LogInformation("开始读取设备：{Device}", device.Name);
+
         var points = device.Points.Where(p => p.Enabled).ToList();
-        //_logger.LogInformation("设备 {device} 有 {count} 个启用的点位", device.Name, points.Count);
+
         if (points.Count == 0)
             return Array.Empty<RawPointValue>();
 
-        var driver = _driverFactory.Create(device.Protocol, device.Connection);
-
-        const int maxRetry = 3;
-        var delay = TimeSpan.FromMilliseconds(200);
-
-        Exception? lastError = null;
-
-        for (int i = 0; i < maxRetry; i++)
+        try
         {
-            try
-            {
-                var connectResult = await driver.ConnectAsync(ct);
-                if (connectResult.IsFailure)
-                    throw new Exception(connectResult.Error!.Message);
+            // 每轮新建驱动 → ReliableProtocolDriver 自动建连/重试/断连
+            using var driver = _driverFactory.Create(device.Protocol, device.Connection);
 
-                var readResult = await driver.ReadBatchAsync(points, ct);
+            var result = await driver.ReadBatchAsync(points, ct);
 
-                if (readResult.IsSuccess)
-                {
-                    //_logger.LogInformation("设备 {device} 读取成功，共 {count} 个点位", device.Name, readResult.Value!.Count);
-                    return readResult;
-                }
-                throw new Exception(readResult.Error!.Message);
-            }
-            catch (Exception ex)
-            {
-                lastError = ex;
-                _logger.LogDebug(ex,
-                    "设备读取失败，第 {try}/{max} 次重试：{device}",
-                    i + 1, maxRetry, device.Name);
-
-                if (i < maxRetry - 1)
-                    await Task.Delay(delay * (1 << i), ct); // 指数退避
-            }
-            finally
-            {
-                await driver.DisconnectAsync(ct);
-            }
+            return result;
         }
-        return OperationalError.Timeout(
-            $"设备读取失败，{maxRetry} 次重试后仍不可达: {lastError?.Message}");
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "设备 {Device} 读取异常",
+                device.Name);
+
+            return OperationalError.Protocol(
+                $"设备读取异常：{ex.Message}");
+        }
     }
+
 }
