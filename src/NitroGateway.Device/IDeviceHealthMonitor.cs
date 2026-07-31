@@ -1,4 +1,5 @@
 using NitroGateway.DeviceManagement.Events;
+using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.DeviceManagement;
 
@@ -12,7 +13,7 @@ public interface IDeviceHealthMonitor
     void ReportFailure(Guid deviceId, string reason);
 
     /// <summary>更新快照中的维护状态</summary>
-    void UpdateStatus(Guid deviceId, Domain.Devices.DeviceStatus status);
+    void UpdateStatus(Guid deviceId, DeviceStatus status);
 
     /// <summary>连续失败多少次触发离线</summary>
     int FailureThreshold { get; }

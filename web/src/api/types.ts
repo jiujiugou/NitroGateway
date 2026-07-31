@@ -71,3 +71,16 @@ export interface MeasurementQuery {
   from: string
   to: string
 }
+
+export interface AlarmRule {
+  id: string
+  deviceId: string
+  pointId: string
+  operator: string
+  threshold: number
+  thresholdUpper?: number
+  durationSeconds: number
+  severity: string
+  messageTemplate?: string
+  enabled: boolean
+}

@@ -67,3 +67,8 @@ export async function exportPoints(deviceId: string): Promise<void> {
   const a = document.createElement('a'); a.href = url; a.download = `points_${deviceId}.csv`; a.click()
   URL.revokeObjectURL(url)
 }
+
+export async function testConnection(d: Partial<Device>): Promise<{ success: boolean; latencyMs: number; ping?: string; error?: string }> {
+  const { data } = await client.post('/devices/test-connection', d)
+  return data.data ?? { success: false, latencyMs: 0, error: '未知错误' }
+}

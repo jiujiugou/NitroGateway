@@ -9,13 +9,16 @@ namespace NitroGateway.DeviceManagement;
 public sealed class DeviceManager : IDeviceManager
 {
     private readonly IDeviceRepository _repository;
+    private readonly IDeviceHealthMonitor _healthMonitor;
     private readonly ILogger<DeviceManager> _logger;
 
     public DeviceManager(
         IDeviceRepository repository,
+        IDeviceHealthMonitor healthMonitor,
         ILogger<DeviceManager> logger)
     {
         _repository = repository;
+        _healthMonitor = healthMonitor;
         _logger = logger;
     }
 
@@ -25,9 +28,11 @@ public sealed class DeviceManager : IDeviceManager
             return OperationalError.Validation("设备 ID 不能为空");
 
         var result = await _repository.SaveAsync(device, ct);
-        if (result.IsFailure) return result.Error!;
+        if (result.IsFailure) 
+            return result.Error!;
 
         _logger.LogInformation("设备已注册: {DeviceName} [{DeviceId}]", device.Name, device.Id);
+        _healthMonitor.UpdateStatus(device.Id, device.Status);
         return device;
     }
 
@@ -37,6 +42,7 @@ public sealed class DeviceManager : IDeviceManager
         if (device.IsFailure) return device.Error!;
 
         await _repository.DeleteAsync(deviceId, ct);
+        _healthMonitor.UpdateStatus(device.Value.Id, device.Value.Status);
         _logger.LogInformation("设备已注销: {DeviceId}", deviceId);
         return OperationResult.Success();
     }

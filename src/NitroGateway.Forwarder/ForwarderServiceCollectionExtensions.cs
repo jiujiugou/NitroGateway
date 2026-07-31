@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using NitroGateway.Storage.Buffer;
 
 namespace NitroGateway.Forwarder;
 
@@ -19,6 +20,7 @@ public static class ForwarderServiceCollectionExtensions
         services.AddHostedService(sp => new ForwarderEngine(
             sp.GetRequiredService<IServiceScopeFactory>(),
             TimeSpan.FromMilliseconds(intervalMs),
+            sp.GetRequiredService<IForwardBuffer>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ForwarderEngine>>()));
 
         return services;

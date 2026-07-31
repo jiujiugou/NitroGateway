@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.DeviceManagement;
+using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Configuration;
@@ -22,10 +23,10 @@ public class DeviceManagerTests
 {
     private readonly FakeDeviceRepository _repo = new();
     private readonly DeviceManager _manager;
-
+    private readonly FakeDeviceHealthMonitor _healthMonitor = new();
     public DeviceManagerTests()
     {
-        _manager = new DeviceManager(_repo, NullLogger<DeviceManager>.Instance);
+        _manager = new DeviceManager(_repo, _healthMonitor, NullLogger<DeviceManager>.Instance);
     }
 
     /// <summary>正常注册设备，ID + Name 正确返回。</summary>
@@ -152,5 +153,46 @@ public class DeviceManagerTests
             DeviceStatus status, CancellationToken ct = default)
             => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(
                 Devices.Values.Where(d => d.Status == status).ToList()));
+    }
+    private sealed class FakeDeviceHealthMonitor: IDeviceHealthMonitor
+    {
+        public Dictionary<Guid, DeviceStatus> Statuses = new();
+
+        public int FailureThreshold => throw new NotImplementedException();
+
+        public int RecoveryThreshold => throw new NotImplementedException();
+
+        public void AddListener(IDeviceHealthListener listener)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DeviceHealthSnapshot? GetSnapshot(Guid deviceId)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void ReportFailure(Guid deviceId, string reason)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void ReportSuccess(Guid deviceId)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void UpdateStatus(Guid deviceId, DeviceStatus status)
+        {
+            if(Statuses.ContainsKey(deviceId))
+                Statuses[deviceId] = status;
+            else
+                Statuses.Add(deviceId, status);
+        }
     }
 }

@@ -7,7 +7,7 @@
         <el-button>⬆ 导入 CSV</el-button>
       </el-upload>
       <el-button type="warning" @click="showGen=true">⚙ 批量生成</el-button>
-      <el-button type="primary" @click="showForm=true">+ 添加点位</el-button>
+      <el-button type="primary" @click="openAdd">+ 添加点位</el-button>
     </div>
   </div>
 
@@ -24,14 +24,17 @@
       <el-table-column label="启用" width="60">
         <template #default="{ row }"><el-switch :model-value="row.enabled" disabled size="small" /></template>
       </el-table-column>
-      <el-table-column label="操作" width="80">
-        <template #default="{ row }"><el-button size="small" text type="danger" @click="handleDel(row.id)">删除</el-button></template>
+      <el-table-column label="操作" width="140">
+        <template #default="{ row }">
+          <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button size="small" text type="danger" @click="handleDel(row.id)">删除</el-button>
+        </template>
       </el-table-column>
     </el-table>
   </div>
 
-  <!-- 添加点位 -->
-  <el-dialog v-model="showForm" title="添加点位" width="520px">
+  <!-- 添加/编辑点位 -->
+  <el-dialog v-model="showForm" :title="editingId ? '编辑点位' : '添加点位'" width="520px">
     <el-form :model="pf" label-position="top">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
         <el-form-item label="名称"><el-input v-model="pf.name" /></el-form-item>
@@ -52,7 +55,7 @@
         <el-form-item label="采集间隔(ms)"><el-input-number v-model="pf.scanIntervalMs" :min="0" /></el-form-item>
       </div>
     </el-form>
-    <template #footer><el-button @click="showForm=false">取消</el-button><el-button type="primary" @click="add">添加</el-button></template>
+    <template #footer><el-button @click="showForm=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
   </el-dialog>
 
   <!-- 批量生成 -->
@@ -83,7 +86,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { getPoints, addPoint, deletePoint, importPoints, generatePoints, exportPoints } from '../../api/devices'
+import { getPoints, addPoint, updatePoint, deletePoint, importPoints, generatePoints, exportPoints } from '../../api/devices'
 import type { DevicePoint } from '../../api/types'
 
 const route = useRoute()
@@ -91,9 +94,11 @@ const deviceId = route.params.deviceId as string
 const points = ref<DevicePoint[]>([])
 const showForm = ref(false)
 const showGen = ref(false)
+const editingId = ref<string | null>(null)
 const types = ['Bool','Byte','Int16','UInt16','Int32','UInt32','Int64','UInt64','Float','Double','String']
 
-const pf = ref({ name:'', address:'40001', dataType:'Float', access:'ReadOnly', scaleFactor:1, scaleOffset:0, deadband:0, scanIntervalMs:0, enabled:true })
+const makeEmpty = () => ({ name:'', address:'40001', dataType:'Float', access:'ReadOnly', scaleFactor:1, scaleOffset:0, deadband:0, scanIntervalMs:0, enabled:true })
+const pf = ref<Record<string, any>>(makeEmpty())
 const gf = ref({ nameTemplate:'AI_{###}', startAddress:40001, count:100, dataType:'Float', access:'ReadOnly' })
 
 const previewName = computed(() => {
@@ -104,9 +109,34 @@ const previewName = computed(() => {
 
 onMounted(async () => { try { points.value = await getPoints(deviceId) } catch {} })
 
-async function add() {
-  try { const p = await addPoint(deviceId, pf.value as any); if (p) { points.value.push(p); showForm.value=false } } catch {}
+function openAdd() {
+  editingId.value = null
+  pf.value = makeEmpty()
+  showForm.value = true
 }
+
+function openEdit(row: DevicePoint) {
+  editingId.value = row.id
+  pf.value = { ...row }
+  showForm.value = true
+}
+
+async function save() {
+  try {
+    if (editingId.value) {
+      const p = await updatePoint(deviceId, editingId.value, pf.value as any)
+      if (p) {
+        const idx = points.value.findIndex(pt => pt.id === editingId.value)
+        if (idx >= 0) points.value.splice(idx, 1, p)
+        showForm.value = false
+      }
+    } else {
+      const p = await addPoint(deviceId, pf.value as any)
+      if (p) { points.value.push(p); showForm.value = false }
+    }
+  } catch {}
+}
+
 async function handleDel(id: string) {
   try { await deletePoint(deviceId,id); points.value=points.value.filter(p=>p.id!==id) } catch {}
 }

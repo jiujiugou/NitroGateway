@@ -101,6 +101,48 @@ public class DevicesController : ControllerBase
         return r.IsSuccess ? Ok(ApiResponse<object>.Ok(new { })) : BadRequest(ApiResponse<object>.Fail("DeletePoint", r.Error!.Message));
     }
 
+    /// <summary>测试设备连接。前端保存前验证网络是否可达。</summary>
+    [HttpPost("test-connection")]
+    public async Task<ActionResult<ApiResponse<object>>> TestConnection(DeviceDto d)
+    {
+        var factory = HttpContext.RequestServices.GetRequiredService<Protocols.IProtocolDriverFactory>();
+        var protocol = new Domain.Devices.ProtocolIdentifier { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect };
+        var connection = new DeviceConnection
+        {
+            Endpoint = d.Connection.Endpoint,
+            ConnectTimeoutMs = d.Connection.ConnectTimeoutMs,
+            RequestTimeoutMs = d.Connection.RequestTimeoutMs,
+            RetryCount = 0,
+            RetryIntervalMs = 0,
+            Parameters = d.Connection.Parameters
+        };
+
+        try
+        {
+            using var driver = factory.Create(protocol, connection);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await driver.ConnectAsync();
+            sw.Stop();
+
+            if (result.IsSuccess)
+            {
+                var pingResult = await driver.PingAsync();
+                return Ok(ApiResponse<object>.Ok(new
+                {
+                    success = true,
+                    latencyMs = sw.ElapsedMilliseconds,
+                    ping = pingResult.IsSuccess ? "ok" : "unreachable"
+                }));
+            }
+
+            return Ok(ApiResponse<object>.Ok(new { success = false, latencyMs = sw.ElapsedMilliseconds, error = result.Error!.Message }));
+        }
+        catch (Exception ex)
+        {
+            return Ok(ApiResponse<object>.Ok(new { success = false, latencyMs = 0L, error = ex.Message }));
+        }
+    }
+
     static DeviceDto Map(Device d) => new()
     {
         Id = d.Id.ToString(), Name = d.Name, Description = d.Description,

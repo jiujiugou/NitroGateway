@@ -13,6 +13,7 @@ const router = createRouter({
     { path: '/devices/:deviceId/points', name: 'Points', component: () => import('../views/Points/PointList.vue') },
     { path: '/monitoring', name: 'Monitoring', component: () => import('../views/Monitoring/MonitoringView.vue') },
     { path: '/alarms', name: 'Alarms', component: () => import('../views/Alarms/AlarmListView.vue') },
+    { path: '/alarmrules', name: 'AlarmRules', component: () => import('../views/Alarms/AlarmRulesView.vue') },
     { path: '/deadletters', name: 'DeadLetters', component: () => import('../views/DeadLetters/DeadLettersView.vue') },
     { path: '/system', name: 'SystemStatus', component: () => import('../views/System/SystemStatus.vue') },
     { path: '/history', name: 'History', component: () => import('../views/History/HistoryView.vue') },

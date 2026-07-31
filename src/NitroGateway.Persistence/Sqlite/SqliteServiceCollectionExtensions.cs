@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NitroGateway.Alarm.Repository;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.Configuration;
@@ -32,7 +33,7 @@ public static class SqliteServiceCollectionExtensions
         // 裸 SqliteConnection — Singleton，所有非 EF Core 的存储共用
         var conn = new SqliteConnection(connectionString);
         services.AddSingleton<IMeasurementStore>(_ => new SqliteMeasurementStore(connectionString));
-        services.AddSingleton<IForwardBuffer>(_ => new SqliteForwardBuffer(conn));
+        services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardBuffer(conn, sp.GetRequiredService<ILogger<SqliteForwardBuffer>>()));
 
         // 告警持久化（替代 Alarm 模块的 InMemory 实现）
         services.AddSingleton<IAlarmRuleRepository>(_ => new SqliteAlarmRuleRepository(conn));

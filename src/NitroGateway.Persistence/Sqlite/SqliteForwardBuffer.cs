@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
@@ -14,14 +15,17 @@ public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly int _maxRetries;
+    private readonly ILogger<SqliteForwardBuffer> _logger;
     private readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     public int Count =>
         _connection.ExecuteScalar<int>("SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'");
 
-    public SqliteForwardBuffer(SqliteConnection connection, int maxRetries = 5)
+    /// <param name="maxRetries">最大重试次数，超过后移入死信队列。默认 5</param>
+    public SqliteForwardBuffer(SqliteConnection connection, ILogger<SqliteForwardBuffer> logger, int maxRetries = 5)
     {
         _connection = connection;
+        _logger = logger;
         _maxRetries = maxRetries;
         _connection.Open();
     }
@@ -112,9 +116,10 @@ public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
     string reason,
     CancellationToken ct = default)
     {
+        await using var tx = await _connection.BeginTransactionAsync(ct);
         try
         {
-            // 失败以后恢复 Pending
+            // 恢复 Pending + 记录重试次数
             await _connection.ExecuteAsync(
                 @"UPDATE forward_buffer
               SET
@@ -122,11 +127,7 @@ public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
                     retry_count = retry_count + 1,
                     last_error = @error
               WHERE id = @id",
-                new
-                {
-                    id = batchId.ToString(),
-                    error = reason
-                });
+                new { id = batchId.ToString(), error = reason }, tx);
 
             // 超过重试次数进入死信
             await _connection.ExecuteAsync(
@@ -134,16 +135,26 @@ public sealed class SqliteForwardBuffer : IForwardBuffer, IDisposable
               SET status = 'DeadLetter'
               WHERE id = @id
                 AND retry_count >= @max",
-                new
-                {
-                    id = batchId.ToString(),
-                    max = _maxRetries
-                });
+                new { id = batchId.ToString(), max = _maxRetries }, tx);
+
+            await tx.CommitAsync(ct);
+
+            // 如果进入死信，记录 Warning
+            var deadCount = await _connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM forward_buffer WHERE id=@id AND status='DeadLetter'",
+                new { id = batchId.ToString() });
+            if (deadCount > 0)
+            {
+                _logger.LogWarning(
+                    "转发批次 {BatchId} 进入死信队列（重试 {MaxRetries} 次后失败）: {Error}",
+                    batchId, _maxRetries, reason);
+            }
 
             return OperationResult.Success();
         }
         catch (Exception ex)
         {
+            await tx.RollbackAsync(ct);
             return SqliteErrorClassifier.Classify(ex, "标记失败异常");
         }
     }
