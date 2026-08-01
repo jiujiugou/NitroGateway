@@ -28,4 +28,18 @@ public class MeasurementsController : ControllerBase
         if (r.IsFailure) return BadRequest(ApiResponse<List<MeasurementDto>>.Fail("Latest", r.Error!.Message));
         return Ok(ApiResponse<List<MeasurementDto>>.Ok(r.Value!.OrderByDescending(s => s.Timestamp).Take(1).Select(s => new MeasurementDto { DeviceId = s.DeviceId.ToString(), DevicePointId = s.DevicePointId.ToString(), RawValue = s.RawValue, Value = s.Value, Timestamp = s.Timestamp.ToString("O"), Quality = s.Quality.ToString(), ErrorMessage = s.ErrorMessage }).ToList()));
     }
+
+    /// <summary>获取设备所有点位的最新值（前端首屏渲染用）</summary>
+    [HttpGet("latest-batch")]
+    public async Task<ActionResult<ApiResponse<List<MeasurementDto>>>> LatestBatch([FromQuery] Guid deviceId)
+    {
+        var now = DateTime.UtcNow;
+        var r = await _store.QueryByDeviceAsync(deviceId, now.AddHours(-1), now);
+        if (r.IsFailure) return BadRequest(ApiResponse<List<MeasurementDto>>.Fail("LatestBatch", r.Error!.Message));
+        return Ok(ApiResponse<List<MeasurementDto>>.Ok(r.Value!
+            .GroupBy(s => s.DevicePointId)
+            .Select(g => g.OrderByDescending(s => s.Timestamp).First())
+            .Select(s => new MeasurementDto { DeviceId = s.DeviceId.ToString(), DevicePointId = s.DevicePointId.ToString(), RawValue = s.RawValue, Value = s.Value, Timestamp = s.Timestamp.ToString("O"), Quality = s.Quality.ToString(), ErrorMessage = s.ErrorMessage })
+            .ToList()));
+    }
 }

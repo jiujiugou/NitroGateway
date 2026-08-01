@@ -22,7 +22,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getDevices } from '../../api/devices'
 import { createLiveConnection } from '../../api/signalr'
-import type { Device } from '../../api/types'
+import type { Device, DeviceStatus } from '../../api/types'
 import type { HubConnection } from '@microsoft/signalr'
 import StatusTag from '../../components/DeviceStatusTag.vue'
 
@@ -40,7 +40,7 @@ onMounted(async () => {
   conn.on('Measurement', (data: any[]) => {
     data.forEach((m: any) => { latestData.value[m.pointId] = m })
   })
-  conn.on('DeviceStatusChanged', (d: { deviceId: string; status: string }) => {
+  conn.on('DeviceStatusChanged', (d: { deviceId: string; status: DeviceStatus }) => {
     const dev = devices.value.find(x => x.id === d.deviceId)
     if (dev) dev.status = d.status
   })

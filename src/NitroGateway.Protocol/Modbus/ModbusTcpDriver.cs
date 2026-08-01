@@ -19,6 +19,9 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IDisposable
     /// <summary>合并 Range 时允许的最大间隙（寄存器数）。≤此值则合并为一次读取</summary>
     private const int MaxMergeGap = 2;
 
+    /// <summary>Modbus 单次最大寄存器数（协议限制，功能码 03/04 上限为 125）</summary>
+    private const int MaxRegistersPerRequest = 125;
+
     public DriverState State { get; private set; } = DriverState.Disconnected;
     public DriverCapability Capability => ModbusDriverCapability.Instance;
 
@@ -44,7 +47,14 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IDisposable
         {
             var parts = _connection.Endpoint.Split(':');
             _client.IpAddress = parts[0];
-            _client.Port = parts.Length > 1 && int.TryParse(parts[1], out var p) ? p : 502;
+            if (
+                parts.Length > 1 &&
+                int.TryParse(parts[1], out var p) &&
+                p > 0 &&
+                p <= 65535)
+            {
+                _client.Port = p;
+            }
 
             var result = _client.ConnectServer();
             if (result.IsSuccess)
@@ -267,7 +277,7 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IDisposable
 
             void FlushRange()
             {
-                var totalRegs = (ushort)(currentEnd - currentStart);
+                var totalRegs = (ushort)Math.Min(currentEnd - currentStart, MaxRegistersPerRequest);
                 ranges.Add(new ReadRange(areaGroup.Key, currentPoints, currentStart, totalRegs));
             }
         }
@@ -277,127 +287,82 @@ public sealed class ModbusTcpDriver : IProtocolDriver, IDisposable
 
     // ═══════════ 批量 Range 读取 ═══════════
 
-    /// <summary>对单个 Range 发一次多寄存器读，然后拆解字节流</summary>
+    /// <summary>
+    /// Range 内按 DataType 分组，调 HSL 同类批量读方法。
+    /// 同类型一次批量读，异类回退逐点。不自己解析字节。
+    /// </summary>
     private async Task<List<RawPointValue>> ReadRangeAsync(ReadRange range)
     {
-        var address = ToHslAddress(range.Area, range.StartOffset);
         var results = new List<RawPointValue>();
 
-        try
+        foreach (var typeGroup in range.Points.GroupBy(p => p.Point.DataType))
         {
-            // 一次读取 range.TotalRegisters 个寄存器
-            var readResult = await _client.ReadAsync(address, range.TotalRegisters);
-            if (!readResult.IsSuccess)
+            try
             {
-                // Range 读取失败 → 回退到逐点读取
-                _logger.LogDebug(
-                    "Modbus Range 读取失败 [{Start} +{Count}]: {Error}，回退逐点读取",
-                    address, range.TotalRegisters, readResult.Message);
+                var pts = typeGroup.ToList();
+                var regsPerPoint = ModbusAddressParser.GetRegisterCount(typeGroup.Key);
+                var totalRegs = pts.Count * regsPerPoint;
 
-                foreach (var pp in range.Points)
+                if (totalRegs > MaxRegistersPerRequest)
                 {
-                    var single = TryReadSingle(pp.Point, pp.Addr);
-                    if (single.IsSuccess) results.Add(single.Value!);
+                    foreach (var pp in pts)
+                    {
+                        var s = TryReadSingle(pp.Point, pp.Addr);
+                        if (s.IsSuccess) results.Add(s.Value!);
+                    }
+                    continue;
                 }
-                return results;
-            }
 
-            var bytes = readResult.Content;
-            // bytes 格式: [reg0_hi, reg0_lo, reg1_hi, reg1_lo, ...]
-            // 每个寄存器 2 字节，总共 totalRegisters * 2 字节
+                var hslAddr = ToHslAddress(range.Area, pts[0].Addr.Offset);
+                var values = TryTypedBatch(hslAddr, typeGroup.Key, pts.Count);
 
-            foreach (var pp in range.Points)
-            {
-                var byteOffset = (pp.Addr.Offset - range.StartOffset) * 2;
-                var value = BytesToValue(bytes, byteOffset, pp.Point.DataType);
-
-                results.Add(new RawPointValue
+                if (values is not null)
                 {
-                    Point = pp.Point,
-                    Value = value,
-                    Timestamp = DateTime.UtcNow
-                });
+                    for (var i = 0; i < pts.Count && i < values.Length; i++)
+                        results.Add(new RawPointValue { Point = pts[i].Point, Value = values[i], Timestamp = DateTime.UtcNow });
+                }
+                else
+                {
+                    foreach (var pp in pts)
+                    {
+                        var s = TryReadSingle(pp.Point, pp.Addr);
+                        if (s.IsSuccess) results.Add(s.Value!);
+                    }
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            // Range 异常 → 回退逐点
-            _logger.LogDebug("Modbus Range 读取异常: {Error}，回退逐点", ex.Message);
-            foreach (var pp in range.Points)
+            catch
             {
-                var single = TryReadSingle(pp.Point, pp.Addr);
-                if (single.IsSuccess) results.Add(single.Value!);
+                foreach (var pp in typeGroup)
+                {
+                    var s = TryReadSingle(pp.Point, pp.Addr);
+                    if (s.IsSuccess) results.Add(s.Value!);
+                }
             }
         }
 
         return results;
     }
 
-    // ═══════════ 字节 → 值 ═══════════
-
-    /// <summary>从字节流指定偏移量读取一个 Modbus 值。大端序。</summary>
-    private static object? BytesToValue(byte[] bytes, int offset, DataType dataType)
+    /// <summary>同类型批量读。失败返回 null。</summary>
+    private object[]? TryTypedBatch(string address, DataType type, int count)
     {
-        return dataType switch
+        try
         {
-            DataType.Int16 => (object)(short)((bytes[offset] << 8) | bytes[offset + 1]),
-            DataType.UInt16 => (object)(ushort)((bytes[offset] << 8) | bytes[offset + 1]),
-            DataType.Int32 => ReadBigEndianInt32(bytes, offset),
-            DataType.UInt32 => (object)(uint)ReadBigEndianInt32(bytes, offset),
-            DataType.Float => ReadBigEndianFloat(bytes, offset),
-            DataType.Int64 => ReadBigEndianInt64(bytes, offset),
-            DataType.UInt64 => (object)(ulong)ReadBigEndianInt64(bytes, offset),
-            DataType.Double => ReadBigEndianDouble(bytes, offset),
-            DataType.Bool => (object)(bytes[offset + 1] != 0),  // 线圈：低字节有效
-            DataType.Byte => (object)bytes[offset + 1],
-            _ => ReadBigEndianFloat(bytes, offset)
-        };
-    }
-
-    // 注：Modbus 寄存器大端序。将两个寄存器的 4 字节排列为 [hi_hi, hi_lo, lo_hi, lo_lo]，
-    // 即 byte[offset] = 高位的高字节, byte[offset+3] = 低位的低字节。
-    // BitConverter 在小端机器上读出来是反的，需要翻转。
-
-    private static float ReadBigEndianFloat(byte[] bytes, int offset)
-    {
-        var flipped = new byte[4];
-        flipped[0] = bytes[offset + 1];   // 寄存器 1 低字节
-        flipped[1] = bytes[offset];       // 寄存器 1 高字节
-        flipped[2] = bytes[offset + 3];   // 寄存器 2 低字节
-        flipped[3] = bytes[offset + 2];   // 寄存器 2 高字节
-        return BitConverter.ToSingle(flipped, 0);
-    }
-
-    private static int ReadBigEndianInt32(byte[] bytes, int offset)
-    {
-        var flipped = new byte[4];
-        flipped[0] = bytes[offset + 1];
-        flipped[1] = bytes[offset];
-        flipped[2] = bytes[offset + 3];
-        flipped[3] = bytes[offset + 2];
-        return BitConverter.ToInt32(flipped, 0);
-    }
-
-    private static long ReadBigEndianInt64(byte[] bytes, int offset)
-    {
-        var flipped = new byte[8];
-        for (var i = 0; i < 4; i++)
-        {
-            flipped[i * 2] = bytes[offset + i * 2 + 1];
-            flipped[i * 2 + 1] = bytes[offset + i * 2];
+            var c = (ushort)count;
+            return type switch
+            {
+                DataType.Float   => _client.ReadFloat(address, c).Content?.Cast<object>().ToArray(),
+                DataType.Int16   => _client.ReadInt16(address, c).Content?.Cast<object>().ToArray(),
+                DataType.Int32   => _client.ReadInt32(address, c).Content?.Cast<object>().ToArray(),
+                DataType.UInt16  => _client.ReadInt16(address, c).Content?.Select(v => (object)(ushort)v).ToArray(),
+                DataType.UInt32  => _client.ReadInt32(address, c).Content?.Select(v => (object)(uint)v).ToArray(),
+                DataType.Int64   => _client.ReadInt64(address, c).Content?.Cast<object>().ToArray(),
+                DataType.UInt64  => _client.ReadInt64(address, c).Content?.Select(v => (object)(ulong)v).ToArray(),
+                DataType.Double  => _client.ReadDouble(address, c).Content?.Cast<object>().ToArray(),
+                _ => null
+            };
         }
-        return BitConverter.ToInt64(flipped, 0);
-    }
-
-    private static double ReadBigEndianDouble(byte[] bytes, int offset)
-    {
-        var flipped = new byte[8];
-        for (var i = 0; i < 4; i++)
-        {
-            flipped[i * 2] = bytes[offset + i * 2 + 1];
-            flipped[i * 2 + 1] = bytes[offset + i * 2];
-        }
-        return BitConverter.ToDouble(flipped, 0);
+        catch { return null; }
     }
 
     // ═══════════ 地址转换 ═══════════

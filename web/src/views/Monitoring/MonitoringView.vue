@@ -27,34 +27,39 @@
       :key="dev.id"
       class="device-card"
       :class="{ 'card-online': dev.status === 'Online', 'card-offline': dev.status !== 'Online' }"
-      @click="$router.push(`/devices/${dev.id}`)"
     >
-      <div class="card-top">
-        <span class="card-name">{{ dev.name }}</span>
-        <StatusTag :status="dev.status" />
+      <!-- 卡片头部 -->
+      <div class="card-head">
+        <div class="card-head-left">
+          <span class="card-name">{{ dev.name }}</span>
+          <StatusTag :status="dev.status" />
+        </div>
+        <span class="card-meta">{{ dev.protocol.name }} · {{ dev.connection.endpoint }}</span>
       </div>
 
-      <div class="card-body">
-        <div class="card-protocol">{{ dev.protocol.name }}{{ dev.protocol.dialect ? ' / '+dev.protocol.dialect : '' }}</div>
-        <div class="card-endpoint">{{ dev.connection.endpoint }}</div>
-      </div>
-
-      <div class="card-bottom">
-        <div class="card-stat">
-          <span class="stat-num">{{ pointCount(dev.id) }}</span>
-          <span class="stat-label">点位</span>
-        </div>
-        <div class="card-stat">
-          <span class="stat-num">{{ latestCount(dev.id) }}</span>
-          <span class="stat-label">最新</span>
-        </div>
-        <div class="card-stat">
-          <span class="stat-num" :style="{ color: dev.status === 'Online' ? '#3fb950' : '#f85149' }">
-            {{ dev.status === 'Online' ? '●' : '●' }}
+      <!-- 点位数据行 -->
+      <div v-if="(pointMap[dev.id]?.length ?? 0) > 0" class="point-rows">
+        <div
+          v-for="p in pointMap[dev.id]"
+          :key="p.id"
+          class="point-row"
+          :title="`${p.name} · ${p.address}`"
+        >
+          <span class="point-name">{{ p.name }}</span>
+          <span class="point-value" :class="{ stale: !snapshots[dev.id]?.[p.id] }">
+            {{ snapshots[dev.id]?.[p.id] ? fmtVal(snapshots[dev.id][p.id].value) : '--' }}
           </span>
-          <span class="stat-label">{{ dev.status === 'Online' ? '在线' : dev.status }}</span>
+          <span v-if="snapshots[dev.id]?.[p.id]" class="point-quality">
+            <el-tag
+              :type="snapshots[dev.id][p.id].quality==='Good'?'success':snapshots[dev.id][p.id].quality==='Uncertain'?'warning':'danger'"
+              size="small"
+            >{{ snapshots[dev.id][p.id].quality }}</el-tag>
+          </span>
         </div>
       </div>
+
+      <!-- 无点位 -->
+      <div v-else class="card-empty">暂无点位</div>
     </div>
   </div>
 </template>
@@ -62,8 +67,9 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { getDevices, getPoints } from '../../api/devices'
+import { getLatestBatch } from '../../api/measurements'
 import { createLiveConnection } from '../../api/signalr'
-import type { Device, DevicePoint } from '../../api/types'
+import type { Device, DevicePoint, PointSnapshot } from '../../api/types'
 import StatusTag from '../../components/DeviceStatusTag.vue'
 
 const devices = ref<Device[]>([])
@@ -74,8 +80,21 @@ let conn: any = null
 
 onMounted(async () => {
   try { devices.value = await getDevices() } catch {}
+
+  // 加载点位 + 数据库最新值（并行）
   await Promise.all(devices.value.map(async dev => {
     try { pointMap[dev.id] = await getPoints(dev.id) } catch { pointMap[dev.id] = [] }
+    try {
+      const latest = await getLatestBatch(dev.id)
+      latest.forEach((s: PointSnapshot) => {
+        if (!snapshots[dev.id]) snapshots[dev.id] = {}
+        snapshots[dev.id][s.devicePointId] = {
+          value: s.value,
+          quality: s.quality,
+          timestamp: s.timestamp
+        }
+      })
+    } catch {}
   }))
 
   conn = createLiveConnection()
@@ -106,8 +125,11 @@ onMounted(async () => {
 
 onUnmounted(() => { conn?.stop() })
 
-function pointCount(deviceId: string): number { return pointMap[deviceId]?.length ?? 0 }
-function latestCount(deviceId: string): number { return Object.keys(snapshots[deviceId] ?? {}).length }
+function fmtVal(v: unknown): string {
+  if (typeof v === 'number') return v.toFixed(2)
+  if (typeof v === 'boolean') return v ? 'ON' : 'OFF'
+  return String(v ?? '--')
+}
 </script>
 
 <style scoped>
@@ -116,25 +138,57 @@ function latestCount(deviceId: string): number { return Object.keys(snapshots[de
 .status-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:4px; }
 .status-dot.online { background:#3fb950; } .status-dot.offline { background:#d29922; }
 .card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); }
-.cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; }
+
+/* 设备卡片网格 */
+.cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; }
+
+/* 单张卡片 */
 .device-card {
   background:var(--bg-card);
   border:1px solid var(--border);
   border-radius:var(--radius);
-  padding:20px;
-  cursor:pointer;
+  overflow:hidden;
   transition:box-shadow .2s,border-color .2s;
+  max-height:360px;
+  display:flex;
+  flex-direction:column;
 }
-.device-card:hover { box-shadow:0 2px 12px rgba(0,0,0,.06); }
+.device-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.06); }
 .card-online { border-left:3px solid #3fb950; }
 .card-offline { border-left:3px solid #f85149; }
-.card-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-.card-name { font-weight:600; font-size:15px; color:var(--text-heading); }
-.card-body { margin-bottom:16px; }
-.card-protocol { font-size:13px; color:var(--text-heading); }
-.card-endpoint { font-size:11px; color:var(--text-muted); margin-top:2px; font-family:monospace; }
-.card-bottom { display:flex; gap:20px; }
-.card-stat { display:flex; flex-direction:column; }
-.stat-num { font-size:20px; font-weight:700; color:var(--text-heading); }
-.stat-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; }
+
+/* 卡片头部 */
+.card-head {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:12px 16px; border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.card-head-left { display:flex; align-items:center; gap:8px; }
+.card-name { font-weight:600; font-size:14px; color:var(--text-heading); }
+.card-meta { font-size:11px; color:var(--text-muted); font-family:monospace; }
+
+/* 点位行 — 滚动 */
+.point-rows {
+  flex:1; overflow-y:auto; padding:4px 0;
+}
+.point-row {
+  display:grid; grid-template-columns:1fr auto auto;
+  align-items:center; gap:8px;
+  padding:5px 16px;
+  border-bottom:1px solid var(--border, #eee);
+}
+.point-row:last-child { border-bottom:none; }
+.point-name {
+  font-size:12px; color:var(--text-heading);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.point-value {
+  font-size:14px; font-weight:700; color:var(--accent);
+  font-variant-numeric:tabular-nums; text-align:right; min-width:50px;
+}
+.point-value.stale { color:var(--text-muted,#bbb); }
+
+.card-empty {
+  padding:20px; text-align:center; color:var(--text-muted); font-size:12px;
+}
 </style>

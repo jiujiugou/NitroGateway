@@ -51,9 +51,12 @@ public sealed class PointValuePipeline : IPointValuePipeline
         {
             return new PointSnapshot
             {
-                DeviceId = deviceId, DevicePointId = point.Id,
-                RawValue = rawValue, Value = rawValue,
-                Timestamp = raw.Timestamp, Quality = QualityCode.Good
+                DeviceId = deviceId,
+                DevicePointId = point.Id,
+                RawValue = rawValue,
+                Value = rawValue,
+                Timestamp = raw.Timestamp,
+                Quality = QualityCode.Good
             };
         }
 
@@ -62,9 +65,12 @@ public sealed class PointValuePipeline : IPointValuePipeline
         {
             return new PointSnapshot
             {
-                DeviceId = deviceId, DevicePointId = point.Id,
-                RawValue = rawValue, Value = rawValue,
-                Timestamp = raw.Timestamp, Quality = QualityCode.Good
+                DeviceId = deviceId,
+                DevicePointId = point.Id,
+                RawValue = rawValue,
+                Value = rawValue,
+                Timestamp = raw.Timestamp,
+                Quality = QualityCode.Good
             };
         }
 
@@ -87,15 +93,19 @@ public sealed class PointValuePipeline : IPointValuePipeline
             };
         }
 
-        // 3. 死区（仅数值型）
-        if (point.Deadband > 0 && IsNumericType(point.DataType))
+        // 3. 死区判定：更新 _lastValues 缓存（供告警 Duration 使用），但不丢弃数据
+        //    数据照常往下游传送，SignalR 推送和存储写入不受死区影响
+        if (point.Deadband > 0 &&
+            _lastValues.TryGetValue(point.Id, out var lastDead) &&
+            Math.Abs(engValue - lastDead) < point.Deadband)
         {
-            if (_lastValues.TryGetValue(point.Id, out var last) &&
-                Math.Abs(engValue - last) < point.Deadband)
-                return null;
-
+            // 值在死区内，不更新缓存（避免微小波动被 Duration 告警误判）
+        }
+        else
+        {
             _lastValues[point.Id] = engValue;
         }
+
         // 4. 组装
         return new PointSnapshot
         {

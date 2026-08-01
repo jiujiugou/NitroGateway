@@ -76,6 +76,9 @@ public sealed class ModbusAddressParser : IAddressParser
         return addr with { Count = DataTypeToRegisterCount(dataType) };
     }
 
+    /// <summary>根据数据类型返回所需 Modbus 寄存器数量</summary>
+    public static ushort GetRegisterCount(DataType type) => DataTypeToRegisterCount(type);
+
     private static ushort DataTypeToRegisterCount(DataType type) => type switch
     {
         DataType.Bool => 1,

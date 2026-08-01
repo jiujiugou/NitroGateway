@@ -18,6 +18,10 @@ public interface IMeasurementStore
     Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryAsync(
         Guid deviceId, Guid pointId, DateTime from, DateTime to, CancellationToken ct = default);
 
+    /// <summary>按设备查询时间范围内的所有快照（用于批量取最新值）</summary>
+    Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryByDeviceAsync(
+        Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default);
+
     /// <summary>删除指定时间之前的历史数据，用于存储空间管理</summary>
     Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default);
 }

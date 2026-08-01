@@ -85,6 +85,30 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
         }).ToList();
     }
 
+    public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryByDeviceAsync(
+        Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        var rows = await conn.QueryAsync(
+            @"SELECT device_id, point_id, raw_value, value, timestamp, quality, error_msg
+              FROM measurements WHERE device_id = @did AND timestamp BETWEEN @from AND @to
+              ORDER BY timestamp DESC",
+            new { did = deviceId.ToString(), from = from.ToString("O"), to = to.ToString("O") });
+
+        return rows.Select(r => new PointSnapshot
+        {
+            DeviceId = Guid.Parse((string)r.device_id),
+            DevicePointId = Guid.Parse((string)r.point_id),
+            RawValue = Deserialize(r.raw_value as string),
+            Value = r.value is DBNull ? null : (double)r.value,
+            Timestamp = DateTime.Parse((string)r.timestamp),
+            Quality = Enum.Parse<QualityCode>((string)r.quality),
+            ErrorMessage = r.error_msg as string
+        }).ToList();
+    }
+
     public async Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default)
     {
         await using var conn = new SqliteConnection(_connectionString);
