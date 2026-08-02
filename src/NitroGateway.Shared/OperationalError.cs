@@ -36,6 +36,21 @@ public sealed class OperationalError
         };
     }
     /// <summary>
+    /// 创建一个通信错误（连接失败、链路中断等）
+    /// </summary>
+    /// <param name="message"></param>
+    /// <returns></returns>
+    public static OperationalError Communication(string message)
+    {
+        return new()
+        {
+            Category = ErrorCategory.Communication,
+            Code = "CommunicationError",
+            Severity = OperationalSeverity.Warning,
+            Message = message
+        };
+    }
+    /// <summary>
     /// 创建一个协议错误
     /// </summary>
     /// <param name="message"></param>

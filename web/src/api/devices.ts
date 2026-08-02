@@ -72,3 +72,23 @@ export async function testConnection(d: Partial<Device>): Promise<{ success: boo
   const { data } = await client.post('/devices/test-connection', d)
   return data.data ?? { success: false, latencyMs: 0, error: '未知错误' }
 }
+
+export interface SerialPortInfo {
+  portName: string
+  isOpen: boolean
+  leaseCount: number
+  baudRate: number
+  dataBits: number
+  parity: string
+  stopBits: string
+}
+
+export async function getSerialPorts(): Promise<string[]> {
+  const { data } = await client.get<ApiResponse<string[]>>('/devices/serial-ports')
+  return data.data ?? []
+}
+
+export async function getSerialPortStatus(): Promise<SerialPortInfo[]> {
+  const { data } = await client.get<ApiResponse<SerialPortInfo[]>>('/devices/serial-port-status')
+  return data.data ?? []
+}

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Protocols;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Configuration;
 
@@ -10,15 +11,18 @@ public sealed class DeviceManager : IDeviceManager
 {
     private readonly IDeviceRepository _repository;
     private readonly IDeviceHealthMonitor _healthMonitor;
+    private readonly IProtocolDriverPool _driverPool;
     private readonly ILogger<DeviceManager> _logger;
 
     public DeviceManager(
         IDeviceRepository repository,
         IDeviceHealthMonitor healthMonitor,
+        IProtocolDriverPool driverPool,
         ILogger<DeviceManager> logger)
     {
         _repository = repository;
         _healthMonitor = healthMonitor;
+        _driverPool = driverPool;
         _logger = logger;
     }
 
@@ -31,6 +35,8 @@ public sealed class DeviceManager : IDeviceManager
         if (result.IsFailure) 
             return result.Error!;
 
+        // 设备新建或更新：驱逐旧驱动，下一轮采集用新连接参数重建
+        _driverPool.Evict(device.Id);
         _logger.LogInformation("设备已注册: {DeviceName} [{DeviceId}]", device.Name, device.Id);
         _healthMonitor.UpdateStatus(device.Id, device.Status);
         return device;
@@ -42,6 +48,7 @@ public sealed class DeviceManager : IDeviceManager
         if (device.IsFailure) return device.Error!;
 
         await _repository.DeleteAsync(deviceId, ct);
+        _driverPool.Evict(deviceId);
         _healthMonitor.UpdateStatus(device.Value.Id, device.Value.Status);
         _logger.LogInformation("设备已注销: {DeviceId}", deviceId);
         return OperationResult.Success();
@@ -71,6 +78,8 @@ public sealed class DeviceManager : IDeviceManager
         device.Status = status;
         await _repository.SaveAsync(device, ct);
 
+        // 下线/维护时释放连接；恢复后下一轮采集重建
+        _driverPool.Evict(deviceId);
         _logger.LogInformation("设备状态变更: {DeviceId} {Old} → {New}", deviceId, oldStatus, status);
         return OperationResult.Success();
     }

@@ -53,12 +53,34 @@
         <el-table-column prop="lastError" label="最后错误" />
       </el-table>
     </div>
+
+    <!-- 串口状态 -->
+    <div class="card" style="margin-top:20px">
+      <h3 style="margin:0 0 16px">串口状态</h3>
+      <el-table :data="serialPorts" size="small" empty-text="暂无已打开的串口">
+        <el-table-column prop="portName" label="端口" width="140" />
+        <el-table-column prop="baudRate" label="波特率" width="90" />
+        <el-table-column prop="dataBits" label="数据位" width="80" />
+        <el-table-column prop="parity" label="校验位" width="90" />
+        <el-table-column prop="stopBits" label="停止位" width="90" />
+        <el-table-column prop="leaseCount" label="占用数" width="80" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.isOpen ? 'success' : 'info'" size="small">{{ row.isOpen ? '已打开' : '未打开' }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-dim,#909399)">
+        可用串口：{{ availablePorts.join(', ') || '无' }}
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import client from '../../api/client'
+import { getSerialPorts, getSerialPortStatus } from '../../api/devices'
 
 const mqtt = ref({ state: '-', connected: false })
 const backlog = ref(0)
@@ -66,6 +88,8 @@ const throttle = ref({ batch: 1000, delay: 0 })
 const onlineDevices = ref(0)
 const breakers = ref<any[]>([])
 const health = ref<any[]>([])
+const serialPorts = ref<any[]>([])
+const availablePorts = ref<string[]>([])
 
 async function refresh() {
   try {
@@ -79,6 +103,8 @@ async function refresh() {
     }
     const { data: h } = await client.get('/status/devices/health')
     if (h.data) health.value = h.data
+    availablePorts.value = await getSerialPorts()
+    serialPorts.value = await getSerialPortStatus()
   } catch {}
 }
 

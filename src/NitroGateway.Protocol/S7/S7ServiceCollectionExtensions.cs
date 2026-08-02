@@ -17,6 +17,6 @@ public static class S7Registration
 {
     public static void Register(ProtocolDriverFactory factory)
     {
-        factory.Register("S7", (conn, logger) => new S7Driver(conn, logger));
+        factory.Register("S7", (_, conn, logger) => new S7Driver(conn, logger));
     }
 }

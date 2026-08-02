@@ -63,12 +63,16 @@ public class PointValuePipelineTests
     }
 
     [Fact]
-    public void Deadband_FiltersOutSmallChange()
+    public void Deadband_SmallChange_PassesThrough_ButDoesNotRefreshCache()
     {
         var pt = MakePoint(DataType.Float, 1.0, 0, deadband: 0.5);
         _pipeline.Process(_deviceId, [MakeRaw(pt, 60.0)]);
+        // 死区只影响缓存（供告警 Duration 使用），数据照常往下游传输
         var result = _pipeline.Process(_deviceId, [MakeRaw(pt, 60.25)]);
-        Assert.Empty(result);
+        Assert.Single(result);
+        Assert.Equal(60.25, (double)result[0].Value!, 2);
+        // 缓存未刷新，仍保持上一基准值
+        Assert.Equal(60.0, _pipeline.GetLastValue(pt.Id)!.Value, 2);
     }
 
     [Fact]

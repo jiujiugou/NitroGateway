@@ -2,6 +2,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.DeviceManagement;
 using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Domain.Protocols;
+using NitroGateway.Protocols;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Configuration;
 using Xunit;
@@ -24,12 +26,23 @@ public class DeviceManagerTests
     private readonly FakeDeviceRepository _repo = new();
     private readonly DeviceManager _manager;
     private readonly FakeDeviceHealthMonitor _healthMonitor = new();
+    private readonly FakeDriverPool _driverPool = new();
     public DeviceManagerTests()
     {
-        _manager = new DeviceManager(_repo, _healthMonitor, NullLogger<DeviceManager>.Instance);
+        _manager = new DeviceManager(_repo, _healthMonitor, _driverPool, NullLogger<DeviceManager>.Instance);
     }
 
     /// <summary>正常注册设备，ID + Name 正确返回。</summary>
+    /// <summary>设备注册（新建/更新）后应驱逐池中旧驱动，保证下一轮用新连接参数重建</summary>
+    [Fact]
+    public async Task RegisterAsync_EvictsDriverFromPool()
+    {
+        var device = MakeDevice("PLC01");
+        var result = await _manager.RegisterAsync(device);
+        Assert.True(result.IsSuccess);
+        Assert.Contains(device.Id, _driverPool.Evicted);
+    }
+
     [Fact]
     public async Task RegisterAsync_CreatesDevice()
     {
@@ -153,6 +166,16 @@ public class DeviceManagerTests
             DeviceStatus status, CancellationToken ct = default)
             => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(
                 Devices.Values.Where(d => d.Status == status).ToList()));
+    }
+    private sealed class FakeDriverPool : IProtocolDriverPool
+    {
+        public List<Guid> Evicted { get; } = new();
+
+        public IProtocolDriver GetOrCreate(Device device) => throw new NotImplementedException();
+
+        public void Evict(Guid deviceId) => Evicted.Add(deviceId);
+
+        public void Dispose() { }
     }
     private sealed class FakeDeviceHealthMonitor: IDeviceHealthMonitor
     {

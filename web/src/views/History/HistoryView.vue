@@ -20,24 +20,29 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { getDevices, getPoints } from '../../api/devices'
 import { getHistory } from '../../api/measurements'
 import type { Device, DevicePoint, PointSnapshot } from '../../api/types'
-const devices = ref<Device[]>([]); const ptOptions = ref<DevicePoint[]>([]); const history = ref<PointSnapshot[]>([]); const chartData = ref<{time:string;value:number}[]>([]); const chartRef = ref<HTMLElement>()
+const devices = ref<Device[]>([]); const ptOptions = ref<DevicePoint[]>([]); const history = ref<PointSnapshot[]>([]); const chartData = ref<{time:string;value:number|null}[]>([]); const chartRef = ref<HTMLElement>()
+let chart: echarts.ECharts | null = null
 const q = ref({deviceId:'',pointId:''}); const range = ref<[Date,Date]>([new Date(Date.now()-3600000), new Date()])
 onMounted(async () => { try { devices.value = await getDevices() } catch {} })
+onUnmounted(() => chart?.dispose())
 async function loadPts() { if(q.value.deviceId) try { ptOptions.value = await getPoints(q.value.deviceId) } catch {} }
 async function search() {
   if(!q.value.deviceId||!q.value.pointId) return
   const from=range.value[0].toISOString(); const to=range.value[1].toISOString()
-  try { history.value = await getHistory(q.value.deviceId,q.value.pointId,from,to); chartData.value = history.value.map(s=>({time:s.timestamp,value:s.value??0})) } catch {}
+  try { history.value = await getHistory(q.value.deviceId,q.value.pointId,from,to); chartData.value = history.value.map(s=>({time:s.timestamp,value:typeof s.value==='number'?s.value:null})) } catch {}
   await nextTick()
-  if(chartRef.value&&chartData.value.length) {
-    const c=echarts.init(chartRef.value)
-    c.setOption({title:{text:'时序趋势',textStyle:{color:'#4a5568',fontSize:14}},tooltip:{trigger:'axis'},xAxis:{type:'time',axisLabel:{color:'#a0aec0'}},yAxis:{type:'value',axisLabel:{color:'#a0aec0'}},series:[{data:chartData.value.map(p=>[p.time,p.value]),type:'line',smooth:true,showSymbol:false,lineStyle:{color:'#409eff',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(64,158,255,.15)'},{offset:1,color:'rgba(64,158,255,0)'}]}}}],grid:{left:50,right:20,top:40,bottom:30}})
-  }
+  renderChart()
+}
+function renderChart() {
+  chart?.dispose(); chart = null
+  if(!chartRef.value || !chartData.value.length) return
+  chart = echarts.init(chartRef.value)
+  chart.setOption({title:{text:'时序趋势',textStyle:{color:'#4a5568',fontSize:14}},tooltip:{trigger:'axis'},xAxis:{type:'time',axisLabel:{color:'#a0aec0'}},yAxis:{type:'value',axisLabel:{color:'#a0aec0'}},series:[{data:chartData.value.map(p=>[p.time,p.value]),type:'line',smooth:true,showSymbol:false,lineStyle:{color:'#409eff',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(64,158,255,.15)'},{offset:1,color:'rgba(64,158,255,0)'}]}}}],grid:{left:50,right:20,top:40,bottom:30}})
 }
 function formatVal(v:unknown):string { if(typeof v==='number') return v.toFixed(3); return String(v??'--') }
 </script>

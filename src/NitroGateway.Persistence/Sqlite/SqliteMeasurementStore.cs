@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -43,7 +44,7 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
                     raw = Serialize(s.RawValue),
                     val = s.Value is IConvertible ? Convert.ToDouble(s.Value) : (object)DBNull.Value,
                     type = "",
-                    ts = s.Timestamp.ToString("O"),
+                    ts = s.Timestamp.ToUniversalTime().ToString("O"),
                     qual = s.Quality.ToString(),
                     err = (object?)s.ErrorMessage ?? DBNull.Value
                 }), tx);
@@ -71,7 +72,7 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
             @"SELECT device_id, point_id, raw_value, value, timestamp, quality, error_msg
               FROM measurements WHERE device_id = @did AND point_id = @pid AND timestamp BETWEEN @from AND @to
               ORDER BY timestamp ASC",
-            new { did = deviceId.ToString(), pid = pointId.ToString(), from = from.ToString("O"), to = to.ToString("O") });
+            new { did = deviceId.ToString(), pid = pointId.ToString(), from = from.ToUniversalTime().ToString("O"), to = to.ToUniversalTime().ToString("O") });
 
         return rows.Select(r => new PointSnapshot
         {
@@ -79,7 +80,7 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
             DevicePointId = Guid.Parse((string)r.point_id),
             RawValue = Deserialize(r.raw_value as string),
             Value = r.value is DBNull ? null : (double)r.value,
-            Timestamp = DateTime.Parse((string)r.timestamp),
+            Timestamp = DateTime.Parse((string)r.timestamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind).ToUniversalTime(),
             Quality = Enum.Parse<QualityCode>((string)r.quality),
             ErrorMessage = r.error_msg as string
         }).ToList();
@@ -95,7 +96,7 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
             @"SELECT device_id, point_id, raw_value, value, timestamp, quality, error_msg
               FROM measurements WHERE device_id = @did AND timestamp BETWEEN @from AND @to
               ORDER BY timestamp DESC",
-            new { did = deviceId.ToString(), from = from.ToString("O"), to = to.ToString("O") });
+            new { did = deviceId.ToString(), from = from.ToUniversalTime().ToString("O"), to = to.ToUniversalTime().ToString("O") });
 
         return rows.Select(r => new PointSnapshot
         {
@@ -103,7 +104,7 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
             DevicePointId = Guid.Parse((string)r.point_id),
             RawValue = Deserialize(r.raw_value as string),
             Value = r.value is DBNull ? null : (double)r.value,
-            Timestamp = DateTime.Parse((string)r.timestamp),
+            Timestamp = DateTime.Parse((string)r.timestamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind).ToUniversalTime(),
             Quality = Enum.Parse<QualityCode>((string)r.quality),
             ErrorMessage = r.error_msg as string
         }).ToList();
@@ -113,7 +114,7 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
     {
         await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct);
-        await conn.ExecuteAsync("DELETE FROM measurements WHERE timestamp < @before", new { before = before.ToString("O") });
+        await conn.ExecuteAsync("DELETE FROM measurements WHERE timestamp < @before", new { before = before.ToUniversalTime().ToString("O") });
         return OperationResult.Success();
     }
 

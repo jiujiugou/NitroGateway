@@ -7,11 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
     <ProjectReference Include="..\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="HslCommunication" Version="*" />
+    <PackageReference Include="HslCommunication" Version="12.9.2" />
   </ItemGroup>
 
 </Project>

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
@@ -11,20 +12,22 @@ namespace NitroGateway.Protocols;
 /// </summary>
 public sealed class ProtocolDriverFactory : IProtocolDriverFactory
 {
-    private readonly Dictionary<string, Func<DeviceConnection, ILogger, IProtocolDriver>>
+    private readonly Dictionary<string, Func<IServiceProvider, DeviceConnection, ILogger, IProtocolDriver>>
         _factories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IServiceProvider _services;
     private readonly ILoggerFactory _loggerFactory;
 
-    /// <param name="loggerFactory">日志工厂，用于为驱动和装饰器创建日志实例</param>
-    public ProtocolDriverFactory(ILoggerFactory loggerFactory)
+    /// <param name="services">服务提供者，供驱动解析自身依赖（如 ISerialPortManager）</param>
+    public ProtocolDriverFactory(IServiceProvider services)
     {
-        _loggerFactory = loggerFactory;
+        _services = services;
+        _loggerFactory = services.GetRequiredService<ILoggerFactory>();
     }
 
     /// <summary>注册一个协议驱动的构造器</summary>
     /// <param name="protocolName">协议名称（匹配 ProtocolIdentifier.Name），如 "Modbus", "S7"</param>
-    /// <param name="factory">接收 Connection + Logger，返回 IProtocolDriver 实例</param>
-    public void Register(string protocolName, Func<DeviceConnection, ILogger, IProtocolDriver> factory)
+    /// <param name="factory">接收 ServiceProvider + Connection + Logger，返回 IProtocolDriver 实例</param>
+    public void Register(string protocolName, Func<IServiceProvider, DeviceConnection, ILogger, IProtocolDriver> factory)
     {
         _factories[protocolName] = factory;
     }
@@ -34,7 +37,7 @@ public sealed class ProtocolDriverFactory : IProtocolDriverFactory
     {
         if (_factories.TryGetValue(protocol.Name, out var factory))
         {
-            var inner = factory(connection, _loggerFactory.CreateLogger(protocol.Name));
+            var inner = factory(_services, connection, _loggerFactory.CreateLogger(protocol.Name));
             return new ReliableProtocolDriver(inner, _loggerFactory.CreateLogger<ReliableProtocolDriver>());
         }
 

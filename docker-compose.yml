@@ -19,6 +19,10 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5100:5100"
+    # Modbus RTU 串口透传：按实际设备路径挂载（Linux 主机）
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
+    #   - "/dev/ttyS0:/dev/ttyS0"
     volumes:
       - gateway-data:/app/data
       - gateway-logs:/app/logs

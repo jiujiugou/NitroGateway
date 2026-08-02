@@ -143,6 +143,22 @@ public class DevicesController : ControllerBase
         }
     }
 
+    /// <summary>列出系统可用串口（Windows COM / Linux tty 设备）</summary>
+    [HttpGet("serial-ports")]
+    public ActionResult<ApiResponse<List<string>>> GetSerialPorts()
+    {
+        var ports = HttpContext.RequestServices.GetRequiredService<Protocols.Modbus.ISerialPortManager>().GetAvailablePorts();
+        return Ok(ApiResponse<List<string>>.Ok(ports.ToList()));
+    }
+
+    /// <summary>当前串口占用状态（端口、参数、租约数）</summary>
+    [HttpGet("serial-port-status")]
+    public ActionResult<ApiResponse<List<Protocols.Modbus.SerialPortInfo>>> GetSerialPortStatus()
+    {
+        var status = HttpContext.RequestServices.GetRequiredService<Protocols.Modbus.ISerialPortManager>().GetStatus();
+        return Ok(ApiResponse<List<Protocols.Modbus.SerialPortInfo>>.Ok(status.ToList()));
+    }
+
     static DeviceDto Map(Device d) => new()
     {
         Id = d.Id.ToString(), Name = d.Name, Description = d.Description,
