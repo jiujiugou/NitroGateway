@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NitroGateway 项目导读</title>
+<style>
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; max-width: 960px; margin: 0 auto; padding: 24px; line-height: 1.7; color: #222; background: #fafafa; }
+  h1 { border-bottom: 3px solid #2f6fed; padding-bottom: 8px; }
+  h2 { border-left: 4px solid #2f6fed; padding-left: 10px; margin-top: 32px; }
+  h3 { margin-bottom: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; background: #fff; }
+  th, td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; font-size: 14px; }
+  th { background: #eef2fb; }
+  pre { background: #f0f2f5; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+  code { background: #eef1f5; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; margin-right: 4px; }
+  .ok { background: #d4edda; color: #155724; }
+  .warn { background: #fff3cd; color: #856404; }
+  .nav { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px 20px; }
+  .nav a { margin-right: 14px; color: #2f6fed; text-decoration: none; }
+  .nav a:hover { text-decoration: underline; }
+  .meta { color: #666; font-size: 13px; }
+  ul { padding-left: 22px; }
+</style>
+</head>
+<body>
+<h1>NitroGateway 项目导读</h1>
+<p class="meta">生成时间: 2026-08-04 | 对应 docs/01~04 版本 | 运行基线: 构建 ✅ 测试 ✅(115) 启动 ✅(MQTT Degraded)</p>
+
+<div class="nav">
+  <strong>目录:</strong>
+  <a href="#intro">简介</a>
+  <a href="#run">怎么跑</a>
+  <a href="#stack">技术栈</a>
+  <a href="#arch">架构</a>
+  <a href="#features">功能清单</a>
+  <a href="#qa">疑点清单</a>
+  <a href="#docs">文档</a>
+</div>
+
+<h2 id="intro">一句话简介</h2>
+<p>工业物联网边缘网关:从 PLC 采集数据(Modbus/S7) → 本地 SQLite 存储 → MQTT 转发到云端 → Vue 3 管理面板实时监控。</p>
+<p>核心卖点:断连自动恢复(熔断器)、数据不丢(两阶段提交缓冲)、转发自适应节流(AIMD)、8 小时长稳。</p>
+
+<h2 id="run">怎么跑</h2>
+<pre>
+docker compose up -d                       # 1. MQTT broker
+cd src/NitroGateway.Webapi && dotnet run   # 2. 后端 :5100
+cd web && npm install && npm run dev       # 3. 前端 :5173
+# 登录 admin/admin123
+# API: http://localhost:5100/swagger   指标: /metrics   健康: /healthz /readyz
+dotnet test                                # 单元测试(115 通过)
+</pre>
+
+<h2 id="stack">技术栈</h2>
+<table>
+  <tr><th>层</th><th>技术</th></tr>
+  <tr><td>运行时</td><td>.NET 10 / ASP.NET Core Web API</td></tr>
+  <tr><td>数据库</td><td>SQLite(EF Core + Dapper + FluentMigrator)</td></tr>
+  <tr><td>消息</td><td>MQTTnet(Mosquitto broker)</td></tr>
+  <tr><td>观测</td><td>Prometheus 指标 + Serilog + Activity 追踪</td></tr>
+  <tr><td>安全</td><td>JWT + RBAC(Admin/Operator/Viewer) + WriteGuard + 审计</td></tr>
+  <tr><td>前端</td><td>Vue 3 + Element Plus + ECharts + SignalR(Vite 8)</td></tr>
+  <tr><td>部署</td><td>Docker + docker-compose(3 服务)</td></tr>
+</table>
+
+<h2 id="arch">架构</h2>
+<pre>
+领域层 Domain/Shared
+  ↓
+应用层 Collection(采集) / Forwarder(转发) / Device(设备+健康) / Alarm(告警)
+  ↓
+基础设施 Persistence(SQLite) / Protocol(Modbus/S7) / Transport(MQTT/HTTP)
+         Telemetry(指标/追踪) / Security / Storage(纯接口)
+  ↓
+编排层 Host(优雅关闭)  →  表现层 Webapi(REST + SignalR + Swagger)
+
+数据流: PLC → DeviceReader(重试) → PointValuePipeline(转换/缩放/死区)
+      → DataDispatcher 双写 → SQLite + ForwardBuffer
+      → ForwarderEngine(5s) → MQTT Publish → 失败重试 → ≥5 次进死信
+</pre>
+
+<h3>关键机制</h3>
+<ul>
+  <li><strong>熔断器</strong>:每设备独立, 5 连败 Open → 30s 冷却 → HalfOpen 探测, 冷却翻倍上限 5min</li>
+  <li><strong>转发节流</strong>:AIMD 算法, batch 100~1000 / delay 0~200ms 自适应</li>
+  <li><strong>死信队列</strong>:Pending→InFlight→Commit, retry≥5 进死信, 可重放/丢弃</li>
+  <li><strong>健康监控</strong>:3 连败 Offline / 3 连胜 Online, 事件驱动写库 + 重置熔断器 + 推前端</li>
+  <li><strong>告警</strong>:7 种操作符 + Duration 去抖 + 生命周期(Pending→Active→Ack→Resolved) + Active 去重</li>
+  <li><strong>配置热加载</strong>:API 改配置 → 事件 → 内存缓存, 下一采集周期生效, 不中断当前轮</li>
+</ul>
+
+<h2 id="features">功能清单(39 项, 摘要)</h2>
+<table>
+  <tr><th>模块</th><th>功能</th><th>入口</th></tr>
+  <tr><td>设备管理</td><td>设备/点位 CRUD、启停、连接测试、串口枚举</td><td>/api/devices</td></tr>
+  <tr><td>点位导入</td><td>CSV 导入/导出、批量生成</td><td>/api/point-import</td></tr>
+  <tr><td>测量查询</td><td>历史/最新/批量最新</td><td>/api/measurements</td></tr>
+  <tr><td>采集链路</td><td>1s 采集引擎、重试、管道处理、双写、熔断</td><td>后台服务</td></tr>
+  <tr><td>转发链路</td><td>5s 转发、AIMD 节流、死信管理</td><td>/api/deadletters</td></tr>
+  <tr><td>告警</td><td>规则 CRUD、评估引擎、确认/查询</td><td>/api/alarms, /api/alarm-rules</td></tr>
+  <tr><td>监控</td><td>状态面板、设备健康、指标、健康检查</td><td>/api/status, /metrics, /healthz</td></tr>
+  <tr><td>安全</td><td>JWT 登录、RBAC、写校验、审计、SignalR</td><td>/api/auth/login, /hubs/live</td></tr>
+  <tr><td>前端</td><td>登录/仪表盘/设备/点位/监控/历史/系统/告警/死信 9 组页面</td><td>web/src/views/</td></tr>
+</table>
+<p>完整清单见 <code>docs/03-功能清单.md</code>(每条含代码位置与依赖)。</p>
+
+<h2 id="qa">疑点清单(8 项, 全部待验证)</h2>
+<table>
+  <tr><th>#</th><th>疑点</th></tr>
+  <tr><td>Q-01</td><td>README"14 个项目" vs 实际 23 个 csproj, 4 个未入 slnx</td></tr>
+  <tr><td>Q-02</td><td>README"128 测试" vs 实际 115</td></tr>
+  <tr><td>Q-03</td><td>.github/workflows 为空, 无实际 CI</td></tr>
+  <tr><td>Q-04</td><td>工作区 7 个文档删除未提交</td></tr>
+  <tr><td>Q-05</td><td>根目录 nitrogateway.db-shm 来源</td></tr>
+  <tr><td>Q-06</td><td>MQTT 未启动时健康检查返回 Degraded 语义</td></tr>
+  <tr><td>Q-07</td><td>数据表结构待核对迁移文件</td></tr>
+  <tr><td>Q-08</td><td>死信前端 API 客户端来源待确认</td></tr>
+</table>
+<p>详情见 <code>docs/04-疑点清单.md</code>。</p>
+
+<h2 id="docs">文档导航</h2>
+<ul>
+  <li><a href="01-盘点.md">01-盘点.md</a> — 技术栈、命令、配置、运行基线</li>
+  <li><a href="02-架构理解.md">02-架构理解.md</a> — 分层、数据流、关键机制、雷区</li>
+  <li><a href="03-功能清单.md">03-功能清单.md</a> — 39 项功能 + 代码位置</li>
+  <li><a href="04-疑点清单.md">04-疑点清单.md</a> — 8 项待验证疑点</li>
+</ul>
+<p class="meta">本导读为离线单文件, 与 docs/01~04 同步; 内容变更时请同步刷新。</p>
+</body>
+</html>
