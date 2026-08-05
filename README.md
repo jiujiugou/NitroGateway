@@ -34,7 +34,7 @@ docker compose up -d --build
 ## 架构
 
 ```
-14 个项目，单向依赖，无循环引用
+21 个项目（slnx 收录），单向依赖，无循环引用
 
 ┌─────────────────────────────────────────────────────┐
 │                    领域层                            │
@@ -193,7 +193,7 @@ Web API → DeviceManager → DB 保存 → StatusChanged 事件
 ## 测试
 
 ```bash
-dotnet test  # 128 个单元测试
+dotnet test  # 115 个单元测试
 
 # 核心覆盖:
 # - PointValuePipeline: 缩放/死区/类型转换
@@ -245,7 +245,7 @@ src/
 └── NitroGateway.Webapi/       ASP.NET Core Host
 
 tests/
-└── NitroGateway.UnitTests/    128 个单元测试
+└── NitroGateway.UnitTests/    115 个单元测试
 
 web/
 └── src/                       Vue 3 前端

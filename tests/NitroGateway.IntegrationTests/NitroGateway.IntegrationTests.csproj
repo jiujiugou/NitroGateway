@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="*" />
+    <PackageReference Include="xunit" Version="*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Forwarder\NitroGateway.Forwarder.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+  </ItemGroup>
+
+</Project>

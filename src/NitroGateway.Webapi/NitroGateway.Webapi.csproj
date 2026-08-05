@@ -4,6 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <!-- CS1591 豁免: 公共成员 XML 注释不强制, Swagger 描述由 Attribute 与 docs/03 功能清单承担 -->
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" Version="*" />

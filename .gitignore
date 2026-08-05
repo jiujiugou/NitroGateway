@@ -481,3 +481,11 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 *.db
+
+
+# SQLite WAL/SHM runtime files
+*.db-shm
+*.db-wal
+
+# NitroGateway backups
+backups/
