@@ -64,6 +64,8 @@ public class PipelineDispatchIntegrationTests
             Assert.Single(store.Written);
             Assert.Equal(42.5, (double)store.Written[0].Value!);
             Assert.True(buffer.Pending.Count >= 1, "转发缓冲应收到批次");
+            Assert.Equal("T1", buffer.Pending[0].Records[0].PointName);
+            Assert.Equal("T1", store.Written[0].PointName);
         }
         finally
         {

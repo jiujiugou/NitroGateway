@@ -13,6 +13,9 @@ public sealed record PointSnapshot
     /// <summary>对应的点位定义 ID</summary>
     public Guid DevicePointId { get; init; }
 
+    /// <summary>点位名称（自描述），构造快照时由点位定义填充，云端上报与告警可直接使用</summary>
+    public string? PointName { get; init; }
+
     /// <summary>
     /// 驱动返回的原始值，未经缩放处理。
     /// 保留此字段用于现场调试（"PLC 到底返回了什么？"）。

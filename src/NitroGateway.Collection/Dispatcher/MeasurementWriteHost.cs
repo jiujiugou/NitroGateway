@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
@@ -35,7 +35,14 @@ namespace NitroGateway.Collection
                 while (_channel.Reader.TryRead(out var snapshots))
                 {
                     
-                    await _store.WriteAsync(snapshots, stoppingToken);
+                    try
+                    {
+                        await _store.WriteAsync(snapshots, stoppingToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError(ex, "时序库写入失败，跳过本批，继续消费。");
+                    }
                 }
             }
         }

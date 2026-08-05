@@ -86,7 +86,7 @@ public sealed class DataDispatcher : IDataDispatcher
                 Id = Guid.NewGuid(),
                 DeviceId = s.DeviceId,
                 DevicePointId = s.DevicePointId,
-                PointName = "",
+                PointName = s.PointName ?? string.Empty,
                 Value = s.Value,
                 DataType = DataType.Float,
                 Timestamp = s.Timestamp,

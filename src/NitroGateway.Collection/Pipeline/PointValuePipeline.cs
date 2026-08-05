@@ -53,6 +53,7 @@ public sealed class PointValuePipeline : IPointValuePipeline
             {
                 DeviceId = deviceId,
                 DevicePointId = point.Id,
+                PointName = point.Name,
                 RawValue = rawValue,
                 Value = rawValue,
                 Timestamp = raw.Timestamp,
@@ -67,6 +68,7 @@ public sealed class PointValuePipeline : IPointValuePipeline
             {
                 DeviceId = deviceId,
                 DevicePointId = point.Id,
+                PointName = point.Name,
                 RawValue = rawValue,
                 Value = rawValue,
                 Timestamp = raw.Timestamp,
@@ -86,6 +88,7 @@ public sealed class PointValuePipeline : IPointValuePipeline
             {
                 DeviceId = deviceId,
                 DevicePointId = point.Id,
+                PointName = point.Name,
                 RawValue = rawValue,
                 Timestamp = raw.Timestamp,
                 Quality = QualityCode.Uncertain,
@@ -111,6 +114,7 @@ public sealed class PointValuePipeline : IPointValuePipeline
         {
             DeviceId = deviceId,
             DevicePointId = point.Id,
+            PointName = point.Name,
             RawValue = rawValue,
             Value = engValue,
             Timestamp = raw.Timestamp,

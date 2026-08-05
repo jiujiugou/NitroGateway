@@ -118,6 +118,14 @@ public class PointValuePipelineTests
         Assert.Equal(12340.0, (double)result[0].Value!, 0);
     }
 
+    [Fact]
+    public void PointName_PropagatedToSnapshot()
+    {
+        var pt = MakePoint(DataType.Int16, 1.0, 0);
+        var result = _pipeline.Process(_deviceId, [MakeRaw(pt, 1)]);
+        Assert.Equal("test", result[0].PointName);
+    }
+
     private static DevicePoint MakePoint(DataType type, double scale, double offset, double deadband = 0) =>
         new() { Id = Guid.NewGuid(), Name = "test", Address = "40001", DataType = type, ScaleFactor = scale, ScaleOffset = offset, Deadband = deadband };
 

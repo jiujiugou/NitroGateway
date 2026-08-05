@@ -14,6 +14,7 @@ public sealed class CollectionEngine : BackgroundService
     private Task? _currentRound;
     private CancellationTokenSource? _roundCts;
     private readonly ILogger<CollectionEngine> _logger;
+    private readonly TimeSpan _errorRetryDelay;
 
     /// <summary>创建采集引擎</summary>
     /// <param name="scopeFactory">DI scope factory</param>
@@ -24,46 +25,53 @@ public sealed class CollectionEngine : BackgroundService
         IServiceScopeFactory scopeFactory,
         GatewayLifecycle lifecycle,
         TimeSpan interval,
-        ILogger<CollectionEngine> logger)
+        ILogger<CollectionEngine> logger,
+        TimeSpan? errorRetryDelay = null)
     {
         _scopeFactory = scopeFactory;
         _lifecycle = lifecycle;
         _interval = interval;
         _logger = logger;
+        _errorRetryDelay = errorRetryDelay ?? TimeSpan.FromSeconds(5);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(_interval);
 
-        try
+        while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
+            try
             {
+                using var scope = _scopeFactory.CreateScope();
+                var collector = scope.ServiceProvider.GetRequiredService<IDeviceCollector>();
+                _roundCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                _currentRound = collector.CollectOnceAsync(_roundCts.Token);
+                if (_currentRound != null)
+                    await _currentRound;
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "采集轮次发生异常，5 秒后重试。");
                 try
                 {
-                    using var scope = _scopeFactory.CreateScope();
-                    var collector = scope.ServiceProvider.GetRequiredService<IDeviceCollector>();
-                    _roundCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                    _currentRound = collector.CollectOnceAsync(_roundCts.Token);
-                    if (_currentRound != null)
-                        await _currentRound;
+                    await Task.Delay(_errorRetryDelay, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
-                finally
-                {
-                    _roundCts?.Dispose();
-                    _roundCts = null;
-                    _currentRound = null;
-                }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "采集循环发生异常。");
+            finally
+            {
+                _roundCts?.Dispose();
+                _roundCts = null;
+                _currentRound = null;
+            }
         }
 
         _logger.LogInformation("CollectionEngine Stopped.");
