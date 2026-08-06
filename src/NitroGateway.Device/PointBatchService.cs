@@ -30,11 +30,11 @@ public sealed class PointBatchService
     /// </summary>
     public OperationResult<IReadOnlyList<DevicePoint>> ParseCsv(string csvText)
     {
-        var lines = csvText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 2)
+        var rows = ParseCsvRows(csvText);
+        if (rows.Count < 2)
             return OperationalError.Validation("CSV 至少需要包含列头和数据行");
 
-        var headers = lines[0].Split(',').Select(h => h.Trim()).ToArray();
+        var headers = rows[0].Select(h => h.Trim()).ToArray();
         var nameIdx = IndexOf(headers, "Name");
         var addrIdx = IndexOf(headers, "Address");
         var typeIdx = IndexOf(headers, "DataType");
@@ -50,15 +50,19 @@ public sealed class PointBatchService
             return OperationalError.Validation("CSV 缺少必填列：Name, Address, DataType");
 
         var points = new List<DevicePoint>();
-        for (var i = 1; i < lines.Length; i++)
+        for (var r = 1; r < rows.Count; r++)
         {
-            var cols = lines[i].Split(',');
-            if (cols.Length < headers.Length) continue;
+            var cols = rows[r];
+            if (cols.Length < headers.Length)
+            {
+                _logger.LogWarning("CSV 第 {Line} 行字段数不足（{Cols}/{Headers}），已跳过", r + 1, cols.Length, headers.Length);
+                continue;
+            }
 
             var typeStr = cols[typeIdx].Trim();
             if (!Enum.TryParse<DataType>(typeStr, true, out var dataType))
             {
-                _logger.LogWarning("CSV 行 {Line}: 无法解析 DataType '{Type}'", i + 1, typeStr);
+                _logger.LogWarning("CSV 第 {Line} 行: 无法解析 DataType '{Type}'", r + 1, typeStr);
                 continue;
             }
 
@@ -82,6 +86,86 @@ public sealed class PointBatchService
 
         _logger.LogInformation("CSV 解析完成: {Count} 个点位", points.Count);
         return points;
+    }
+
+    /// <summary>
+    /// 解析 CSV 文本为行 × 字段矩阵。支持引号包裹字段：字段内逗号、换行与双引号（"" 转义）。
+    /// 空行忽略。
+    /// </summary>
+    private static List<string[]> ParseCsvRows(string csvText)
+    {
+        var rows = new List<string[]>();
+        var fields = new List<string>();
+        var sb = new StringBuilder();
+        var inQuotes = false;
+        var hasContent = false;
+
+        void EndField()
+        {
+            fields.Add(sb.ToString());
+            sb.Clear();
+            hasContent = false;
+        }
+
+        void EndRow()
+        {
+            EndField();
+            if (fields.Count > 1 || fields[0].Length > 0)
+                rows.Add(fields.ToArray());
+            fields.Clear();
+        }
+
+        for (var i = 0; i < csvText.Length; i++)
+        {
+            var ch = csvText[i];
+            if (inQuotes)
+            {
+                if (ch == '"')
+                {
+                    if (i + 1 < csvText.Length && csvText[i + 1] == '"')
+                    {
+                        sb.Append('"');
+                        i++;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                    }
+                }
+                else
+                {
+                    sb.Append(ch);
+                }
+            }
+            else
+            {
+                switch (ch)
+                {
+                    case '"':
+                        inQuotes = true;
+                        hasContent = true;
+                        break;
+                    case ',':
+                        EndField();
+                        break;
+                    case '\r':
+                    case '\n':
+                        EndRow();
+                        if (ch == '\r' && i + 1 < csvText.Length && csvText[i + 1] == '\n')
+                            i++;
+                        break;
+                    default:
+                        sb.Append(ch);
+                        hasContent = true;
+                        break;
+                }
+            }
+        }
+
+        if (hasContent || fields.Count > 0 || sb.Length > 0)
+            EndRow();
+
+        return rows;
     }
 
     // ════════════════════════════════════════════

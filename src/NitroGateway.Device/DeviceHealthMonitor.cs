@@ -113,6 +113,14 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
     public IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots()
         => _snapshots.Values.ToList();
 
+    /// <inheritdoc />
+    public void Remove(Guid deviceId)
+    {
+        _failures.TryRemove(deviceId, out _);
+        _successes.TryRemove(deviceId, out _);
+        _snapshots.TryRemove(deviceId, out _);
+    }
+
     public int GetConsecutiveFailures(Guid deviceId)
         => _failures.TryGetValue(deviceId, out var c) ? c : 0;
 

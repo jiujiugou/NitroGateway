@@ -27,6 +27,9 @@ public interface IDeviceHealthMonitor
     /// <summary>获取所有设备健康快照</summary>
     IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots();
 
+    /// <summary>设备注销时清理快照与计数，避免内存残留</summary>
+    void Remove(Guid deviceId);
+
     /// <summary>注册监听器</summary>
     void AddListener(IDeviceHealthListener listener);
 }

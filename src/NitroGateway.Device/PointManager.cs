@@ -25,29 +25,45 @@ public sealed class PointManager : IPointManager
         if (point.Id == Guid.Empty)
             return OperationalError.Validation("点位 ID 不能为空");
 
-        await _repository.SaveAsync(deviceId, point, ct);
+        var result = await _repository.SaveAsync(deviceId, point, ct);
+        if (result.IsFailure) return result.Error!;
+
         _logger.LogInformation("点位已添加: {PointName} [{PointId}] → Device {DeviceId}", point.Name, point.Id, deviceId);
         return point;
     }
 
     public async Task<OperationResult> RemoveAsync(Guid deviceId, Guid pointId, CancellationToken ct = default)
     {
-        await _repository.DeleteAsync(deviceId, pointId, ct);
+        var result = await _repository.DeleteAsync(deviceId, pointId, ct);
+        if (result.IsFailure) return result.Error!;
         return OperationResult.Success();
     }
 
     public async Task<OperationResult> UpdateAsync(
         Guid deviceId, DevicePoint point, CancellationToken ct = default)
     {
-        await _repository.SaveAsync(deviceId, point, ct);
+        var result = await _repository.SaveAsync(deviceId, point, ct);
+        if (result.IsFailure) return result.Error!;
         return OperationResult.Success();
     }
 
     public async Task<OperationResult<IReadOnlyList<DevicePoint>>> ImportAsync(
         Guid deviceId, IReadOnlyList<DevicePoint> points, CancellationToken ct = default)
     {
+        var failed = new List<string>();
         foreach (var point in points)
-            await _repository.SaveAsync(deviceId, point, ct);
+        {
+            var result = await _repository.SaveAsync(deviceId, point, ct);
+            if (result.IsFailure)
+                failed.Add($"{point.Name} ({result.Error!.Message})");
+        }
+
+        if (failed.Count > 0)
+        {
+            _logger.LogError("批量导入失败 {Failed}/{Total} 个点位: {Details}",
+                failed.Count, points.Count, string.Join("; ", failed));
+            return OperationalError.Storage($"导入失败 {failed.Count}/{points.Count} 个点位: {string.Join("; ", failed)}");
+        }
 
         _logger.LogInformation("批量导入 {Count} 个点位 → Device {DeviceId}", points.Count, deviceId);
         return OperationResult<IReadOnlyList<DevicePoint>>.Success(points);

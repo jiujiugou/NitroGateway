@@ -14,7 +14,7 @@ namespace NitroGateway.UnitTests;
 /// 设备管理器单元测试——FakeDeviceRepository 模拟数据层。
 ///
 /// <para>DeviceManager 的核心业务逻辑不是 CRUD（那由 Repository 负责），而是：
-/// 1. 状态门控：不允许从 Offline 手动切换到 Online（必须通过 DeviceHealthMonitor 恢复）
+/// 1. 状态统一入口：UpdateStatusAsync 持久化状态变更并驱逐驱动池连接
 /// 2. SetMaintenanceAsync 语义：将设备标记为维护模式或 Unknown
 /// 3. 空 ID 拒绝</para>
 ///
@@ -116,6 +116,19 @@ public class DeviceManagerTests
         Assert.False(_repo.Devices.ContainsKey(id));  // 已删除
     }
 
+    /// <summary>注销设备后健康快照应被清理，不能残留内存。</summary>
+    [Fact]
+    public async Task UnregisterAsync_ClearsHealthSnapshot()
+    {
+        var id = Guid.NewGuid();
+        _repo.Devices[id] = MakeDevice("PLC");
+        _healthMonitor.UpdateStatus(id, DeviceStatus.Online);
+
+        await _manager.UnregisterAsync(id);
+
+        Assert.Contains(id, _healthMonitor.Removed);
+    }
+
     /// <summary>获取不存在的设备应返回 Failure。</summary>
     [Fact]
     public async Task GetAsync_NonExistentDevice_ReturnsFailure()
@@ -181,6 +194,8 @@ public class DeviceManagerTests
     {
         public Dictionary<Guid, DeviceStatus> Statuses = new();
 
+        public List<Guid> Removed { get; } = new();
+
         public int FailureThreshold => throw new NotImplementedException();
 
         public int RecoveryThreshold => throw new NotImplementedException();
@@ -216,6 +231,12 @@ public class DeviceManagerTests
                 Statuses[deviceId] = status;
             else
                 Statuses.Add(deviceId, status);
+        }
+
+        public void Remove(Guid deviceId)
+        {
+            Removed.Add(deviceId);
+            Statuses.Remove(deviceId);
         }
     }
 }

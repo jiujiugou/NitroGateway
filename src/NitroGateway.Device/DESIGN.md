@@ -16,7 +16,7 @@ NitroGateway.Device/
 ├── DeviceManager.cs          设备 CRUD + 生命周期
 ├── PointManager.cs           点位配置 + 校验
 ├── DeviceHealthMonitor.cs    健康判定：采集成败计数 → 阈值触发状态变更
-└── DeviceEvents.cs           领域事件（DeviceRegistered / DeviceOffline / DeviceOnline / PointChanged ...）
+└── Events/                   领域事件（DeviceHealthChanged / IDeviceHealthListener）
 ```
 
 ---
@@ -82,7 +82,7 @@ Task<OperationResult<IReadOnlyList<PointValidationError>>> ValidateAsync(
     Guid deviceId, DevicePoint point, CancellationToken ct);
 ```
 
-`ValidateAsync` 调 `IAddressParser.Parse(point.Address)` 做格式校验，但 PointManager 不持有协议知识——只知道 "这个 parser 返回 true 就合法"。
+当前实现只做基础字段校验（Name/Address 非空、ScanIntervalMs/Deadband 非负）；协议级地址格式校验（委托 IAddressParser）尚未接线，为后续待办。
 
 ### IDeviceHealthMonitor — 健康判定（只计数，不修改状态）
 
@@ -92,7 +92,7 @@ void ReportSuccess(Guid deviceId);
 void ReportFailure(Guid deviceId, string reason);
 
 // 阈值配置
-int FailureThreshold { get; }    // 默认 10
+int FailureThreshold { get; }    // 默认 3
 int RecoveryThreshold { get; }   // 默认 3
 
 // 可观测
@@ -185,7 +185,7 @@ DeviceHealthMonitor.ReportSuccess(deviceId)  或  ReportFailure(deviceId, reason
     │
     ├── SuccessCount++ / FailCount++
     │
-    ├── FailCount ≥ FailureThreshold(10)
+    ├── FailCount ≥ FailureThreshold(3)
     │   └── IDeviceManager.UpdateStatusAsync(deviceId, Offline)
     │       ├── IDeviceRepository.SaveAsync()
     │       └── 发布 DeviceOffline 事件

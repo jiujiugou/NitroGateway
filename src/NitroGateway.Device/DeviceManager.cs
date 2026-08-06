@@ -49,7 +49,7 @@ public sealed class DeviceManager : IDeviceManager
 
         await _repository.DeleteAsync(deviceId, ct);
         _driverPool.Evict(deviceId);
-        _healthMonitor.UpdateStatus(device.Value.Id, device.Value.Status);
+        _healthMonitor.Remove(deviceId);
         _logger.LogInformation("设备已注销: {DeviceId}", deviceId);
         return OperationResult.Success();
     }

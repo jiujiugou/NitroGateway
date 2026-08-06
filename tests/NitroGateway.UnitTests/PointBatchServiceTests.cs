@@ -150,6 +150,45 @@ public class PointBatchServiceTests
         Assert.Contains("\"Temp,Top\"", csv);
     }
 
+    /// <summary>引号包裹的字段（含逗号）应作为一个整体解析，不能被逗号拆开。</summary>
+    [Fact]
+    public void ParseCsv_QuotedFieldWithComma_ParsesAsSingleField()
+    {
+        var csv = "Name,Address,DataType,Description\n\"Temp,Top\",40001,Float,\"炉温,1#炉\"";
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value!);
+        Assert.Equal("Temp,Top", result.Value![0].Name);
+        Assert.Equal("炉温,1#炉", result.Value![0].Description);
+    }
+
+    /// <summary>引号转义 "" 应还原为单个引号。</summary>
+    [Fact]
+    public void ParseCsv_QuotedFieldWithEscapedQuote_Unescapes()
+    {
+        var csv = "Name,Address,DataType,Description\nTemp,40001,Float,\"他说\"\"好\"\"\"";
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("他说\"好\"", result.Value![0].Description);
+    }
+
+    /// <summary>导出→导入往返应完整保留含逗号/引号的字段，Excel 场景闭环。</summary>
+    [Fact]
+    public void ParseCsv_RoundTrip_PreservesEscapedFields()
+    {
+        var point = MakePoint("Temp,Top", "40001", DataType.Float);
+        point.Description = "炉温,1#炉 \"A\" 区";
+
+        var csv = _service.ExportCsv(new[] { point });
+        var result = _service.ParseCsv(csv);
+
+        Assert.True(result.IsSuccess);
+        var parsed = result.Value![0];
+        Assert.Equal("Temp,Top", parsed.Name);
+        Assert.Equal("炉温,1#炉 \"A\" 区", parsed.Description);
+        Assert.Equal(DataType.Float, parsed.DataType);
+    }
+
     private static DevicePoint MakePoint(string name, string address, DataType type) => new()
     {
         Id = Guid.NewGuid(), Name = name, Address = address, DataType = type

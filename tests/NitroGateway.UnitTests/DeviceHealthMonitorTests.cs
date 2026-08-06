@@ -83,6 +83,23 @@ public class DeviceHealthMonitorTests
         Assert.Equal(2, monitor.GetConsecutiveFailures(_deviceId));
     }
 
+    /// <summary>注销设备后 Remove 应清空快照与计数（防内存泄漏与幽灵设备）</summary>
+    [Fact]
+    public void Remove_ClearsCountersAndSnapshot()
+    {
+        var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
+        monitor.UpdateStatus(_deviceId, DeviceStatus.Online);
+        monitor.ReportFailure(_deviceId, "timeout");
+        monitor.ReportSuccess(_deviceId);
+
+        monitor.Remove(_deviceId);
+
+        Assert.Null(monitor.GetSnapshot(_deviceId));
+        Assert.Equal(0, monitor.GetConsecutiveFailures(_deviceId));
+        Assert.Equal(0, monitor.GetConsecutiveSuccesses(_deviceId));
+        Assert.Empty(monitor.GetAllSnapshots());
+    }
+
     private sealed class TestListener(Action<DeviceHealthChanged> onChanged) : IDeviceHealthListener
     {
         public ValueTask OnHealthChangedAsync(DeviceHealthChanged e, CancellationToken ct = default)
