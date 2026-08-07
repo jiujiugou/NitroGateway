@@ -1,7 +1,9 @@
 import axios from 'axios'
 
 const client = axios.create({
-  baseURL: 'http://localhost:5100/api',
+  // ADR-007 P1-1：相对路径，dev 走 Vite 代理(/api → 5100)，生产走 nginx /api/ 反代；
+  // 写死后端地址会导致生产部署下浏览器直连自身 localhost:5100 而全部失败
+  baseURL: '/api',
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' }
 })

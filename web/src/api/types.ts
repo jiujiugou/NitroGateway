@@ -51,13 +51,6 @@ export interface PointSnapshot {
   errorMessage?: string
 }
 
-export interface DeviceStatusSummary {
-  deviceId: string
-  deviceName: string
-  status: DeviceStatus
-  lastError?: string
-}
-
 export interface ApiResponse<T> {
   success: boolean
   data?: T

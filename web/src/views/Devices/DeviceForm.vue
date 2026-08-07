@@ -6,10 +6,9 @@
         <el-form-item label="设备名称"><el-input v-model="f.name" placeholder="例如：一号车间 PLC" /></el-form-item>
         <el-form-item label="协议">
           <el-select v-model="f.protocol.name" style="width:100%" @change="onProtocolChange">
+            <!-- ADR-007 P2-2：后端 ProtocolDriverFactory 仅注册 Modbus+S7；OPC UA 未接入，Mitsubishi 待 slnx 启用后再放回 -->
             <el-option label="Modbus" value="Modbus" />
-            <el-option label="OPC UA" value="OPC UA" />
             <el-option label="S7" value="S7" />
-            <el-option label="Mitsubishi" value="Mitsubishi" />
           </el-select>
         </el-form-item>
         <el-form-item label="传输方式">

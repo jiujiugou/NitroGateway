@@ -111,6 +111,8 @@ onMounted(async () => {
   conn.on('DeviceStatusChanged', (d: { deviceId: string; status: string }) => {
     const dev = devices.value.find(x => x.id === d.deviceId)
     if (dev) dev.status = d.status as any
+    // ADR-007 P2-3：挂载后上线的设备补订阅 Measurement 群组，否则收不到实时值
+    if (d.status === 'Online') conn?.invoke('SubscribeDevice', d.deviceId).catch(() => {})
   })
   conn.onreconnected(() => { connected.value = true })
   conn.onclose(() => { connected.value = false })

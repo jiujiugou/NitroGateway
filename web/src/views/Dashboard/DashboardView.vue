@@ -38,11 +38,14 @@ onMounted(async () => {
   try { devices.value = await getDevices() } catch {}
   conn = createLiveConnection()
   conn.on('Measurement', (data: any[]) => {
-    data.forEach((m: any) => { latestData.value[m.pointId] = m })
+    // ADR-007 P2-1：payload 字段为 devicePointId（对齐 PointSnapshot.devicePointId），原写 m.pointId 恒为 undefined
+    data.forEach((m: any) => { latestData.value[m.devicePointId] = m })
   })
   conn.on('DeviceStatusChanged', (d: { deviceId: string; status: DeviceStatus }) => {
     const dev = devices.value.find(x => x.id === d.deviceId)
     if (dev) dev.status = d.status
+    // ADR-007 P2-3：挂载后上线的设备补订阅 Measurement 群组，否则收不到实时值
+    if (d.status === 'Online') conn?.invoke('SubscribeDevice', d.deviceId).catch(() => {})
   })
   try { await conn.start() } catch (e) { console.warn('SignalR:', e) }
   devices.value.filter(d => d.status === 'Online').forEach(d => {

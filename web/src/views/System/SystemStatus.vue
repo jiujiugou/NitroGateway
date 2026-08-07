@@ -78,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import client from '../../api/client'
 import { getSerialPorts, getSerialPortStatus } from '../../api/devices'
 
@@ -108,9 +108,13 @@ async function refresh() {
   } catch {}
 }
 
-onMounted(() => { refresh(); setInterval(refresh, 3000) })
+// ADR-007 P3-2：setInterval 需在 onUnmounted 清理，避免离开页面后继续轮询
+let timer: number | undefined
+onMounted(() => { refresh(); timer = window.setInterval(refresh, 3000) })
+onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 
-const shortId = (_r: any, _c: any, _i: number) => { return '-' }  // inline below
+// ADR-007 P1-2：修复占位符恒返回 '-'；el-table formatter 签名 (row, column, cellValue, index)，多余参数忽略
+const shortId = (row: any) => row.deviceId?.slice(0, 8) ?? '-'
 
 function breakerTag(row: any): string {
   if (row.state === 'Closed') return 'success'

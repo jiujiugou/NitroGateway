@@ -21,12 +21,17 @@
 </template>
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import * as echarts from 'echarts'
+// ADR-007 P3-5：按需引入 echarts（Line + Grid/Tooltip/Title + Canvas），替代整包 1.1MB 引入
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, CanvasRenderer])
 import { getDevices, getPoints } from '../../api/devices'
 import { getHistory } from '../../api/measurements'
 import type { Device, DevicePoint, PointSnapshot } from '../../api/types'
 const devices = ref<Device[]>([]); const ptOptions = ref<DevicePoint[]>([]); const history = ref<PointSnapshot[]>([]); const chartData = ref<{time:string;value:number|null}[]>([]); const chartRef = ref<HTMLElement>()
-let chart: echarts.ECharts | null = null
+let chart: ReturnType<typeof echarts.init> | null = null
 const q = ref({deviceId:'',pointId:''}); const range = ref<[Date,Date]>([new Date(Date.now()-3600000), new Date()])
 onMounted(async () => { try { devices.value = await getDevices() } catch {} })
 onUnmounted(() => chart?.dispose())

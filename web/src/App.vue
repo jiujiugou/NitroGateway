@@ -67,23 +67,27 @@ const backlog = ref(0)
 
 let conn: HubConnection | null = null
 
-onMounted(async () => {
-  // 初始化状态
+// ADR-007 P1-3：后端 SignalR 无 BufferBacklogChanged 事件（仅 Measurement/DeviceStatusChanged/MqttStateChanged），
+// 原监听静默失效；改为周期性轮询 /status/system 刷新积压数
+let statusTimer: number | undefined
+
+async function refreshStatus() {
   try {
     const s = await getSystemStatus()
     mqttConnected.value = s.mqttConnected
     backlog.value = s.bufferBacklog
-  } catch {}
+  } catch { /* 忽略，下次轮询重试 */ }
+}
+
+onMounted(async () => {
+  await refreshStatus()
+  statusTimer = window.setInterval(refreshStatus, 10000)
 
   // 建立 SignalR
   conn = createLiveConnection()
 
   conn.on('MqttStateChanged', (d: { state: string }) => {
     mqttConnected.value = d.state === 'Connected'
-  })
-
-  conn.on('BufferBacklogChanged', (d: { backlog: number }) => {
-    backlog.value = d.backlog
   })
 
   try {
@@ -94,6 +98,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (statusTimer !== undefined) window.clearInterval(statusTimer)
   conn?.stop()
 })
 </script>

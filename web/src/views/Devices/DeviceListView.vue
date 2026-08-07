@@ -19,12 +19,19 @@
 </template>
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { getDevices, deleteDevice } from '../../api/devices'
 import type { Device } from '../../api/types'
 import StatusTag from '../../components/DeviceStatusTag.vue'
 const devices = ref<Device[]>([])
 onMounted(async () => { try { devices.value = await getDevices() } catch {} })
-async function handleDel(id: string) { await deleteDevice(id); devices.value = devices.value.filter(d=>d.id!==id) }
+async function handleDel(id: string) {
+  // ADR-007 P3-3：删除为破坏性操作，先弹确认框（取消时 promise reject，静默返回）
+  try { await ElMessageBox.confirm('确定删除该设备吗？此操作不可恢复。', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }) }
+  catch { return }
+  await deleteDevice(id)
+  devices.value = devices.value.filter(d=>d.id!==id)
+}
 </script>
 <style scoped>
 .page-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
