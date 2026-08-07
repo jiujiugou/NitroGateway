@@ -126,6 +126,15 @@ public class PointValuePipelineTests
         Assert.Equal("test", result[0].PointName);
     }
 
+    /// <summary>ADR-001 P1-5：快照携带点位真实 DataType，供转发 payload 透传</summary>
+    [Fact]
+    public void DataType_PropagatedToSnapshot()
+    {
+        var pt = MakePoint(DataType.Bool, 1.0, 0);
+        var result = _pipeline.Process(_deviceId, [MakeRaw(pt, true)]);
+        Assert.Equal(DataType.Bool, result[0].DataType);
+    }
+
     private static DevicePoint MakePoint(DataType type, double scale, double offset, double deadband = 0) =>
         new() { Id = Guid.NewGuid(), Name = "test", Address = "40001", DataType = type, ScaleFactor = scale, ScaleOffset = offset, Deadband = deadband };
 

@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +14,8 @@ public static class SqliteServiceCollectionExtensions
 {
     /// <summary>
     /// 注册全部 SQLite 存储服务。
-    /// Configuration 用 EF Core，TimeSeries、Buffer、Alarm 共用裸 SqliteConnection。
+    /// Configuration 用 EF Core；TimeSeries、Buffer、Alarm 均按操作创建独立连接
+    /// （ADR-001 P1-4：共享 Singleton 裸连接跨线程并发不安全）。
     /// </summary>
     public static IServiceCollection AddNitroSqlite(
         this IServiceCollection services, IConfiguration configuration)
@@ -30,14 +30,12 @@ public static class SqliteServiceCollectionExtensions
         services.AddScoped<IDeviceRepository, SqliteDeviceRepository>();
         services.AddScoped<IPointRepository, SqlitePointRepository>();
 
-        // 裸 SqliteConnection — Singleton，所有非 EF Core 的存储共用
-        var conn = new SqliteConnection(connectionString);
         services.AddSingleton<IMeasurementStore>(_ => new SqliteMeasurementStore(connectionString));
-        services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardBuffer(conn, sp.GetRequiredService<ILogger<SqliteForwardBuffer>>()));
+        services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardBuffer(connectionString, sp.GetRequiredService<ILogger<SqliteForwardBuffer>>()));
 
         // 告警持久化（替代 Alarm 模块的 InMemory 实现）
-        services.AddSingleton<IAlarmRuleRepository>(_ => new SqliteAlarmRuleRepository(conn));
-        services.AddSingleton<IAlarmRepository>(_ => new SqliteAlarmRepository(conn));
+        services.AddSingleton<IAlarmRuleRepository>(_ => new SqliteAlarmRuleRepository(connectionString));
+        services.AddSingleton<IAlarmRepository>(_ => new SqliteAlarmRepository(connectionString));
 
         return services;
     }

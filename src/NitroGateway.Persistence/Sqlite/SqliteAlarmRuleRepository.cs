@@ -5,18 +5,24 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>SQLite 告警规则持久化</summary>
+/// <summary>
+/// SQLite 告警规则持久化。
+/// ADR-001 P1-4：每个操作使用独立 SqliteConnection，不再共享 Singleton 连接，
+/// 避免与 Collection/Forwarder 跨线程并发使用同一连接。
+/// </summary>
 public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
 {
-    private readonly SqliteConnection _connection;
+    private readonly string _connectionString;
 
-    public SqliteAlarmRuleRepository(SqliteConnection connection) { _connection = connection; }
+    public SqliteAlarmRuleRepository(string connectionString) { _connectionString = connectionString; }
 
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>> GetByPointAsync(
         Guid deviceId, Guid pointId, CancellationToken ct = default)
     {
         var rules = new List<AlarmDomain.AlarmRule>();
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT id, device_id, point_id, operator, threshold, threshold_upper, duration_seconds, severity, message_template, enabled FROM alarm_rules WHERE device_id=@did AND point_id=@pid AND enabled=1";
         cmd.Parameters.AddWithValue("@did", deviceId.ToString());
         cmd.Parameters.AddWithValue("@pid", pointId.ToString());
@@ -28,7 +34,9 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>> GetAllAsync(CancellationToken ct = default)
     {
         var rules = new List<AlarmDomain.AlarmRule>();
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT id, device_id, point_id, operator, threshold, threshold_upper, duration_seconds, severity, message_template, enabled FROM alarm_rules WHERE enabled=1";
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) rules.Add(Map(reader));
@@ -37,7 +45,9 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
 
     public async Task<OperationResult> SaveAsync(AlarmDomain.AlarmRule rule, CancellationToken ct = default)
     {
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = @"INSERT OR REPLACE INTO alarm_rules (id,device_id,point_id,operator,threshold,threshold_upper,duration_seconds,severity,message_template,enabled) VALUES (@id,@did,@pid,@op,@th,@thu,@dur,@sev,@msg,@en)";
         cmd.Parameters.AddWithValue("@id", rule.Id.ToString());
         cmd.Parameters.AddWithValue("@did", rule.DeviceId.ToString());
@@ -55,7 +65,9 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
 
     public async Task<OperationResult> DeleteAsync(Guid ruleId, CancellationToken ct = default)
     {
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM alarm_rules WHERE id=@id";
         cmd.Parameters.AddWithValue("@id", ruleId.ToString());
         await cmd.ExecuteNonQueryAsync(ct);

@@ -17,6 +17,13 @@ public sealed record PointSnapshot
     public string? PointName { get; init; }
 
     /// <summary>
+    /// 点位数据类型（自描述冗余字段，ADR-001 P1-5）。
+    /// 构造快照时由 <see cref="DevicePoint.DataType"/> 填充，
+    /// 转发 payload 据此携带真实类型，云端不再把 Bool/Int/String 按 Float 解析。
+    /// </summary>
+    public DataType DataType { get; init; }
+
+    /// <summary>
     /// 驱动返回的原始值，未经缩放处理。
     /// 保留此字段用于现场调试（"PLC 到底返回了什么？"）。
     /// 示例：PLC 返回 Int16=1234 → RawValue=1234, Value=123.4（ScaleFactor=0.1）

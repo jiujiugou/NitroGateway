@@ -72,9 +72,9 @@ public class StatusController : ControllerBase
         return Ok(ApiResponse<List<DeviceHealthDto>>.Ok(items));
     }
 
-    /// <summary>系统状态面板（完整聚合）</summary>
+    /// <summary>系统状态面板（完整聚合）。异步等待设备状态查询，避免 .Result 阻塞线程（ADR-001 P2-10）</summary>
     [HttpGet("system")]
-    public ActionResult<ApiResponse<object>> SystemStatus()
+    public async Task<ActionResult<ApiResponse<object>>> SystemStatus()
     {
         var breakerStates = _breakers.GetAll().Select(kv => new
         {
@@ -83,6 +83,9 @@ public class StatusController : ControllerBase
             IsOpen = kv.Value.IsOpen
         }).ToList();
 
+        var onlineResult = await _devices.GetByStatusAsync(Domain.Devices.DeviceStatus.Online);
+        var onlineCount = onlineResult.IsSuccess ? onlineResult.Value!.Count : 0;
+
         return Ok(ApiResponse<object>.Ok(new
         {
             MqttState = _mqtt.State.ToString(),
@@ -90,9 +93,7 @@ public class StatusController : ControllerBase
             BufferBacklog = _buffer.Count,
             ThrottleBatchSize = _throttle.MaxBatchSize,
             ThrottleDelayMs = _throttle.DelayMs,
-            OnlineDevices = _devices.GetByStatusAsync(Domain.Devices.DeviceStatus.Online).Result.IsSuccess
-                ? _devices.GetByStatusAsync(Domain.Devices.DeviceStatus.Online).Result.Value!.Count
-                : 0,
+            OnlineDevices = onlineCount,
             CircuitBreakers = breakerStates
         }));
     }

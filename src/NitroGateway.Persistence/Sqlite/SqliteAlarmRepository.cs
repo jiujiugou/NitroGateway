@@ -5,16 +5,22 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>SQLite 告警记录持久化</summary>
+/// <summary>
+/// SQLite 告警记录持久化。
+/// ADR-001 P1-4：每个操作使用独立 SqliteConnection，不再共享 Singleton 连接，
+/// 避免与 Collection/Forwarder 跨线程并发使用同一连接。
+/// </summary>
 public sealed class SqliteAlarmRepository : IAlarmRepository
 {
-    private readonly SqliteConnection _connection;
+    private readonly string _connectionString;
 
-    public SqliteAlarmRepository(SqliteConnection connection) { _connection = connection; }
+    public SqliteAlarmRepository(string connectionString) { _connectionString = connectionString; }
 
     public async Task<OperationResult> SaveAsync(AlarmDomain.Alarm alarm, CancellationToken ct = default)
     {
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = @"INSERT INTO alarms (id,rule_id,device_id,point_id,trigger_value,threshold,severity,message,state,first_exceeded_at,occurred_at) VALUES (@id,@rid,@did,@pid,@tv,@th,@sev,@msg,@st,@fea,@oa)";
         cmd.Parameters.AddWithValue("@id", alarm.Id.ToString());
         cmd.Parameters.AddWithValue("@rid", alarm.RuleId.ToString());
@@ -33,7 +39,9 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
 
     public async Task<OperationResult> UpdateStateAsync(Guid alarmId, AlarmDomain.AlarmState state, CancellationToken ct = default)
     {
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         if (state == AlarmDomain.AlarmState.Resolved)
         {
             cmd.CommandText = "UPDATE alarms SET state=@st, resolved_at=@ra WHERE id=@id";
@@ -54,7 +62,9 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> GetActiveByDeviceAsync(Guid deviceId, CancellationToken ct = default)
     {
         var alarms = new List<AlarmDomain.Alarm>();
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT id,rule_id,device_id,point_id,trigger_value,threshold,severity,message,state,first_exceeded_at,occurred_at,acknowledged_at,resolved_at FROM alarms WHERE device_id=@did AND state IN ('Active','Acknowledged') ORDER BY occurred_at DESC";
         cmd.Parameters.AddWithValue("@did", deviceId.ToString());
         await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -65,7 +75,9 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> GetAllActiveAsync(CancellationToken ct = default)
     {
         var alarms = new List<AlarmDomain.Alarm>();
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT id,rule_id,device_id,point_id,trigger_value,threshold,severity,message,state,first_exceeded_at,occurred_at,acknowledged_at,resolved_at FROM alarms WHERE state IN ('Active','Acknowledged') ORDER BY occurred_at DESC";
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct)) alarms.Add(Map(r));
@@ -75,7 +87,9 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> QueryAsync(DateTime from, DateTime to, CancellationToken ct = default)
     {
         var alarms = new List<AlarmDomain.Alarm>();
-        using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT id,rule_id,device_id,point_id,trigger_value,threshold,severity,message,state,first_exceeded_at,occurred_at,acknowledged_at,resolved_at FROM alarms WHERE occurred_at BETWEEN @from AND @to ORDER BY occurred_at DESC";
         cmd.Parameters.AddWithValue("@from", from.ToString("O"));
         cmd.Parameters.AddWithValue("@to", to.ToString("O"));
