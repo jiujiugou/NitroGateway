@@ -108,12 +108,13 @@ app.UseSwaggerUI();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+// ADR-004 P2-4：异常处理中间件注册在审计之后（内层），端点异常先转 500 再让审计记录真实状态码
 app.UseMiddleware<AuditMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.MapHealthChecks("/healthz", new() { Predicate = _ => true });
 app.MapHealthChecks("/readyz", new() { Predicate = r => r.Tags.Contains("ready") });
 app.MapMetrics();
 app.MapControllers();
 app.MapHub<LiveDataHub>("/hubs/live");
 app.Run();
-
 

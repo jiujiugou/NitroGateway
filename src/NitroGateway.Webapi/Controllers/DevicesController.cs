@@ -4,10 +4,12 @@ using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Webapi.Models;
 
+using NitroGateway.Security;
+
 namespace NitroGateway.Webapi.Controllers;
 
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Operator,Viewer")]
+[Authorize(Roles = Roles.AllRoles)]
 public class DevicesController : ControllerBase
 {
     private readonly IDeviceManager _devices;

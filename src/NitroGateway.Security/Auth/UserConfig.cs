@@ -6,7 +6,7 @@ public sealed class UserConfig
     /// <summary>用户名</summary>
     public required string Username { get; init; }
 
-    /// <summary>明文密码（首次启动后应改为哈希存储）</summary>
+    /// <summary>密码哈希（由 PasswordHasher 生成，配置文件中存哈希，不支持明文）</summary>
     public required string Password { get; init; }
 
     /// <summary>角色：Admin / Operator / Viewer</summary>

@@ -14,10 +14,13 @@ public static class MqttServiceCollectionExtensions
     {
         var options = configuration.GetSection("MQTT").Get<MqttConnectionOptions>();
 
-        // 自动生成唯一 ClientId
+        // 自动生成唯一 ClientId。
+        // ADR-006 P1-1：修复前对整串取 [..8]，所有实例恒为 "NitroGat"，多实例连同一 broker 会按 MQTT 规范互踢；
+        // 现在只截 GUID 后缀 8 位，前缀保留 MachineName 便于排查，保证实例间唯一。
         if (string.IsNullOrWhiteSpace(options.ClientId))
         {
-            options = options with { ClientId = $"NitroGateway-{Environment.MachineName}-{Guid.NewGuid():N}"[..8] };
+            var guidSuffix = Guid.NewGuid().ToString("N")[..8];
+            options = options with { ClientId = $"NitroGateway-{Environment.MachineName}-{guidSuffix}" };
         }
 
         services.AddSingleton(options);

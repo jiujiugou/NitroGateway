@@ -20,6 +20,7 @@ public static class SecurityServiceCollectionExtensions
         if (string.IsNullOrWhiteSpace(jwtConfig.JwtSecretKey) ||
             jwtConfig.JwtSecretKey.StartsWith("NitroGateway-Dev"))
         {
+            // 开发便利：自动生成随机密钥（每次启动变化，token 不跨重启持久）
             jwtConfig = new JwtConfig
             {
                 JwtSecretKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
@@ -28,6 +29,20 @@ public static class SecurityServiceCollectionExtensions
                 ExpireHours = jwtConfig.ExpireHours,
                 Users = jwtConfig.Users
             };
+        }
+
+        // ADR-004 P2-2：fail-fast 校验密钥强度与有效期，弱配置直接拒绝启动
+        if (Encoding.UTF8.GetByteCount(jwtConfig.JwtSecretKey) < 32)
+            throw new InvalidOperationException("Security:JwtSecretKey 长度不足 32 字节，请配置强密钥后启动");
+
+        if (jwtConfig.ExpireHours < 1)
+            throw new InvalidOperationException("Security:ExpireHours 必须 ≥ 1 小时");
+
+        // ADR-004 P2-3：配置角色必须是预定义角色之一，防止任意字符串签发越权 token
+        foreach (var user in jwtConfig.Users)
+        {
+            if (user.Role is not (Roles.Admin or Roles.Operator or Roles.Viewer))
+                throw new InvalidOperationException($"Security:Users 角色无效: {user.Username} → {user.Role}（允许 Admin/Operator/Viewer）");
         }
 
         services.AddSingleton(jwtConfig);
@@ -74,11 +89,16 @@ public static class SecurityServiceCollectionExtensions
             options.AddPolicy("AllRoles", p => p.RequireRole(Roles.Admin, Roles.Operator, Roles.Viewer));
         });
 
-        // ── 5. 写指令门控 ──
+        // ── 5. 写指令门控（ADR-004 P1-1：预留能力，未接线）──
+        // Webapi 当前无写端点，Modbus/S7 驱动 WriteAsync 无生产调用方；
+        // 启用需新增写端点 + WriteGuard.Evaluate 接入 + 驱动 WriteAsync 调用链，docs F-28 已同步标注
         services.AddSingleton<RangeValidator>();
         services.AddSingleton<RateLimitValidator>();
         services.AddSingleton<ModeValidator>();
         services.AddSingleton<WriteGuard>();
+
+        // ── 6. 登录失败限流（ADR-004 P2-1，内存实现，内网防爆破最小平卫）──
+        services.AddSingleton<LoginRateLimiter>();
 
         return services;
     }

@@ -7,10 +7,12 @@ using NitroGateway.Storage.Buffer;
 using NitroGateway.Transport.MQTT;
 using NitroGateway.Webapi.Models;
 
+using NitroGateway.Security;
+
 namespace NitroGateway.Webapi.Controllers;
 
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Operator,Viewer")]
+[Authorize(Roles = Roles.AllRoles)]
 public class StatusController : ControllerBase
 {
     private readonly IDeviceManager _devices;
@@ -48,7 +50,8 @@ public class StatusController : ControllerBase
         {
             DeviceId = d.Id.ToString(),
             DeviceName = d.Name,
-            Status = d.Status.ToString()
+            // ADR-002 P2-2（方案 1）：状态以 HealthMonitor 实时快照为准，配置缓存 Status 仅兜底
+            Status = (_healthMonitor.GetSnapshot(d.Id)?.Status ?? d.Status).ToString()
         }).ToList();
 
         return Ok(ApiResponse<List<DeviceStatusSummaryDto>>.Ok(summaries));
@@ -90,7 +93,7 @@ public class StatusController : ControllerBase
         {
             MqttState = _mqtt.State.ToString(),
             MqttConnected = _mqtt.State == MqttConnectionState.Connected,
-            BufferBacklog = _buffer.Count,
+            BufferBacklog = await _buffer.GetCountAsync(HttpContext.RequestAborted),
             ThrottleBatchSize = _throttle.MaxBatchSize,
             ThrottleDelayMs = _throttle.DelayMs,
             OnlineDevices = onlineCount,

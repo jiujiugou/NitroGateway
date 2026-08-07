@@ -20,6 +20,7 @@ internal sealed class DeviceCollector : IDeviceCollector
     private readonly IDataDispatcher _dispatcher;
     private readonly IHealthReporter _reporter;
     private readonly ICircuitBreakerRegistry _circuitBreakerRegistry;
+    private readonly IDeviceHealthMonitor _healthMonitor;
     private readonly ILogger<DeviceCollector> _logger;
     private readonly SemaphoreSlim _concurrencyGate;
 
@@ -31,6 +32,7 @@ internal sealed class DeviceCollector : IDeviceCollector
         IDataDispatcher dispatcher,
         IHealthReporter reporter,
         ICircuitBreakerRegistry circuitBreakerRegistry,
+        IDeviceHealthMonitor healthMonitor,
         ILogger<DeviceCollector> logger,
         int maxConcurrency = 5)
     {
@@ -40,6 +42,7 @@ internal sealed class DeviceCollector : IDeviceCollector
         _dispatcher = dispatcher;
         _reporter = reporter;
         _circuitBreakerRegistry = circuitBreakerRegistry;
+        _healthMonitor = healthMonitor;
         _logger = logger;
         _concurrencyGate = new SemaphoreSlim(maxConcurrency);
     }
@@ -124,7 +127,9 @@ internal sealed class DeviceCollector : IDeviceCollector
             _logger.LogWarning("获取设备列表失败: {Error}", devicesResult.Error!.Message);
             return;
         }
-        var devices = devicesResult.Value!.Where(d => d.Status != DeviceStatus.Maintenance).ToList();
+        // ADR-002 P2-2（方案 1）：维护模式过滤以 HealthMonitor 实时状态为准（零缓存延迟），
+        // 不再读设备目录缓存中的 Status（配置缓存可能滞后一个采集周期）
+        var devices = devicesResult.Value!.Where(d => !IsInMaintenance(d)).ToList();
         NitroMetrics.DevicesAvailable.Set(devices.Count);
 
         if (devices.Count == 0)
@@ -172,5 +177,12 @@ internal sealed class DeviceCollector : IDeviceCollector
             _logger.LogError(ex, "采集过程中发生异常");
         }
     }
+
+    /// <summary>
+    /// 维护模式判定。优先 HealthMonitor 实时快照；设备未注册进 monitor（历史数据等）时
+    /// 回退到配置中的 Status。
+    /// </summary>
+    private bool IsInMaintenance(Device device)
+        => (_healthMonitor.GetSnapshot(device.Id)?.Status ?? device.Status) == DeviceStatus.Maintenance;
 
 }

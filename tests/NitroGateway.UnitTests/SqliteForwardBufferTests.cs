@@ -90,6 +90,14 @@ public class SqliteForwardBufferTests
         return (status, retryCount, lastError);
     }
 
+    private static void DropForwardBufferTable(string connectionString)
+    {
+        using var connection = Open(connectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "DROP TABLE forward_buffer";
+        command.ExecuteNonQuery();
+    }
+
     private static BatchMeasurements NewBatch(Guid id)
     {
         return new BatchMeasurements
@@ -257,6 +265,20 @@ public class SqliteForwardBufferTests
         Assert.Contains("broker", lastError);
     }
 
+    /// <summary>ADR-001 P3-13：GetCountAsync 异步返回 Pending 批次数，不含死信</summary>
+    [Fact]
+    public async Task GetCountAsync_ReturnsPendingCount_ExcludesDeadLetters()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()));
+        InsertRow(db.ConnectionString, Guid.NewGuid().ToString(), "{}", "DeadLetter");
+
+        var count = await buffer.GetCountAsync();
+
+        Assert.Equal(1, count);
+    }
+
     /// <summary>P1-6：死信查询返回条目（批次上下文 + 重试次数）</summary>
     [Fact]
     public async Task GetDeadLetters_ReturnsEntries()
@@ -336,5 +358,50 @@ public class SqliteForwardBufferTests
         command.CommandText = "SELECT COUNT(*) FROM forward_buffer WHERE id = @id;";
         command.Parameters.AddWithValue("@id", batch.Id.ToString());
         Assert.Equal(0L, command.ExecuteScalar());
+    }
+
+    /// <summary>P1-1：死信查询在表缺失时返回分类失败，不向调用方抛异常</summary>
+    [Fact]
+    public async Task GetDeadLetters_TableMissing_ReturnsClassifiedFailure()
+    {
+        using var db = new TempForwardBufferDb();
+        DropForwardBufferTable(db.ConnectionString);
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+
+        var result = await buffer.GetDeadLettersAsync(10);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCategory.Storage, result.Error!.Category);
+        Assert.Contains("死信查询失败", result.Error.Message);
+    }
+
+    /// <summary>P1-1：死信重试在表缺失时返回分类失败，不向调用方抛异常</summary>
+    [Fact]
+    public async Task RetryDeadLetter_TableMissing_ReturnsClassifiedFailure()
+    {
+        using var db = new TempForwardBufferDb();
+        DropForwardBufferTable(db.ConnectionString);
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+
+        var result = await buffer.RetryDeadLetterAsync(Guid.NewGuid());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCategory.Storage, result.Error!.Category);
+        Assert.Contains("死信重试失败", result.Error.Message);
+    }
+
+    /// <summary>P1-1：死信丢弃在表缺失时返回分类失败，不向调用方抛异常</summary>
+    [Fact]
+    public async Task DiscardDeadLetter_TableMissing_ReturnsClassifiedFailure()
+    {
+        using var db = new TempForwardBufferDb();
+        DropForwardBufferTable(db.ConnectionString);
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+
+        var result = await buffer.DiscardDeadLetterAsync(Guid.NewGuid());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCategory.Storage, result.Error!.Category);
+        Assert.Contains("死信丢弃失败", result.Error.Message);
     }
 }

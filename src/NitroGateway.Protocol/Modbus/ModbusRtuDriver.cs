@@ -36,7 +36,11 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
             DataBits = (int)ToInt64(connection.Parameters.GetValueOrDefault("DataBits") ?? 8) is var db && db is 7 or 8 ? db : 8,
             Parity = ParseParity(ToParamString(connection.Parameters.GetValueOrDefault("Parity"))),
             StopBits = ParseStopBits(ToParamString(connection.Parameters.GetValueOrDefault("StopBits"))),
-            DataFormat = ParseDataFormat(ToParamString(connection.Parameters.GetValueOrDefault("DataFormat")))
+            DataFormat = ParseDataFormat(ToParamString(connection.Parameters.GetValueOrDefault("DataFormat"))),
+            // ADR-003 P3-4：串口超时透传设备连接参数 RequestTimeoutMs
+            ReceiveTimeoutMs = connection.RequestTimeoutMs,
+            ReadTimeoutMs = connection.RequestTimeoutMs,
+            WriteTimeoutMs = connection.RequestTimeoutMs
         };
     }
 
@@ -121,18 +125,27 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
         DataType.Byte    => (byte)(await ReadCheckedAsync(Rtu.ReadInt16Async(address, 1), "读取 Byte"))[0],
         DataType.Int64   => (await ReadCheckedAsync(Rtu.ReadInt64Async(address, 1), "读取 Int64"))[0],
         DataType.UInt64  => (ulong)(await ReadCheckedAsync(Rtu.ReadInt64Async(address, 1), "读取 UInt64"))[0],
-        DataType.String  => await ReadCheckedAsync(Rtu.ReadStringAsync(address, 10), "读取 String"),
+        DataType.String  => await ReadCheckedAsync(Rtu.ReadStringAsync(address, DefaultStringLength), "读取 String"),
         _ => (await ReadCheckedAsync(Rtu.ReadFloatAsync(address, 1), "读取 Float"))[0]
     };
 
     protected override async Task<OperationResult> WriteSingleValueAsync(DevicePoint point, string address, object value)
     {
+        // ADR-003 P1-2：按 DataType 全量映射 HSL 写方法，不再回退 Convert.ToSingle
         var result = point.DataType switch
         {
-            DataType.Float => await Rtu.WriteAsync(address, Convert.ToSingle(value)),
-            DataType.Int16 => await Rtu.WriteAsync(address, Convert.ToInt16(value)),
-            DataType.Bool  => await Rtu.WriteAsync(address, Convert.ToBoolean(value)),
-            _ => await Rtu.WriteAsync(address, Convert.ToSingle(value))
+            DataType.Bool    => await Rtu.WriteAsync(address, Convert.ToBoolean(value)),
+            DataType.Byte    => await Rtu.WriteAsync(address, Convert.ToInt16(value)),  // 1 寄存器，按 short 写入
+            DataType.Int16   => await Rtu.WriteAsync(address, Convert.ToInt16(value)),
+            DataType.UInt16  => await Rtu.WriteAsync(address, Convert.ToUInt16(value)),
+            DataType.Int32   => await Rtu.WriteAsync(address, Convert.ToInt32(value)),
+            DataType.UInt32  => await Rtu.WriteAsync(address, Convert.ToUInt32(value)),
+            DataType.Int64   => await Rtu.WriteAsync(address, Convert.ToInt64(value)),
+            DataType.UInt64  => await Rtu.WriteAsync(address, Convert.ToUInt64(value)),
+            DataType.Float   => await Rtu.WriteAsync(address, Convert.ToSingle(value)),
+            DataType.Double  => await Rtu.WriteAsync(address, Convert.ToDouble(value)),
+            DataType.String  => await Rtu.WriteAsync(address, Convert.ToString(value)),
+            _                => await Rtu.WriteAsync(address, Convert.ToSingle(value))
         };
 
         return result.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Protocol(result.Message);

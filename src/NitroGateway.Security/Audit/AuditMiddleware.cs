@@ -37,6 +37,8 @@ public sealed class AuditMiddleware
         var elapsedMs = (int)(DateTime.UtcNow - start).TotalMilliseconds;
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "-";
 
+        // ADR-004 P3-3：刻意不记请求体——写类操作的变更内容属敏感数据，
+        // 边缘网关适配范围按 method/path/status 审计即可；如需 body 摘要需先 EnableBuffering
         if (statusCode >= 400)
         {
             _logger.LogWarning(

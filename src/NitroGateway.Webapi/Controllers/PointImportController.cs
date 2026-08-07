@@ -4,11 +4,13 @@ using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Webapi.Models;
 
+using NitroGateway.Security;
+
 namespace NitroGateway.Webapi.Controllers;
 
 /// <summary>点位批量导入/导出 API</summary>
 [ApiController, Route("api/devices/{deviceId}/points")]
-[Authorize(Roles = "Admin,Operator")]
+[Authorize(Roles = Roles.AdminOperator)]
 public class PointImportController : ControllerBase
 {
     private readonly IPointManager _points;

@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Forwarder\NitroGateway.Forwarder.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\Modbus\NitroGateway.Protocol.Modbus.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />

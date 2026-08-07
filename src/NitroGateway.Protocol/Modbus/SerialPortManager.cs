@@ -16,6 +16,16 @@ public sealed record SerialPortSettings
 
     /// <summary>寄存器字节序（Modbus 标准为 ABCD，高字在前）</summary>
     public DataFormat DataFormat { get; init; } = DataFormat.ABCD;
+
+    // ADR-003 P3-4：超时不再硬编码，由 ModbusRtuDriver 从连接参数 RequestTimeoutMs 透传
+    /// <summary>通信接收超时（毫秒），默认 1000</summary>
+    public int ReceiveTimeoutMs { get; init; } = 1000;
+
+    /// <summary>串口读超时（毫秒），默认 1000</summary>
+    public int ReadTimeoutMs { get; init; } = 1000;
+
+    /// <summary>串口写超时（毫秒），默认 1000</summary>
+    public int WriteTimeoutMs { get; init; } = 1000;
 }
 
 /// <summary>
@@ -122,7 +132,7 @@ public sealed class SerialPortManager : ISerialPortManager
     {
         var rtu = new ModbusRtu
         {
-            ReceiveTimeOut = 1000,
+            ReceiveTimeOut = settings.ReceiveTimeoutMs,
             SleepTime = 5
         };
 
@@ -133,8 +143,8 @@ public sealed class SerialPortManager : ISerialPortManager
             sp.DataBits = settings.DataBits;
             sp.Parity = settings.Parity;
             sp.StopBits = settings.StopBits;
-            sp.ReadTimeout = 1000;
-            sp.WriteTimeout = 1000;
+            sp.ReadTimeout = settings.ReadTimeoutMs;
+            sp.WriteTimeout = settings.WriteTimeoutMs;
         });
 
         rtu.DataFormat = settings.DataFormat;
@@ -209,5 +219,7 @@ public sealed class SerialPortManager : ISerialPortManager
 
     private static bool SettingsEqual(SerialPortSettings a, SerialPortSettings b) =>
         a.BaudRate == b.BaudRate && a.DataBits == b.DataBits && a.Parity == b.Parity &&
-        a.StopBits == b.StopBits && a.DataFormat == b.DataFormat;
+        a.StopBits == b.StopBits && a.DataFormat == b.DataFormat &&
+        a.ReceiveTimeoutMs == b.ReceiveTimeoutMs && a.ReadTimeoutMs == b.ReadTimeoutMs &&
+        a.WriteTimeoutMs == b.WriteTimeoutMs;
 }

@@ -20,14 +20,31 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
     private readonly ILogger<SqliteForwardBuffer> _logger;
     private readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
+    /// <summary>
+    /// 待转发批次数（不含死信）。同步查询，仅保留接口兼容（接口只增不删）；
+    /// async 路径请用 <see cref="GetCountAsync"/>，避免同步阻塞（ADR-001 P3-13）。
+    /// </summary>
     public int Count
     {
         get
         {
             using var conn = new SqliteConnection(_connectionString);
             conn.Open();
+            SqlitePragmas.Apply(conn);
             return conn.ExecuteScalar<int>("SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'");
         }
+    }
+
+    /// <summary>异步获取待转发批次数（不含死信）。ADR-001 P3-13：async 路径不再同步 ExecuteScalar</summary>
+    public async Task<int> GetCountAsync(CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        SqlitePragmas.Apply(conn);
+        return await conn.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                "SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'",
+                cancellationToken: ct));
     }
 
     /// <param name="maxRetries">最大重试次数，超过后移入死信队列。默认 5</param>
@@ -44,6 +61,7 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
         {
             using var conn = new SqliteConnection(_connectionString);
             conn.Open();
+            SqlitePragmas.Apply(conn);
             var recovered = conn.Execute(
                 "UPDATE forward_buffer SET status = 'Pending' WHERE status = 'InFlight'");
             if (recovered > 0)
@@ -68,6 +86,7 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
             var payload = JsonSerializer.Serialize(batch, _json);
             await using var conn = new SqliteConnection(_connectionString);
             await conn.OpenAsync(ct);
+            SqlitePragmas.Apply(conn);
             await conn.ExecuteAsync(
                 "INSERT INTO forward_buffer (id, payload, status, retry_count, enqueued_at) VALUES (@id, @payload, 'Pending', 0, @ts)",
                 new { id = batch.Id.ToString(), payload, ts = DateTime.UtcNow.ToString("O") });
@@ -88,6 +107,7 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
         {
             await using var conn = new SqliteConnection(_connectionString);
             await conn.OpenAsync(ct);
+            SqlitePragmas.Apply(conn);
             // ① 查询待发送的数据并标记为 InFlight（同一事务两阶段提交）
             await using var tx = await conn.BeginTransactionAsync(ct);
 
@@ -180,6 +200,7 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
         {
             await using var conn = new SqliteConnection(_connectionString);
             await conn.OpenAsync(ct);
+            SqlitePragmas.Apply(conn);
             await using var tx = await conn.BeginTransactionAsync(ct);
             await conn.ExecuteAsync(
                 "DELETE FROM forward_buffer WHERE id IN @ids",
@@ -202,28 +223,21 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
         {
             await using var conn = new SqliteConnection(_connectionString);
             await conn.OpenAsync(ct);
+            SqlitePragmas.Apply(conn);
             await using var tx = await conn.BeginTransactionAsync(ct);
-            // 恢复 Pending + 记录重试次数
+
+            // ADR-001 P2-11：合并为一次 UPDATE（重试计数 + 超限进死信），3 次往返 → 2 次
             await conn.ExecuteAsync(
                 @"UPDATE forward_buffer
-              SET
-                    status = 'Pending',
+              SET status = CASE WHEN retry_count + 1 >= @max THEN 'DeadLetter' ELSE 'Pending' END,
                     retry_count = retry_count + 1,
                     last_error = @error
               WHERE id = @id",
-                new { id = batchId.ToString(), error = reason }, tx);
-
-            // 超过重试次数进入死信
-            await conn.ExecuteAsync(
-                @"UPDATE forward_buffer
-              SET status = 'DeadLetter'
-              WHERE id = @id
-                AND retry_count >= @max",
-                new { id = batchId.ToString(), max = _maxRetries }, tx);
+                new { id = batchId.ToString(), error = reason, max = _maxRetries }, tx);
 
             await tx.CommitAsync(ct);
 
-            // 如果进入死信，记录 Warning
+            // 判断是否进入死信（供 Warning 日志）
             var deadCount = await conn.ExecuteScalarAsync<int>(
                 "SELECT COUNT(*) FROM forward_buffer WHERE id=@id AND status='DeadLetter'",
                 new { id = batchId.ToString() });
@@ -244,51 +258,84 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
 
     public async Task<OperationResult<IReadOnlyList<DeadLetterEntry>>> GetDeadLettersAsync(int maxCount, CancellationToken ct = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        var rows = await conn.QueryAsync(
-            "SELECT id, payload, retry_count, last_error, enqueued_at FROM forward_buffer WHERE status = 'DeadLetter' ORDER BY enqueued_at ASC LIMIT @max",
-            new { max = maxCount });
-
-        return rows.Select(r =>
+        // ADR-002 P1-1/P3-5：死信查询异常统一分类，ct 传给 Dapper（与 Enqueue/Dequeue 一致）
+        try
         {
-            var batch = JsonSerializer.Deserialize<BatchMeasurements>((string)r.payload, _json);
-            return new DeadLetterEntry
+            await using var conn = new SqliteConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            SqlitePragmas.Apply(conn);
+            var rows = await conn.QueryAsync(
+                new CommandDefinition(
+                    "SELECT id, payload, retry_count, last_error, enqueued_at FROM forward_buffer WHERE status = 'DeadLetter' ORDER BY enqueued_at ASC LIMIT @max",
+                    new { max = maxCount },
+                    cancellationToken: ct));
+
+            return rows.Select(r =>
             {
-                BatchId = Guid.Parse((string)r.id),
-                DeviceId = batch?.DeviceId ?? Guid.Empty,
-                RecordCount = batch?.Records.Count ?? 0,
-                RetryCount = (int)r.retry_count,
-                LastError = r.last_error as string,
-                EnqueuedAt = DateTime.Parse((string)r.enqueued_at)
-            };
-        }).ToList();
+                var batch = JsonSerializer.Deserialize<BatchMeasurements>((string)r.payload, _json);
+                return new DeadLetterEntry
+                {
+                    BatchId = Guid.Parse((string)r.id),
+                    DeviceId = batch?.DeviceId ?? Guid.Empty,
+                    RecordCount = batch?.Records.Count ?? 0,
+                    RetryCount = (int)r.retry_count,
+                    LastError = r.last_error as string,
+                    EnqueuedAt = DateTime.Parse((string)r.enqueued_at)
+                };
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            return SqliteErrorClassifier.Classify(ex, "Buffer 死信查询失败");
+        }
     }
 
     public async Task<OperationResult> RetryDeadLetterAsync(Guid batchId, CancellationToken ct = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        var rows = await conn.ExecuteAsync(
-            "UPDATE forward_buffer SET status = 'Pending', retry_count = 0, last_error = NULL WHERE id = @id AND status = 'DeadLetter'",
-            new { id = batchId.ToString() });
+        // ADR-002 P1-1/P3-5：死信重试异常统一分类，ct 传给 Dapper
+        try
+        {
+            await using var conn = new SqliteConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            SqlitePragmas.Apply(conn);
+            var rows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    "UPDATE forward_buffer SET status = 'Pending', retry_count = 0, last_error = NULL WHERE id = @id AND status = 'DeadLetter'",
+                    new { id = batchId.ToString() },
+                    cancellationToken: ct));
 
-        return rows > 0
-            ? OperationResult.Success()
-            : OperationalError.NotFound($"死信 {batchId} 不存在");
+            return rows > 0
+                ? OperationResult.Success()
+                : OperationalError.NotFound($"死信 {batchId} 不存在");
+        }
+        catch (Exception ex)
+        {
+            return SqliteErrorClassifier.Classify(ex, "Buffer 死信重试失败");
+        }
     }
 
     public async Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        var rows = await conn.ExecuteAsync(
-            "DELETE FROM forward_buffer WHERE id = @id AND status = 'DeadLetter'",
-            new { id = batchId.ToString() });
+        // ADR-002 P1-1/P3-5：死信丢弃异常统一分类，ct 传给 Dapper
+        try
+        {
+            await using var conn = new SqliteConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            SqlitePragmas.Apply(conn);
+            var rows = await conn.ExecuteAsync(
+                new CommandDefinition(
+                    "DELETE FROM forward_buffer WHERE id = @id AND status = 'DeadLetter'",
+                    new { id = batchId.ToString() },
+                    cancellationToken: ct));
 
-        return rows > 0
-            ? OperationResult.Success()
-            : OperationalError.NotFound($"死信 {batchId} 不存在");
+            return rows > 0
+                ? OperationResult.Success()
+                : OperationalError.NotFound($"死信 {batchId} 不存在");
+        }
+        catch (Exception ex)
+        {
+            return SqliteErrorClassifier.Classify(ex, "Buffer 死信丢弃失败");
+        }
     }
 
 }

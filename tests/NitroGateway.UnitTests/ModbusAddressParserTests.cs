@@ -43,6 +43,16 @@ public class ModbusAddressParserTests
         Assert.Equal(0, (int)addr.Offset);  // PLC 式: 40001=偏移0
     }
 
+    /// <summary>ADR-003 P2-1：地址号超 65536 应抛异常，不再 (ushort) 静默回绕</summary>
+    [Theory]
+    [InlineData("40000")]
+    [InlineData("465537")]
+    [InlineData("499999")]
+    public void Parse_OutOfRange_Throws(string raw)
+    {
+        Assert.Throws<ArgumentException>(() => _parser.Parse(raw));
+    }
+
     [Fact]
     public void ParseWithCount_Float_2Regs()
     {

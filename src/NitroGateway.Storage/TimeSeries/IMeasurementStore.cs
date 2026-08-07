@@ -22,6 +22,22 @@ public interface IMeasurementStore
     Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryByDeviceAsync(
         Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default);
 
+    /// <summary>
+    /// 分页查询历史快照（按时间升序）。pointId 为 null 时查设备下全部点位（QueryByDeviceAsync 的分页版）。
+    /// ADR-005 P2-2：避免大结果集一次性全量加载。
+    /// </summary>
+    /// <param name="limit">单页条数，实现应夹紧到 [1, 1000]</param>
+    /// <param name="offset">跳过条数，实现应夹紧到 ≥0</param>
+    Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
+        Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default);
+
+    /// <summary>
+    /// 查询设备最新快照。pointId 为 null 时返回设备下每个点位的最新一条（每点一条）。
+    /// ADR-002 P2-4：替代控制器"拉 1 小时全量再内存过滤"，用 SQL 直接取最新，避免大结果集。
+    /// </summary>
+    Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
+        Guid deviceId, Guid? pointId, CancellationToken ct = default);
+
     /// <summary>删除指定时间之前的历史数据，用于存储空间管理</summary>
     Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default);
 }

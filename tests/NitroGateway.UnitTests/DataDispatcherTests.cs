@@ -29,6 +29,14 @@ public class DataDispatcherTests
             Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default)
             => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
 
+        public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
+            Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
+
+        public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
+            Guid deviceId, Guid? pointId, CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
+
         public Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default)
             => Task.FromResult(OperationResult.Success());
     }
@@ -38,6 +46,9 @@ public class DataDispatcherTests
         public List<BatchMeasurements> Enqueued { get; } = [];
 
         public int Count => Enqueued.Count;
+
+        public Task<int> GetCountAsync(CancellationToken ct = default)
+            => Task.FromResult(Enqueued.Count);
 
         public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
         {

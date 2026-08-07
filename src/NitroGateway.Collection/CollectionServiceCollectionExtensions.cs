@@ -36,6 +36,7 @@ public static class CollectionServiceCollectionExtensions
             sp.GetRequiredService<IDataDispatcher>(),
             sp.GetRequiredService<IHealthReporter>(),
             sp.GetRequiredService<ICircuitBreakerRegistry>(),
+            sp.GetRequiredService<IDeviceHealthMonitor>(),
             sp.GetRequiredService<ILogger<DeviceCollector>>(),
             maxConcurrency));
 

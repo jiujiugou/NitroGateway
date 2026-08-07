@@ -124,18 +124,27 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
         DataType.Byte    => (byte)(await ReadCheckedAsync(_client.ReadInt16Async(address, 1), "读取 Byte"))[0],
         DataType.Int64   => (await ReadCheckedAsync(_client.ReadInt64Async(address, 1), "读取 Int64"))[0],
         DataType.UInt64  => (ulong)(await ReadCheckedAsync(_client.ReadInt64Async(address, 1), "读取 UInt64"))[0],
-        DataType.String  => await ReadCheckedAsync(_client.ReadStringAsync(address, 10), "读取 String"),
+        DataType.String  => await ReadCheckedAsync(_client.ReadStringAsync(address, DefaultStringLength), "读取 String"),
         _ => (await ReadCheckedAsync(_client.ReadFloatAsync(address, 1), "读取 Float"))[0]
     };
 
     protected override async Task<OperationResult> WriteSingleValueAsync(DevicePoint point, string address, object value)
     {
+        // ADR-003 P1-2：按 DataType 全量映射 HSL 写方法，不再回退 Convert.ToSingle
         var result = point.DataType switch
         {
-            DataType.Float => await _client.WriteAsync(address, Convert.ToSingle(value)),
-            DataType.Int16 => await _client.WriteAsync(address, Convert.ToInt16(value)),
-            DataType.Bool  => await _client.WriteAsync(address, Convert.ToBoolean(value)),
-            _ => await _client.WriteAsync(address, Convert.ToSingle(value))
+            DataType.Bool    => await _client.WriteAsync(address, Convert.ToBoolean(value)),
+            DataType.Byte    => await _client.WriteAsync(address, Convert.ToInt16(value)),  // 1 寄存器，按 short 写入
+            DataType.Int16   => await _client.WriteAsync(address, Convert.ToInt16(value)),
+            DataType.UInt16  => await _client.WriteAsync(address, Convert.ToUInt16(value)),
+            DataType.Int32   => await _client.WriteAsync(address, Convert.ToInt32(value)),
+            DataType.UInt32  => await _client.WriteAsync(address, Convert.ToUInt32(value)),
+            DataType.Int64   => await _client.WriteAsync(address, Convert.ToInt64(value)),
+            DataType.UInt64  => await _client.WriteAsync(address, Convert.ToUInt64(value)),
+            DataType.Float   => await _client.WriteAsync(address, Convert.ToSingle(value)),
+            DataType.Double  => await _client.WriteAsync(address, Convert.ToDouble(value)),
+            DataType.String  => await _client.WriteAsync(address, Convert.ToString(value)),
+            _                => await _client.WriteAsync(address, Convert.ToSingle(value))
         };
 
         return result.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Protocol(result.Message);

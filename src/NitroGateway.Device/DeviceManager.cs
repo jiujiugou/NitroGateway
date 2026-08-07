@@ -12,17 +12,20 @@ public sealed class DeviceManager : IDeviceManager
     private readonly IDeviceRepository _repository;
     private readonly IDeviceHealthMonitor _healthMonitor;
     private readonly IProtocolDriverPool _driverPool;
+    private readonly IDeviceSnapshotCache _cache;
     private readonly ILogger<DeviceManager> _logger;
 
     public DeviceManager(
         IDeviceRepository repository,
         IDeviceHealthMonitor healthMonitor,
         IProtocolDriverPool driverPool,
+        IDeviceSnapshotCache cache,
         ILogger<DeviceManager> logger)
     {
         _repository = repository;
         _healthMonitor = healthMonitor;
         _driverPool = driverPool;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -39,6 +42,8 @@ public sealed class DeviceManager : IDeviceManager
         _driverPool.Evict(device.Id);
         _logger.LogInformation("设备已注册: {DeviceName} [{DeviceId}]", device.Name, device.Id);
         _healthMonitor.UpdateStatus(device.Id, device.Status);
+        // ADR-002 P2-2：配置变更使设备目录缓存失效
+        _cache.Invalidate();
         return device;
     }
 
@@ -51,14 +56,16 @@ public sealed class DeviceManager : IDeviceManager
         _driverPool.Evict(deviceId);
         _healthMonitor.Remove(deviceId);
         _logger.LogInformation("设备已注销: {DeviceId}", deviceId);
+        _cache.Invalidate();
         return OperationResult.Success();
     }
 
     public async Task<OperationResult<Device>> GetAsync(Guid deviceId, CancellationToken ct = default)
         => await _repository.GetByIdAsync(deviceId, ct);
 
-    public async Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default)
-        => await _repository.GetAllAsync(ct);
+    // ADR-002 P2-2：走内存缓存，避免采集热路径每 1s 全量 EF Include(Points) 映射
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default)
+        => _cache.GetAllAsync(ct);
 
     public async Task<OperationResult<IReadOnlyList<Device>>> GetByStatusAsync(
         DeviceStatus status, CancellationToken ct = default)
@@ -80,6 +87,7 @@ public sealed class DeviceManager : IDeviceManager
 
         // 下线/维护时释放连接；恢复后下一轮采集重建
         _driverPool.Evict(deviceId);
+        _cache.Invalidate();
         _logger.LogInformation("设备状态变更: {DeviceId} {Old} → {New}", deviceId, oldStatus, status);
         return OperationResult.Success();
     }

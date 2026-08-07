@@ -109,4 +109,30 @@ public class ForwarderEngineTests
             await engine.StopAsync(CancellationToken.None);
         }
     }
+
+    /// <summary>ADR-001 P3-12：首轮立即执行，不等第一个周期 tick（周期 10s 时告警应在 2s 内出现）</summary>
+    [Fact]
+    public async Task FirstRound_RunsImmediately_WithoutWaitingFullInterval()
+    {
+        var buffer = CreateBacklogBuffer(1001);
+        var mqtt = new FakeMqttClient { State = MqttConnectionState.Disconnected };
+        var logger = new CapturingLogger<ForwarderEngine>();
+        await using var provider = BuildProvider(buffer, mqtt);
+
+        var engine = new ForwarderEngine(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            TimeSpan.FromSeconds(10),
+            buffer,
+            logger);
+
+        await engine.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForAsync(() => WarningCount(logger) == 1, TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            await engine.StopAsync(CancellationToken.None);
+        }
+    }
 }

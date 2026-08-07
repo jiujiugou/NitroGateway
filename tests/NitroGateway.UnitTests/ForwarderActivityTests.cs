@@ -26,6 +26,9 @@ public class ForwarderActivityTests
 
         public int Count => Pending.Count;
 
+        public Task<int> GetCountAsync(CancellationToken ct = default)
+            => Task.FromResult(Pending.Count);
+
         public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
         {
             Pending.Add(batch);

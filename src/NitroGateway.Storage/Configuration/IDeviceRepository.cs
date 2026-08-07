@@ -15,7 +15,7 @@ public interface IDeviceRepository
     /// <summary>删除指定设备</summary>
     Task<OperationResult> DeleteAsync(Guid deviceId, CancellationToken ct = default);
 
-    /// <summary>按 ID 查询设备，不存在时返回 null</summary>
+    /// <summary>按 ID 查询设备，不存在时返回 Failure（General）</summary>
     Task<OperationResult<Device>> GetByIdAsync(Guid deviceId, CancellationToken ct = default);
 
     /// <summary>获取全部设备列表</summary>

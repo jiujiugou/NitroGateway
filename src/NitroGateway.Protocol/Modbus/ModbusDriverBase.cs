@@ -22,6 +22,10 @@ public abstract class ModbusDriverBase : IProtocolDriver
     /// <summary>Modbus 单次最大寄存器数（协议限制，功能码 03/04 上限为 125）</summary>
     private const int MaxRegistersPerRequest = 125;
 
+    /// <summary>String 点位读取长度（字符）。ADR-003 P2-2：v1 固定 10 字符协议约定；
+    /// 点位级 StringLength 配置透传为后续工作，需改抽象读签名方可支持</summary>
+    protected const int DefaultStringLength = 10;
+
     protected readonly ModbusAddressParser AddressParser = new();
     protected readonly ILogger Logger;
 
@@ -212,6 +216,10 @@ public abstract class ModbusDriverBase : IProtocolDriver
                 return OperationalError.Protocol($"批量读取失败：{pointList.Count} 个点位均未返回数据");
             }
 
+            // ADR-003 P3-5：部分点位失败仅跳过，用日志体现失败点数供上层诊断
+            if (results.Count < pointList.Count)
+                Logger.LogWarning("批量读取部分失败：{Ok}/{Total} 个点位成功", results.Count, pointList.Count);
+
             return results;
         }
         catch (Exception ex)
@@ -229,11 +237,10 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
     private sealed record ParsedPoint(DevicePoint Point, ModbusAddress Addr);
 
+    // ADR-003 P3-2：StartOffset/TotalRegisters 为死字段（ReadRangeAsync 自己按段计算），已移除
     private sealed record ReadRange(
         ModbusArea Area,
-        List<ParsedPoint> Points,
-        ushort StartOffset,
-        ushort TotalRegisters);
+        List<ParsedPoint> Points);
 
     // ───────────────────────── 单点读取 ─────────────────────────
 
@@ -258,7 +265,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
     /// <summary>
     /// 按功能区 → 地址排序 → 贪心合并连续 Range。
-    /// 同一 Area 内，点 A 结尾 + 1 ± MaxMergeGap ≥ 点 B 开头 → 合并。
+    /// 同一 Area 内，间隙 ≤ MaxMergeGap 寄存器 → 合并为一次读取（ADR-003 P3-3）。
     /// </summary>
     private static List<ReadRange> MergeRanges(IReadOnlyList<ParsedPoint> parsed)
     {
@@ -272,7 +279,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
             // Greedy merge
             var currentPoints = new List<ParsedPoint> { sorted[0] };
-            var currentStart = sorted[0].Addr.Offset;
             var currentEnd = sorted[0].Addr.Offset + sorted[0].Addr.Count;
 
             for (var i = 1; i < sorted.Count; i++)
@@ -290,7 +296,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
                     // 间隙过大：关闭当前 range，开新的
                     FlushRange();
                     currentPoints = new List<ParsedPoint> { point };
-                    currentStart = point.Addr.Offset;
                     currentEnd = point.Addr.Offset + point.Addr.Count;
                 }
             }
@@ -298,8 +303,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
             void FlushRange()
             {
-                var totalRegs = (ushort)Math.Min(currentEnd - currentStart, MaxRegistersPerRequest);
-                ranges.Add(new ReadRange(areaGroup.Key, currentPoints, currentStart, totalRegs));
+                ranges.Add(new ReadRange(areaGroup.Key, currentPoints));
             }
         }
 
@@ -309,8 +313,9 @@ public abstract class ModbusDriverBase : IProtocolDriver
     // ───────────────────────── 批量 Range 读取 ─────────────────────────
 
     /// <summary>
-    /// Range 内按 DataType 分组，调 HSL 同类批量读方法。
-    /// 同类型一次批量读，异类回退逐点。不自己解析字节。
+    /// Range 内按 DataType 分组，同类型且寄存器连续的点位合并为一次批量读。
+    /// ADR-003 P1-1：同类型点位可能被其他类型/空寄存器隔开，非连续段必须切分
+    /// （否则从首点连读会把间隔寄存器误读成后序点位）；异类/不连续回退逐点。
     /// </summary>
     private async Task<List<RawPointValue>> ReadRangeAsync(ReadRange range, CancellationToken ct)
     {
@@ -318,50 +323,55 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
         foreach (var typeGroup in range.Points.GroupBy(p => p.Point.DataType))
         {
-            try
+            var regsPerPoint = ModbusAddressParser.GetRegisterCount(typeGroup.Key);
+            var pts = typeGroup.OrderBy(p => p.Addr.Offset).ToList();
+            var segments = ModbusBatchPlanner.SplitContiguousSegments(
+                pts.Select(p => ((int)p.Addr.Offset, (int)regsPerPoint)).ToList());
+
+            foreach (var segmentIndices in segments)
             {
-                var pts = typeGroup.ToList();
-                var regsPerPoint = ModbusAddressParser.GetRegisterCount(typeGroup.Key);
-                var totalRegs = pts.Count * regsPerPoint;
+                var segment = segmentIndices.Select(i => pts[i]).ToList();
+                var totalRegs = segment.Count * regsPerPoint;
 
                 if (totalRegs > MaxRegistersPerRequest)
                 {
-                    foreach (var pp in pts)
-                    {
-                        var s = await TryReadSingleAsync(pp.Point, pp.Addr, ct);
-                        if (s.IsSuccess) results.Add(s.Value!);
-                    }
+                    await ReadSegmentFallbackAsync(segment, ct, results);
                     continue;
                 }
 
-                var hslAddr = ToHslAddress(range.Area, pts[0].Addr.Offset);
-                var values = await ReadBatchTypedAsync(hslAddr, typeGroup.Key, pts.Count);
+                try
+                {
+                    var hslAddr = ToHslAddress(range.Area, segment[0].Addr.Offset);
+                    var values = await ReadBatchTypedAsync(hslAddr, typeGroup.Key, segment.Count);
 
-                if (values is not null)
-                {
-                    for (var i = 0; i < pts.Count && i < values.Length; i++)
-                        results.Add(new RawPointValue { Point = pts[i].Point, Value = values[i], Timestamp = DateTime.UtcNow });
-                }
-                else
-                {
-                    foreach (var pp in pts)
+                    if (values is not null)
                     {
-                        var s = await TryReadSingleAsync(pp.Point, pp.Addr, ct);
-                        if (s.IsSuccess) results.Add(s.Value!);
+                        for (var i = 0; i < segment.Count && i < values.Length; i++)
+                            results.Add(new RawPointValue { Point = segment[i].Point, Value = values[i], Timestamp = DateTime.UtcNow });
+                    }
+                    else
+                    {
+                        await ReadSegmentFallbackAsync(segment, ct, results);
                     }
                 }
-            }
-            catch
-            {
-                foreach (var pp in typeGroup)
+                catch
                 {
-                    var s = await TryReadSingleAsync(pp.Point, pp.Addr, ct);
-                    if (s.IsSuccess) results.Add(s.Value!);
+                    await ReadSegmentFallbackAsync(segment, ct, results);
                 }
             }
         }
 
         return results;
+    }
+
+    /// <summary>段内逐点读取（批量读失败/超限/不支持时的回退路径）</summary>
+    private async Task ReadSegmentFallbackAsync(List<ParsedPoint> segment, CancellationToken ct, List<RawPointValue> results)
+    {
+        foreach (var pp in segment)
+        {
+            var s = await TryReadSingleAsync(pp.Point, pp.Addr, ct);
+            if (s.IsSuccess) results.Add(s.Value!);
+        }
     }
 
     // ───────────────────────── 地址转换 ─────────────────────────

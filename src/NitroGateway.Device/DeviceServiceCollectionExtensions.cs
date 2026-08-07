@@ -14,6 +14,8 @@ public static class DeviceServiceCollectionExtensions
     {
         services.AddScoped<IDeviceManager, DeviceManager>();
         services.AddScoped<IPointManager, PointManager>();
+        // ADR-002 P2-2：设备目录内存缓存（采集热路径避免每秒全量 EF 映射）
+        services.AddSingleton<IDeviceSnapshotCache, DeviceSnapshotCache>();
         services.AddSingleton<PointBatchService>();
 
         // ── HealthMonitor（SST）──

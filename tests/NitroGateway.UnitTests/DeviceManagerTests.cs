@@ -27,9 +27,10 @@ public class DeviceManagerTests
     private readonly DeviceManager _manager;
     private readonly FakeDeviceHealthMonitor _healthMonitor = new();
     private readonly FakeDriverPool _driverPool = new();
+    private readonly FakeDeviceSnapshotCache _cache = new();
     public DeviceManagerTests()
     {
-        _manager = new DeviceManager(_repo, _healthMonitor, _driverPool, NullLogger<DeviceManager>.Instance);
+        _manager = new DeviceManager(_repo, _healthMonitor, _driverPool, _cache, NullLogger<DeviceManager>.Instance);
     }
 
     /// <summary>正常注册设备，ID + Name 正确返回。</summary>
@@ -50,6 +51,7 @@ public class DeviceManagerTests
         var result = await _manager.RegisterAsync(device);
         Assert.True(result.IsSuccess);
         Assert.Equal("PLC01", result.Value!.Name);
+        Assert.Equal(1, _cache.InvalidateCount);
     }
 
     /// <summary>空 Guid 的设备注册应被拒绝，错误信息包含"不能为空"。</summary>
@@ -72,6 +74,7 @@ public class DeviceManagerTests
         var result = await _manager.UpdateStatusAsync(id, DeviceStatus.Online);
         Assert.True(result.IsSuccess);
         Assert.Equal(DeviceStatus.Online, _repo.Devices[id].Status);
+        Assert.Equal(1, _cache.InvalidateCount);
     }
 
     /// <summary>正常状态转换（Online → Maintenance）应成功。</summary>
@@ -189,6 +192,13 @@ public class DeviceManagerTests
         public void Evict(Guid deviceId) => Evicted.Add(deviceId);
 
         public void Dispose() { }
+    }
+    private sealed class FakeDeviceSnapshotCache : IDeviceSnapshotCache
+    {
+        public int InvalidateCount { get; private set; }
+        public void Invalidate() => InvalidateCount++;
+        public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success([]));
     }
     private sealed class FakeDeviceHealthMonitor: IDeviceHealthMonitor
     {

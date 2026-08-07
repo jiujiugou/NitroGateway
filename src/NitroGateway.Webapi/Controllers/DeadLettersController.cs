@@ -4,11 +4,13 @@ using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Webapi.Models;
 
+using NitroGateway.Security;
+
 namespace NitroGateway.Webapi.Controllers;
 
 /// <summary>死信队列管理 API</summary>
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Operator")]
+[Authorize(Roles = Roles.AdminOperator)]
 public class DeadLettersController : ControllerBase
 {
     private readonly IForwardBuffer _buffer;

@@ -11,4 +11,10 @@ public static class Roles
 
     /// <summary>观察者：只读仪表盘和历史数据</summary>
     public const string Viewer = "Viewer";
+
+    /// <summary>Admin + Operator（可写角色组合，供 [Authorize(Roles=...)] 使用）</summary>
+    public const string AdminOperator = Admin + "," + Operator;
+
+    /// <summary>全部角色（只读仪表盘/历史数据，供 [Authorize(Roles=...)] 使用）</summary>
+    public const string AllRoles = Admin + "," + Operator + "," + Viewer;
 }

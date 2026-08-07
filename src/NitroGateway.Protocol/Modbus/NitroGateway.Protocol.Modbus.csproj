@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NitroGateway.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
     <ProjectReference Include="..\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
   </ItemGroup>

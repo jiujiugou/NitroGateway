@@ -4,11 +4,13 @@ using NitroGateway.Alarm.Repository;
 using AlarmDomain = NitroGateway.Alarm.Domain;
 using NitroGateway.Webapi.Models;
 
+using NitroGateway.Security;
+
 namespace NitroGateway.Webapi.Controllers;
 
 /// <summary>告警管理 API</summary>
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Operator,Viewer")]
+[Authorize(Roles = Roles.AllRoles)]
 public class AlarmsController : ControllerBase
 {
     private readonly IAlarmRepository _alarms;
@@ -37,7 +39,7 @@ public class AlarmsController : ControllerBase
 
     /// <summary>确认告警（操作员）</summary>
     [HttpPost("{alarmId}/ack")]
-    [Authorize(Roles = "Admin,Operator")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<object>>> Acknowledge(Guid alarmId)
     {
         var r = await _alarms.UpdateStateAsync(alarmId, AlarmDomain.AlarmState.Acknowledged);

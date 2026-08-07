@@ -70,34 +70,51 @@ public sealed class AlarmHostedService : BackgroundService, IPointStoredSink
         PointStoredEvent e,
         CancellationToken ct)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var ruleRepo = scope.ServiceProvider.GetRequiredService<IAlarmRuleRepository>();
-        var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
-        var notifiers = scope.ServiceProvider.GetServices<IAlarmNotifier>();
-        var now = DateTime.UtcNow;
-
-        foreach (var snapshot in e.Snapshots)
+        try
         {
-            if (snapshot.Value is not IConvertible) continue;
+            using var scope = _scopeFactory.CreateScope();
+            var ruleRepo = scope.ServiceProvider.GetRequiredService<IAlarmRuleRepository>();
+            var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
+            var notifiers = scope.ServiceProvider.GetServices<IAlarmNotifier>();
+            var now = DateTime.UtcNow;
 
-            double value;
-            try { value = Convert.ToDouble(snapshot.Value); }
-            catch { continue; }
-
-            var rulesResult = await ruleRepo.GetByPointAsync(e.DeviceId, snapshot.DevicePointId, ct);
-            if (rulesResult.IsFailure || rulesResult.Value!.Count == 0) continue;
-
-            var evaluations = evaluator.Evaluate(
-                e.DeviceId,
-                snapshot.DevicePointId,
-                value,
-                rulesResult.Value!,
-                now);
-
-            foreach (var eval in evaluations)
+            // ADR-002 P2-3：按设备一次取全部启用规则，内存按点位过滤，避免每点一次 DB 往返
+            var rulesResult = await ruleRepo.GetByDeviceAsync(e.DeviceId, ct);
+            if (rulesResult.IsFailure)
             {
-                await ApplyEvaluationAsync(alarmRepo, notifiers, eval, ct);
+                _logger.LogError("加载设备 {DeviceId} 告警规则失败: {Error}", e.DeviceId, rulesResult.Error!.Message);
+                return;
             }
+            var deviceRules = rulesResult.Value!;
+
+            foreach (var snapshot in e.Snapshots)
+            {
+                if (snapshot.Value is not IConvertible) continue;
+
+                double value;
+                try { value = Convert.ToDouble(snapshot.Value); }
+                catch { continue; }
+
+                var rules = deviceRules.Where(r => r.PointId == snapshot.DevicePointId).ToList();
+                if (rules.Count == 0) continue;
+
+                var evaluations = evaluator.Evaluate(
+                    e.DeviceId,
+                    snapshot.DevicePointId,
+                    value,
+                    rules,
+                    now);
+
+                foreach (var eval in evaluations)
+                {
+                    await ApplyEvaluationAsync(alarmRepo, notifiers, eval, ct);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // ADR-002 P1-1：单事件容错——仓储/评估异常只记日志，不再击穿后台服务
+            _logger.LogError(ex, "处理设备 {DeviceId} 存储事件异常", e.DeviceId);
         }
     }
 
@@ -131,8 +148,15 @@ public sealed class AlarmHostedService : BackgroundService, IPointStoredSink
 
             case Domain.AlarmState.Resolved:
             {
-                await alarmRepo.UpdateStateAsync(eval.ExistingAlarmId, Domain.AlarmState.Resolved, ct);
-                _logger.LogInformation("告警恢复: {AlarmId}", eval.ExistingAlarmId);
+                var updateResult = await alarmRepo.UpdateStateAsync(eval.ExistingAlarmId, Domain.AlarmState.Resolved, ct);
+                if (updateResult.IsFailure)
+                {
+                    _logger.LogError("告警恢复持久化失败 {AlarmId}: {Error}", eval.ExistingAlarmId, updateResult.Error!.Message);
+                }
+                else
+                {
+                    _logger.LogInformation("告警恢复: {AlarmId}", eval.ExistingAlarmId);
+                }
                 break;
             }
 

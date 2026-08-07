@@ -47,47 +47,12 @@ public sealed class ForwarderEngine : BackgroundService
 
         try
         {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
+            // ADR-001 P3-12：首轮立即执行，不等第一个周期 tick，避免启动后空等一个周期
+            do
             {
-                // ── 积压检查（限流：首次立即 + 之后每 60s 一次，回落后重置）──
-                var backlog = _buffer.Count;
-                if (backlog > BacklogWarningThreshold)
-                {
-                    var now = DateTimeOffset.UtcNow;
-                    if (_lastBacklogWarningAt == DateTimeOffset.MinValue ||
-                        now - _lastBacklogWarningAt >= BacklogWarningInterval)
-                    {
-                        _logger.LogWarning(
-                            "转发缓冲区积压过高: {Count} 批（阈值 {Threshold}），MQTT 恢复后 throttled drain 将分批排水",
-                            backlog, BacklogWarningThreshold);
-                        _lastBacklogWarningAt = now;
-                    }
-                }
-                else
-                {
-                    // 积压回落：重置限流状态，下次超限立即再告警
-                    _lastBacklogWarningAt = DateTimeOffset.MinValue;
-                }
-
-                using var scope = _scopeFactory.CreateScope();
-                var mqtt = scope.ServiceProvider.GetRequiredService<IMqttClient>();
-
-                // MQTT 未连接，跳过本轮
-                if (mqtt.State != MqttConnectionState.Connected)
-                    continue;
-
-                var forwarder = scope.ServiceProvider.GetRequiredService<IForwarder>();
-
-                try
-                {
-                    // 限制单轮排水量，超出部分下轮继续
-                    await forwarder.ForwardBatchAsync(MaxDrainPerRound, stoppingToken);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogError(ex, "转发循环发生异常");
-                }
+                await RunRoundAsync(stoppingToken);
             }
+            while (await timer.WaitForNextTickAsync(stoppingToken));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -95,5 +60,48 @@ public sealed class ForwarderEngine : BackgroundService
         }
 
         _logger.LogInformation("ForwarderEngine Stopped.");
+    }
+
+    /// <summary>执行一轮转发：积压告警检查 + 排水（MQTT 未连接则跳过）</summary>
+    private async Task RunRoundAsync(CancellationToken stoppingToken)
+    {
+        // ── 积压检查（限流：首次立即 + 之后每 60s 一次，回落后重置）──
+        var backlog = await _buffer.GetCountAsync(stoppingToken);
+        if (backlog > BacklogWarningThreshold)
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (_lastBacklogWarningAt == DateTimeOffset.MinValue ||
+                now - _lastBacklogWarningAt >= BacklogWarningInterval)
+            {
+                _logger.LogWarning(
+                    "转发缓冲区积压过高: {Count} 批（阈值 {Threshold}），MQTT 恢复后 throttled drain 将分批排水",
+                    backlog, BacklogWarningThreshold);
+                _lastBacklogWarningAt = now;
+            }
+        }
+        else
+        {
+            // 积压回落：重置限流状态，下次超限立即再告警
+            _lastBacklogWarningAt = DateTimeOffset.MinValue;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var mqtt = scope.ServiceProvider.GetRequiredService<IMqttClient>();
+
+        // MQTT 未连接，跳过本轮
+        if (mqtt.State != MqttConnectionState.Connected)
+            return;
+
+        var forwarder = scope.ServiceProvider.GetRequiredService<IForwarder>();
+
+        try
+        {
+            // 限制单轮排水量，超出部分下轮继续
+            await forwarder.ForwardBatchAsync(MaxDrainPerRound, stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "转发循环发生异常");
+        }
     }
 }

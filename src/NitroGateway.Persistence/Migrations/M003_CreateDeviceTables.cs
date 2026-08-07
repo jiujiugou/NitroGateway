@@ -2,6 +2,13 @@ using FluentMigrator;
 
 namespace NitroGateway.Persistence.Migrations;
 
+/// <summary>
+/// 创建设备/点位表。
+/// 历史命名说明（ADR-002 P3-1）：本迁移列名为 PascalCase（Id/Name/DeviceId...），
+/// 与后续 M001/M002/M004~M006 的 snake_case 不一致，但属于已执行的迁移，
+/// 改动列名会破坏既有数据库结构，故保留现状不再修改；新增表统一 snake_case。
+/// 防御性 Schema.Exists 判断（幂等迁移机制已保证）同样保留，不额外清理。
+/// </summary>
 [Migration(3)]
 public sealed class M003_CreateDeviceTables : Migration
 {

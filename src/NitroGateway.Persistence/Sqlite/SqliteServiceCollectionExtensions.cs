@@ -33,9 +33,16 @@ public static class SqliteServiceCollectionExtensions
         services.AddSingleton<IMeasurementStore>(_ => new SqliteMeasurementStore(connectionString));
         services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardBuffer(connectionString, sp.GetRequiredService<ILogger<SqliteForwardBuffer>>()));
 
-        // 告警持久化（替代 Alarm 模块的 InMemory 实现）
-        services.AddSingleton<IAlarmRuleRepository>(_ => new SqliteAlarmRuleRepository(connectionString));
-        services.AddSingleton<IAlarmRepository>(_ => new SqliteAlarmRepository(connectionString));
+        // ADR-002 P1-2：measurements 保留任务（后台周期清理，防止时序表无限增长）
+        services.AddHostedService(sp => new MeasurementRetentionService(
+            sp.GetRequiredService<IMeasurementStore>(),
+            sp.GetRequiredService<ILogger<MeasurementRetentionService>>(),
+            retentionDays: configuration.GetValue("Persistence:MeasurementRetentionDays", 30),
+            interval: configuration.GetValue<TimeSpan?>("Persistence:MeasurementRetentionInterval") ?? TimeSpan.FromHours(24)));
+
+        // 告警持久化（EF Core，Scoped 适配 DbContext；AlarmHostedService 每事件建 scope 解析）
+        services.AddScoped<IAlarmRuleRepository, SqliteAlarmRuleRepository>();
+        services.AddScoped<IAlarmRepository, SqliteAlarmRepository>();
 
         return services;
     }

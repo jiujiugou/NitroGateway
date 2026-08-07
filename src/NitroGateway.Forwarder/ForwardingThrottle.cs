@@ -8,6 +8,8 @@ namespace NitroGateway.Forwarder;
 /// - MQTT 成功：批量大小缓慢恢复（+10，上限 1000），延迟递减（-5ms，下限 0）
 ///
 /// 无状态锁 —— Forwarder 由 Scheduler 单线程调用。
+///
+/// ADR-001 P3-14：节流状态全局共享（单设备故障会拖慢全部设备）——v1 单 Broker 场景可接受，暂不按设备隔离。
 /// </summary>
 public sealed class ForwardingThrottle
 {

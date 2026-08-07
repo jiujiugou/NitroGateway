@@ -5,11 +5,13 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Webapi.Models;
 
+using NitroGateway.Security;
+
 namespace NitroGateway.Webapi.Controllers;
 
 /// <summary>告警规则管理 API</summary>
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Operator")]
+[Authorize(Roles = Roles.AdminOperator)]
 public class AlarmRulesController : ControllerBase
 {
     private readonly IAlarmRuleRepository _rules;

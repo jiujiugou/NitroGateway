@@ -23,12 +23,20 @@ public sealed class FakeMeasurementStore : IMeasurementStore
         Guid deviceId, Guid pointId, DateTime from, DateTime to, CancellationToken ct = default)
         => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
 
-    public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryByDeviceAsync(
-        Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default)
-        => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
+        public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryByDeviceAsync(
+            Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
 
-    public Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default)
-        => Task.FromResult(OperationResult.Success());
+        public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
+            Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
+
+        public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
+            Guid deviceId, Guid? pointId, CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
+
+        public Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
 }
 
 /// <summary>
@@ -51,6 +59,9 @@ public sealed class FakeForwardBuffer : IForwardBuffer
     public OperationalError? MarkFailedError { get; set; }
 
     public int Count => Pending.Count;
+
+    public Task<int> GetCountAsync(CancellationToken ct = default)
+        => Task.FromResult(Pending.Count);
 
     public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
     {
@@ -134,6 +145,96 @@ public sealed class FakeMqttClient : IMqttClient
     {
         await Task.CompletedTask;
         yield break;
+    }
+}
+
+/// <summary>
+/// MQTTnet 内层客户端替身（ADR-006 测试用）：可控连接结果/异常、可模拟意外断开、记录连接与订阅。
+/// </summary>
+public sealed class FakeMqttInnerClient : MQTTnet.IMqttClient
+{
+    public bool IsConnected { get; private set; }
+    public MQTTnet.MqttClientOptions Options { get; private set; } = null!;
+
+    /// <summary>ConnectAsync 返回码（默认 Success）</summary>
+    public MQTTnet.MqttClientConnectResultCode ConnectResultCode { get; set; } = MQTTnet.MqttClientConnectResultCode.Success;
+
+    /// <summary>非 null 时 ConnectAsync 直接抛出该异常</summary>
+    public Exception? ConnectException { get; set; }
+
+    /// <summary>ConnectAsync 调用次数</summary>
+    public int ConnectCalls { get; private set; }
+
+    /// <summary>已订阅主题（含重连重放），按时间顺序记录</summary>
+    public List<string> SubscribedTopics { get; } = [];
+
+    public event Func<MQTTnet.MqttApplicationMessageReceivedEventArgs, Task>? ApplicationMessageReceivedAsync;
+    public event Func<MQTTnet.MqttClientConnectedEventArgs, Task>? ConnectedAsync;
+    public event Func<MQTTnet.MqttClientConnectingEventArgs, Task>? ConnectingAsync;
+    public event Func<MQTTnet.MqttClientDisconnectedEventArgs, Task>? DisconnectedAsync;
+    public event Func<MQTTnet.Diagnostics.PacketInspection.InspectMqttPacketEventArgs, Task>? InspectPacketAsync;
+
+    public Task<MQTTnet.MqttClientConnectResult> ConnectAsync(MQTTnet.MqttClientOptions options, CancellationToken cancellationToken)
+    {
+        ConnectCalls++;
+        Options = options;
+        if (ConnectException is not null) throw ConnectException;
+        if (ConnectResultCode != MQTTnet.MqttClientConnectResultCode.Success)
+            return Task.FromResult(new MQTTnet.MqttClientConnectResult { ResultCode = ConnectResultCode });
+        IsConnected = true;
+        return Task.FromResult(new MQTTnet.MqttClientConnectResult { ResultCode = MQTTnet.MqttClientConnectResultCode.Success, IsSessionPresent = false });
+    }
+
+    public Task DisconnectAsync(MQTTnet.MqttClientDisconnectOptions options, CancellationToken cancellationToken)
+    {
+        IsConnected = false;
+        return Task.CompletedTask;
+    }
+
+    public Task PingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<MQTTnet.MqttClientPublishResult> PublishAsync(
+        MQTTnet.MqttApplicationMessage applicationMessage, CancellationToken cancellationToken)
+        => Task.FromResult(new MQTTnet.MqttClientPublishResult(null, MQTTnet.MqttClientPublishReasonCode.Success, null, []));
+
+    public Task SendEnhancedAuthenticationExchangeDataAsync(
+        MQTTnet.MqttEnhancedAuthenticationExchangeData data, CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
+    public Task<MQTTnet.MqttClientSubscribeResult> SubscribeAsync(
+        MQTTnet.MqttClientSubscribeOptions options, CancellationToken cancellationToken)
+    {
+        foreach (var filter in options.TopicFilters)
+            SubscribedTopics.Add(filter.Topic);
+        var items = options.TopicFilters
+            .Select(f => new MQTTnet.MqttClientSubscribeResultItem(f, MQTTnet.MqttClientSubscribeResultCode.GrantedQoS1))
+            .ToList();
+        return Task.FromResult(new MQTTnet.MqttClientSubscribeResult(1, items, null, []));
+    }
+
+    public Task<MQTTnet.MqttClientUnsubscribeResult> UnsubscribeAsync(
+        MQTTnet.MqttClientUnsubscribeOptions options, CancellationToken cancellationToken)
+        => Task.FromResult(new MQTTnet.MqttClientUnsubscribeResult(1, [], null, []));
+
+    /// <summary>模拟已连接状态下意外断开（触发 DisconnectedAsync，ClientWasConnected=true）</summary>
+    public void SimulateDrop(string reason = "connection lost")
+    {
+        IsConnected = false;
+        DisconnectedAsync?.Invoke(new MQTTnet.MqttClientDisconnectedEventArgs(
+            true,
+            new MQTTnet.MqttClientConnectResult { ResultCode = MQTTnet.MqttClientConnectResultCode.Success },
+            MQTTnet.MqttClientDisconnectReason.KeepAliveTimeout,
+            reason,
+            [],
+            null));
+    }
+
+    public void Dispose() { }
+
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+        return ValueTask.CompletedTask;
     }
 }
 

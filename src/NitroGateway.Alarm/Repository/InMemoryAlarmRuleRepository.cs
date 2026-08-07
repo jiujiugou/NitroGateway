@@ -20,6 +20,15 @@ internal sealed class InMemoryAlarmRuleRepository : IAlarmRuleRepository
         return Task.FromResult<OperationResult<IReadOnlyList<Domain.AlarmRule>>>(rules);
     }
 
+    public Task<OperationResult<IReadOnlyList<Domain.AlarmRule>>> GetByDeviceAsync(
+        Guid deviceId, CancellationToken ct = default)
+    {
+        var rules = _rules.Values
+            .Where(r => r.DeviceId == deviceId && r.Enabled)
+            .ToList();
+        return Task.FromResult<OperationResult<IReadOnlyList<Domain.AlarmRule>>>(rules);
+    }
+
     public Task<OperationResult<IReadOnlyList<Domain.AlarmRule>>> GetAllAsync(CancellationToken ct = default)
     {
         var rules = _rules.Values.Where(r => r.Enabled).ToList();

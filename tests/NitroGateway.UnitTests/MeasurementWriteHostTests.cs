@@ -34,6 +34,14 @@ public class MeasurementWriteHostTests
             Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default)
             => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
 
+        public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
+            Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
+
+        public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
+            Guid deviceId, Guid? pointId, CancellationToken ct = default)
+            => Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));
+
         public Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default)
             => Task.FromResult(OperationResult.Success());
     }

@@ -3,6 +3,7 @@ using FluentMigrator.Runner;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using NitroGateway.Persistence.Sqlite;
 
 namespace NitroGateway.Persistence;
 
@@ -18,13 +19,18 @@ public static class MigrationRunner
     /// </summary>
     public static void Run(string connectionString, ILogger? logger = null)
     {
-        // ── 1. 预迁移备份 ──
+        // ── 1. 建临时连接（FluentMigrator 内部自己管理连接；此处用于 PRAGMA 与备份） ──
         var dbPath = ExtractDataSource(connectionString);
-        BackupDatabase(dbPath, logger);
-
-        // ── 2. 建临时连接（FluentMigrator 内部自己管理连接） ──
+        var dbExistsBeforeOpen = File.Exists(dbPath);
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
+
+        // ADR-002 P2-1：WAL + synchronous=NORMAL + busy_timeout（WAL 为库级持久设置）
+        SqlitePragmas.Apply(connection);
+
+        // ── 2. 预迁移备份（仅当库已存在；WAL 下先 checkpoint 再复制，保证一致性） ──
+        if (dbExistsBeforeOpen)
+            BackupDatabase(connection, dbPath, logger);
 
         var services = new ServiceCollection()
             .AddFluentMigratorCore()
@@ -45,12 +51,18 @@ public static class MigrationRunner
 
     // ═══════ 备份 ═══════
 
-    private static void BackupDatabase(string dbPath, ILogger? logger)
+    private static void BackupDatabase(SqliteConnection connection, string dbPath, ILogger? logger)
     {
-        if (!File.Exists(dbPath)) return;
-
         var backupDir = Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "backups");
         Directory.CreateDirectory(backupDir);
+
+        // ADR-002 P3-3：WAL 模式下先 checkpoint(TRUNCATE) 把已提交数据合并回主库文件，
+        // 再复制，避免备份缺最近已提交数据或拿到不一致快照
+        using (var checkpoint = connection.CreateCommand())
+        {
+            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            checkpoint.ExecuteNonQuery();
+        }
 
         var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
         var backupPath = Path.Combine(backupDir, $"nitrogateway.{timestamp}.bak");

@@ -1,4 +1,5 @@
-using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NitroGateway.Alarm.Repository;
 using NitroGateway.Shared;
 using AlarmDomain = NitroGateway.Alarm.Domain;
@@ -6,79 +7,156 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 namespace NitroGateway.Persistence.Sqlite;
 
 /// <summary>
-/// SQLite 告警规则持久化。
-/// ADR-001 P1-4：每个操作使用独立 SqliteConnection，不再共享 Singleton 连接，
-/// 避免与 Collection/Forwarder 跨线程并发使用同一连接。
+/// SQLite 告警规则持久化（EF Core）。
+/// ADR-002 P1-1：统一异常分类；P2-3：新增 GetByDeviceAsync 支持按设备批量加载规则。
 /// </summary>
 public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
 {
-    private readonly string _connectionString;
+    private readonly NitroGatewayDbContext _db;
+    private readonly ILogger<SqliteAlarmRuleRepository> _logger;
 
-    public SqliteAlarmRuleRepository(string connectionString) { _connectionString = connectionString; }
+    public SqliteAlarmRuleRepository(NitroGatewayDbContext db, ILogger<SqliteAlarmRuleRepository> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
+    /// <inheritdoc />
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>> GetByPointAsync(
         Guid deviceId, Guid pointId, CancellationToken ct = default)
     {
-        var rules = new List<AlarmDomain.AlarmRule>();
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, device_id, point_id, operator, threshold, threshold_upper, duration_seconds, severity, message_template, enabled FROM alarm_rules WHERE device_id=@did AND point_id=@pid AND enabled=1";
-        cmd.Parameters.AddWithValue("@did", deviceId.ToString());
-        cmd.Parameters.AddWithValue("@pid", pointId.ToString());
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) rules.Add(Map(reader));
-        return rules;
+        try
+        {
+            var rows = await _db.AlarmRules
+                .AsNoTracking()
+                .Where(r => r.DeviceId == deviceId.ToString() &&
+                            r.PointId == pointId.ToString() &&
+                            r.Enabled)
+                .ToListAsync(ct);
+            return rows.Select(ToDomain).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("告警规则查询失败: {Error}", ex.Message);
+            return Classify(ex, "告警规则查询失败");
+        }
     }
 
+    /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>> GetByDeviceAsync(
+        Guid deviceId, CancellationToken ct = default)
+    {
+        try
+        {
+            var rows = await _db.AlarmRules
+                .AsNoTracking()
+                .Where(r => r.DeviceId == deviceId.ToString() && r.Enabled)
+                .ToListAsync(ct);
+            return rows.Select(ToDomain).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("告警规则查询失败: {Error}", ex.Message);
+            return Classify(ex, "告警规则查询失败");
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>> GetAllAsync(CancellationToken ct = default)
     {
-        var rules = new List<AlarmDomain.AlarmRule>();
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, device_id, point_id, operator, threshold, threshold_upper, duration_seconds, severity, message_template, enabled FROM alarm_rules WHERE enabled=1";
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) rules.Add(Map(reader));
-        return rules;
+        try
+        {
+            var rows = await _db.AlarmRules
+                .AsNoTracking()
+                .Where(r => r.Enabled)
+                .ToListAsync(ct);
+            return rows.Select(ToDomain).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("告警规则查询失败: {Error}", ex.Message);
+            return Classify(ex, "告警规则查询失败");
+        }
     }
 
+    /// <inheritdoc />
     public async Task<OperationResult> SaveAsync(AlarmDomain.AlarmRule rule, CancellationToken ct = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"INSERT OR REPLACE INTO alarm_rules (id,device_id,point_id,operator,threshold,threshold_upper,duration_seconds,severity,message_template,enabled) VALUES (@id,@did,@pid,@op,@th,@thu,@dur,@sev,@msg,@en)";
-        cmd.Parameters.AddWithValue("@id", rule.Id.ToString());
-        cmd.Parameters.AddWithValue("@did", rule.DeviceId.ToString());
-        cmd.Parameters.AddWithValue("@pid", rule.PointId.ToString());
-        cmd.Parameters.AddWithValue("@op", rule.Operator);
-        cmd.Parameters.AddWithValue("@th", rule.Threshold);
-        cmd.Parameters.AddWithValue("@thu", (object?)rule.ThresholdUpper ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@dur", rule.DurationSeconds);
-        cmd.Parameters.AddWithValue("@sev", rule.Severity.ToString());
-        cmd.Parameters.AddWithValue("@msg", (object?)rule.MessageTemplate ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@en", rule.Enabled);
-        await cmd.ExecuteNonQueryAsync(ct);
-        return OperationResult.Success();
+        try
+        {
+            var entity = await _db.AlarmRules.FindAsync([rule.Id.ToString()], ct);
+            if (entity is null)
+            {
+                _db.AlarmRules.Add(ToEntity(rule));
+            }
+            else
+            {
+                _db.Entry(entity).CurrentValues.SetValues(ToEntity(rule));
+            }
+            await _db.SaveChangesAsync(ct);
+            return OperationResult.Success();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("告警规则保存失败: {Error}", ex.Message);
+            return Classify(ex, "告警规则保存失败");
+        }
     }
 
+    /// <inheritdoc />
     public async Task<OperationResult> DeleteAsync(Guid ruleId, CancellationToken ct = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM alarm_rules WHERE id=@id";
-        cmd.Parameters.AddWithValue("@id", ruleId.ToString());
-        await cmd.ExecuteNonQueryAsync(ct);
-        return OperationResult.Success();
+        try
+        {
+            var entity = await _db.AlarmRules.FindAsync([ruleId.ToString()], ct);
+            if (entity is not null)
+            {
+                _db.AlarmRules.Remove(entity);
+                await _db.SaveChangesAsync(ct);
+            }
+            return OperationResult.Success();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("告警规则删除失败: {Error}", ex.Message);
+            return Classify(ex, "告警规则删除失败");
+        }
     }
 
-    private static AlarmDomain.AlarmRule Map(SqliteDataReader r) => new()
+    /// <summary>EF 实体 → 领域模型</summary>
+    private static AlarmDomain.AlarmRule ToDomain(AlarmRuleEntity e) => new()
     {
-        Id = Guid.Parse(r.GetString(0)), DeviceId = Guid.Parse(r.GetString(1)), PointId = Guid.Parse(r.GetString(2)),
-        Operator = r.GetString(3), Threshold = r.GetDouble(4), ThresholdUpper = r.IsDBNull(5) ? null : r.GetDouble(5),
-        DurationSeconds = r.GetInt32(6), Severity = Enum.Parse<AlarmDomain.AlarmSeverity>(r.GetString(7)),
-        MessageTemplate = r.IsDBNull(8) ? null : r.GetString(8), Enabled = r.GetBoolean(9)
+        Id = Guid.Parse(e.Id),
+        DeviceId = Guid.Parse(e.DeviceId),
+        PointId = Guid.Parse(e.PointId),
+        Operator = e.Operator,
+        Threshold = e.Threshold,
+        ThresholdUpper = e.ThresholdUpper,
+        DurationSeconds = e.DurationSeconds,
+        Severity = Enum.Parse<AlarmDomain.AlarmSeverity>(e.Severity),
+        MessageTemplate = e.MessageTemplate,
+        Enabled = e.Enabled
     };
+
+    /// <summary>领域模型 → EF 实体</summary>
+    private static AlarmRuleEntity ToEntity(AlarmDomain.AlarmRule r) => new()
+    {
+        Id = r.Id.ToString(),
+        DeviceId = r.DeviceId.ToString(),
+        PointId = r.PointId.ToString(),
+        Operator = r.Operator,
+        Threshold = r.Threshold,
+        ThresholdUpper = r.ThresholdUpper,
+        DurationSeconds = r.DurationSeconds,
+        Severity = r.Severity.ToString(),
+        MessageTemplate = r.MessageTemplate,
+        Enabled = r.Enabled
+    };
+
+    /// <summary>解包 DbUpdateException 后统一走 SqliteErrorClassifier</summary>
+    private static OperationalError Classify(Exception ex, string context)
+    {
+        var inner = (ex as DbUpdateException)?.InnerException;
+        return SqliteErrorClassifier.Classify(inner ?? ex, context);
+    }
 }

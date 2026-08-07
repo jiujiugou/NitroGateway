@@ -28,6 +28,33 @@ public sealed class SqlitePointRepository : IPointRepository
         return OperationResult.Success();
     }
 
+    /// <summary>
+    /// ADR-005 P2-1：批量保存走单事务（EF Core SaveChanges 默认单事务），
+    /// 一次性 upsert 全部点位，替代逐条 SaveAsync 的 N 次往返。
+    /// </summary>
+    public async Task<OperationResult> SaveBatchAsync(Guid deviceId, IReadOnlyList<DevicePoint> points, CancellationToken ct = default)
+    {
+        if (points.Count == 0)
+            return OperationResult.Success();
+
+        var ids = points.Select(p => p.Id).ToList();
+        var existing = await _db.Points
+            .Where(p => ids.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, ct);
+
+        foreach (var point in points)
+        {
+            var entity = DomainMapper.ToEntity(point, deviceId);
+            if (existing.TryGetValue(point.Id, out var current))
+                _db.Entry(current).CurrentValues.SetValues(entity);
+            else
+                _db.Points.Add(entity);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return OperationResult.Success();
+    }
+
     public async Task<OperationResult> DeleteAsync(Guid deviceId, Guid pointId, CancellationToken ct = default)
     {
         var entity = await _db.Points.FirstOrDefaultAsync(p => p.Id == pointId && p.DeviceId == deviceId, ct);

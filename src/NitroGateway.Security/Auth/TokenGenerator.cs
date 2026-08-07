@@ -39,10 +39,9 @@ public sealed class TokenGenerator
             return null;
         }
 
-        // 支持明文和哈希两种密码格式
+        // ADR-004 P1-2：仅支持哈希密码（PasswordHasher 生成），已移除明文 Equals 回退
         var verifyResult = _hasher.VerifyHashedPassword(user, user.Password, password);
-        if (verifyResult != PasswordVerificationResult.Success &&
-            !string.Equals(user.Password, password, StringComparison.Ordinal))
+        if (verifyResult == PasswordVerificationResult.Failed)
         {
             _logger.LogWarning("登录失败: 用户 {User} 密码错误", username);
             return null;

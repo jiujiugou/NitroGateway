@@ -41,4 +41,7 @@ public interface IForwardBuffer
 
     /// <summary>当前队列中待转发的批次数（不含死信）</summary>
     int Count { get; }
+
+    /// <summary>异步获取当前待转发的批次数（不含死信）。async 路径请用本方法，避免同步查询阻塞</summary>
+    Task<int> GetCountAsync(CancellationToken ct = default);
 }
