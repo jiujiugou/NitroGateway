@@ -45,12 +45,14 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
 
         try
         {
-            var parts = _connection.Endpoint.Split(':');
-            _client.IpAddress = parts[0];
-            if (parts.Length > 1 && int.TryParse(parts[1], out var p) && p > 0 && p <= 65535)
+            // ADR-019 P3-6：端点解析支持带括号 IPv6（[::1]:502），不再按 ':' 裸拆
+            var (ip, port) = EndpointParser.Split(_connection.Endpoint);
+            _client.IpAddress = ip;
+            if (port is { } p && p > 0 && p <= 65535)
                 _client.Port = p;
 
             var result = await _client.ConnectServerAsync();
+            ct.ThrowIfCancellationRequested();   // ADR-019 P3-3：连接完成后响应取消
             if (result.IsSuccess)
             {
                 State = DriverState.Connected;

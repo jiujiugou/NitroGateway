@@ -73,6 +73,9 @@ public class DataDispatcherTests
 
         public Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default)
             => Task.FromResult(OperationResult.Success());
+
+        public Task<OperationResult> PurgeDeadLettersAsync(DateTime before, CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
     }
 
     [Fact]
@@ -107,5 +110,45 @@ public class DataDispatcherTests
         var record = Assert.Single(buffer.Enqueued[0].Records);
         Assert.Equal(DataType.Bool, record.DataType);
         Assert.Equal(true, record.Value);
+    }
+
+    /// <summary>ADR-016 P3-4：批次扫描窗口取快照时间戳 min/max，不再恒为分发时刻</summary>
+    [Fact]
+    public async Task DispatchAsync_BatchScanWindow_UsesSnapshotTimestamps()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+
+        var buffer = new FakeBuffer();
+        var dispatcher = new DataDispatcher(
+            new MeasurementWriteHost(new FakeStore(), NullLogger<MeasurementWriteHost>.Instance),
+            buffer,
+            new SinkDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<SinkDispatcher>.Instance),
+            NullLogger<DataDispatcher>.Instance);
+
+        var deviceId = Guid.NewGuid();
+        var t1 = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var t2 = t1.AddSeconds(1);
+        var snapshots = new[]
+        {
+            new PointSnapshot
+            {
+                DeviceId = deviceId, DevicePointId = Guid.NewGuid(),
+                DataType = DataType.Float, Value = 2d, Timestamp = t2, Quality = QualityCode.Good
+            },
+            new PointSnapshot
+            {
+                DeviceId = deviceId, DevicePointId = Guid.NewGuid(),
+                DataType = DataType.Float, Value = 1d, Timestamp = t1, Quality = QualityCode.Good
+            }
+        };
+
+        var result = await dispatcher.DispatchAsync(deviceId, snapshots, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var batch = Assert.Single(buffer.Enqueued);
+        Assert.Equal(t1, batch.ScanStartedAt);
+        Assert.Equal(t2, batch.ScanCompletedAt);
     }
 }

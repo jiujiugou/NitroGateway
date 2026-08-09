@@ -1,5 +1,10 @@
 # Protocol 模块设计文档
 
+> **历史快照（ADR-019 P3-5）**：本文档描述 v1 架构（FluentModbus、RawData=ushort[]、Collection 做类型转换、PointBatchOptimizer），
+> 与当前实现存在已知漂移：驱动基于 HslCommunication 并在驱动内解码（DataType 决定读写方法）、
+> 字节序由连接参数 DataFormat 控制、RawPointValue 已携带解码后的强类型值。
+> 保留本文档作为设计演进参考，不按现状改写。
+
 ## 定位
 
 协议适配层。定义地址解析、驱动工厂的抽象接口，并实现各协议驱动。

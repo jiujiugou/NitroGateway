@@ -1,5 +1,6 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Forwarder;
 using NitroGateway.Storage.Buffer;
@@ -13,6 +14,7 @@ namespace NitroGateway.IntegrationTests;
 /// 长断线期间每轮都会检查积压，告警必须限流——首次超限立即告警，之后每 60s 一次，
 /// 积压回落后重置限流状态，避免刷屏。
 /// </summary>
+[Collection("Forwarder")]
 public class ForwarderEngineTests
 {
     private static FakeForwardBuffer CreateBacklogBuffer(int count)
@@ -129,6 +131,90 @@ public class ForwarderEngineTests
         try
         {
             await WaitForAsync(() => WarningCount(logger) == 1, TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            await engine.StopAsync(CancellationToken.None);
+        }
+    }
+
+    /// <summary>ADR-016 P1-1：停机时 MQTT 仍连接，排空剩余缓冲后再退出</summary>
+    [Fact]
+    public async Task StopAsync_WithConnectedMqtt_DrainsRemainingBuffer()
+    {
+        // 启动时缓冲为空且 MQTT 断开（首轮跳过），等引擎真正进入运行态后再注入停机现场，
+        // 避免 StartAsync 内部 Task.Run 启动即 StopAsync 的调度竞态（.NET 10 BackgroundService）
+        var buffer = CreateBacklogBuffer(0);
+        var mqtt = new FakeMqttClient { State = MqttConnectionState.Disconnected };
+        var logger = new CapturingLogger<ForwarderEngine>();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IForwardBuffer>(buffer);
+        services.AddSingleton<IMqttClient>(mqtt);
+        services.AddSingleton<ForwardingThrottle>();
+        services.AddSingleton<IMessageSerializer, JsonMessageSerializer>();
+        services.AddSingleton<IForwarder>(sp => new NitroGateway.Forwarder.Forwarder(
+            buffer,
+            sp.GetRequiredService<IMessageSerializer>(),
+            mqtt,
+            sp.GetRequiredService<ForwardingThrottle>(),
+            NullLogger<NitroGateway.Forwarder.Forwarder>.Instance));
+        await using var provider = services.BuildServiceProvider();
+
+        var engine = new ForwarderEngine(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            TimeSpan.FromSeconds(10), // 大间隔：测试期间不会触发中间 tick
+            buffer,
+            logger);
+
+        await engine.StartAsync(CancellationToken.None);
+        try
+        {
+            // StartAsync 直接调用 ExecuteAsync（同步跑完首轮后挂起在周期等待），等待任务已创建且未结束即可；
+            // 该等待兼作防御：若运行时实现改为 Task.Run 调度，也能覆盖调度窗口
+            await WaitForAsync(() => engine.ExecuteTask is { } t && !t.IsCompleted, TimeSpan.FromSeconds(5));
+
+            // 停机瞬间现场：缓冲有 3 批待发，MQTT 仍连接
+            buffer.Pending.AddRange(CreateBacklogBuffer(3).Pending);
+            mqtt.State = MqttConnectionState.Connected;
+
+            await engine.StopAsync(CancellationToken.None);
+        }
+        finally
+        {
+            await engine.StopAsync(CancellationToken.None);
+        }
+
+        Assert.Empty(buffer.Pending);
+        Assert.NotEmpty(mqtt.Published);
+    }
+
+    /// <summary>
+    /// ADR-017 P1-1：积压查询瞬时故障不能放倒引擎（BackgroundService 未捕获异常默认 StopHost）——
+    /// 记 Error 跳过本轮，引擎继续按周期运行。
+    /// </summary>
+    [Fact]
+    public async Task BacklogQueryFailure_DoesNotStopEngine()
+    {
+        var buffer = CreateBacklogBuffer(0);
+        buffer.GetCountError = new InvalidOperationException("模拟数据库瞬时故障");
+        var mqtt = new FakeMqttClient { State = MqttConnectionState.Disconnected };
+        var logger = new CapturingLogger<ForwarderEngine>();
+        await using var provider = BuildProvider(buffer, mqtt);
+
+        var engine = new ForwarderEngine(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            TimeSpan.FromMilliseconds(20),
+            buffer,
+            logger);
+
+        await engine.StartAsync(CancellationToken.None);
+        try
+        {
+            await Task.Delay(200);
+
+            Assert.False(engine.ExecuteTask?.IsFaulted, "积压查询异常不应让引擎 fault");
+            Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("积压"));
         }
         finally
         {

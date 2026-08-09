@@ -15,6 +15,7 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
     private readonly NitroGatewayDbContext _db;
     private readonly ILogger<SqliteAlarmRepository> _logger;
 
+    /// <summary>注入 EF 上下文与日志；依赖 DI 保证上下文生命周期不超出仓储</summary>
     public SqliteAlarmRepository(NitroGatewayDbContext db, ILogger<SqliteAlarmRepository> logger)
     {
         _db = db;
@@ -105,10 +106,12 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
 
     /// <inheritdoc />
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> QueryAsync(
-        DateTime from, DateTime to, CancellationToken ct = default)
+        DateTime from, DateTime to, int limit = 1000, CancellationToken ct = default)
     {
         try
         {
+            // ADR-022 P2-2：夹紧 1..1000 并 Take，防大窗口历史告警全量进内存
+            var safeLimit = Math.Clamp(limit, 1, 1000);
             var fromStr = from.ToString("O");
             var toStr = to.ToString("O");
             // 时间以 O 格式字符串存储，字符串比较与时间顺序一致
@@ -117,6 +120,7 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
                 .Where(a => string.Compare(a.OccurredAt, fromStr) >= 0 &&
                             string.Compare(a.OccurredAt, toStr) <= 0)
                 .OrderByDescending(a => a.OccurredAt)
+                .Take(safeLimit)
                 .ToListAsync(ct);
             return rows.Select(ToDomain).ToList();
         }
@@ -127,7 +131,10 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         }
     }
 
-    /// <summary>EF 实体 → 领域模型</summary>
+    /// <summary>
+    /// EF 实体 → 领域模型。时间列解析约定：null → DateTime.MinValue（首超时）
+    /// 或 null（确认/恢复）；"O" 格式字符串按本机时区解析，写入侧统一 UTC。
+    /// </summary>
     private static AlarmDomain.Alarm ToDomain(AlarmEntity e) => new()
     {
         Id = Guid.Parse(e.Id),
@@ -136,16 +143,24 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         PointId = Guid.Parse(e.PointId),
         TriggerValue = e.TriggerValue ?? 0,
         Threshold = e.Threshold ?? 0,
-        Severity = Enum.Parse<AlarmDomain.AlarmSeverity>(e.Severity),
+        // ADR-018 P3-4：未知枚举字符串回退默认值，脏/历史数据不致告警读取整体失败
+        Severity = ParseEnum<AlarmDomain.AlarmSeverity>(e.Severity),
         Message = e.Message,
-        State = Enum.Parse<AlarmDomain.AlarmState>(e.State),
+        State = ParseEnum<AlarmDomain.AlarmState>(e.State),
         FirstExceededAt = e.FirstExceededAt is null ? DateTime.MinValue : DateTime.Parse(e.FirstExceededAt),
         OccurredAt = DateTime.Parse(e.OccurredAt),
         AcknowledgedAt = e.AcknowledgedAt is null ? null : DateTime.Parse(e.AcknowledgedAt),
         ResolvedAt = e.ResolvedAt is null ? null : DateTime.Parse(e.ResolvedAt)
     };
 
-    /// <summary>领域模型 → EF 实体</summary>
+    /// <summary>枚举容错解析（ADR-018 P3-4）：未知字符串回退默认值，与 DomainMapper 语义一致</summary>
+    private static T ParseEnum<T>(string? value) where T : struct, Enum
+        => Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : default;
+
+    /// <summary>
+    /// 领域模型 → EF 实体。时间列统一转 "O" 格式字符串存储；
+    /// DateTime.MinValue（领域层表示"未设置"）映射为 null，保证列语义可空。
+    /// </summary>
     private static AlarmEntity ToEntity(AlarmDomain.Alarm a) => new()
     {
         Id = a.Id.ToString(),
@@ -163,7 +178,10 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         ResolvedAt = a.ResolvedAt?.ToString("O")
     };
 
-    /// <summary>解包 DbUpdateException 后统一走 SqliteErrorClassifier</summary>
+    /// <summary>
+    /// 统一异常归类：EF 的 DbUpdateException 内层才是真正的 SqliteException，
+    /// 解包后交给 <see cref="SqliteErrorClassifier"/> 映射为对应的 OperationalError。
+    /// </summary>
     private static OperationalError Classify(Exception ex, string context)
     {
         var inner = (ex as DbUpdateException)?.InnerException;

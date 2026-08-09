@@ -29,7 +29,8 @@ services:
     environment:
       - DOTNET_ENVIRONMENT=Production
       - Persistence__ConnectionString=Data Source=/app/data/nitrogateway.db
-      - Security__JwtSecretKey=${JWT_SECRET:-NitroGateway-Production-ChangeMe!}
+      # ADR-022 P1-5：JWT 密钥必填，未设置直接拒绝启动（不再回退公开占位符，防伪造 Admin）
+      - Security__JwtSecretKey=${JWT_SECRET:?JWT_SECRET 环境变量必须设置（生产强密钥，禁止使用仓库内占位符）}
     depends_on:
       - mqtt
     restart: unless-stopped

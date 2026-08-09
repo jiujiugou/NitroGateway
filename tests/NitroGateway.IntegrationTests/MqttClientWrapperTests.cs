@@ -33,6 +33,17 @@ public class MqttClientWrapperTests
         }
     }
 
+    private sealed class RecordingStateListener : IMqttStateListener
+    {
+        public List<MqttConnectionState> States { get; } = [];
+
+        public ValueTask OnStateChangedAsync(MqttConnectionState state, CancellationToken ct = default)
+        {
+            States.Add(state);
+            return ValueTask.CompletedTask;
+        }
+    }
+
     [Fact]
     public void AddNitroMqtt_AutoClientId_IsUniqueAndPrefixed()
     {
@@ -90,7 +101,7 @@ public class MqttClientWrapperTests
     {
         // ADR-006 P1-2：CleanStart 会话断开即清订阅，重连成功后必须重放
         var inner = new FakeMqttInnerClient();
-        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner);
+        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, []);
 
         Assert.True((await wrapper.ConnectAsync()).IsSuccess);
         Assert.True((await wrapper.SubscribeAsync("nitrogateway/dev1/cmd", 1)).IsSuccess);
@@ -108,7 +119,7 @@ public class MqttClientWrapperTests
     {
         // ADR-006 P1-3：首连失败确定性进入重连（不依赖 DisconnectedAsync 事件时序），broker 恢复后自动连上
         var inner = new FakeMqttInnerClient { ConnectException = new TimeoutException("broker down") };
-        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner);
+        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, []);
 
         Assert.True((await wrapper.ConnectAsync()).IsFailure);
 
@@ -123,7 +134,7 @@ public class MqttClientWrapperTests
     {
         // ADR-006 P1-3：超过最大重试次数进入 Faulted；监督循环/人工复位后再次 ConnectAsync 可恢复
         var inner = new FakeMqttInnerClient { ConnectResultCode = MQTTnet.MqttClientConnectResultCode.ServerUnavailable };
-        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(maxAttempts: 2), NullLogger<MqttClientWrapper>.Instance, inner);
+        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(maxAttempts: 2), NullLogger<MqttClientWrapper>.Instance, inner, []);
 
         Assert.True((await wrapper.ConnectAsync()).IsFailure);
         await WaitUntilAsync(() => wrapper.State == MqttConnectionState.Faulted, TimeSpan.FromSeconds(5));
@@ -138,7 +149,7 @@ public class MqttClientWrapperTests
     {
         // ADR-006 P3-4：关停期间健康检查不应短暂仍报 Healthy
         var inner = new FakeMqttInnerClient();
-        var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner);
+        var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, []);
 
         Assert.True((await wrapper.ConnectAsync()).IsSuccess);
         Assert.Equal(MqttConnectionState.Connected, wrapper.State);
@@ -152,7 +163,7 @@ public class MqttClientWrapperTests
     {
         // ADR-006 P3-2：重连成功路径释放 CTS；随后主动断开不应因残留 CTS 抛异常
         var inner = new FakeMqttInnerClient();
-        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner);
+        await using var wrapper = new MqttClientWrapper(FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, []);
 
         Assert.True((await wrapper.ConnectAsync()).IsSuccess);
         inner.SimulateDrop();
@@ -161,5 +172,44 @@ public class MqttClientWrapperTests
         var disconnect = await wrapper.DisconnectAsync();
         Assert.True(disconnect.IsSuccess);
         Assert.Equal(MqttConnectionState.Disconnected, wrapper.State);
+    }
+
+    [Fact]
+    public async Task StateChange_NotifiesMqttStateListeners()
+    {
+        // ADR-020 P1-1：MqttClientWrapper 必须在每次状态变更时通知注册的 IMqttStateListener
+        // （SignalR MqttStateChanged 推送依赖此接线，修复前从不调用监听者）
+        var inner = new FakeMqttInnerClient();
+        var listener = new RecordingStateListener();
+        await using var wrapper = new MqttClientWrapper(
+            FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, [listener]);
+
+        Assert.True((await wrapper.ConnectAsync()).IsSuccess);
+        Assert.True((await wrapper.DisconnectAsync()).IsSuccess);
+
+        // 同步完成的监听者：fire-and-forget 但调用与记录在 ConnectAsync 返回前完成，顺序确定
+        Assert.Equal(
+            new[] { MqttConnectionState.Connecting, MqttConnectionState.Connected, MqttConnectionState.Disconnected },
+            listener.States);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_Cancelled_DoesNotStartReconnectLoop()
+    {
+        // ADR-020 P1-2：取消不是连接失败——不得触发重连循环（修复前 OCE 被吞并送入 HandleConnectFailure）
+        var inner = new FakeMqttInnerClient();
+        await using var wrapper = new MqttClientWrapper(
+            FastReconnectOptions(maxAttempts: 3), NullLogger<MqttClientWrapper>.Instance, inner, []);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => wrapper.ConnectAsync(cts.Token));
+
+        // 取消后回落到 Disconnected；若错误启动重连循环，状态会进入 Reconnecting/Connected
+        Assert.Equal(MqttConnectionState.Disconnected, wrapper.State);
+        await Task.Delay(150);
+        Assert.Equal(MqttConnectionState.Disconnected, wrapper.State);
+        Assert.Equal(1, inner.ConnectCalls);
     }
 }

@@ -9,6 +9,7 @@ using Xunit;
 
 namespace NitroGateway.IntegrationTests;
 
+[Collection("Forwarder")]
 public class ForwarderIntegrationTests
 {
     [Fact]

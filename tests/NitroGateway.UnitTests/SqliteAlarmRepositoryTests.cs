@@ -160,6 +160,19 @@ public class SqliteAlarmRepositoryTests
     }
 
     [Fact]
+    public async Task QueryAsync_Limit_TruncatesResults()
+    {
+        // ADR-022 P2-2：limit 夹紧并 Take，防大窗口历史告警全量进内存
+        var repo = new SqliteAlarmRepository(CreateContext(), NullLogger<SqliteAlarmRepository>.Instance);
+        for (var i = 0; i < 3; i++)
+            await repo.SaveAsync(NewAlarm(Guid.NewGuid()));
+
+        var limited = await repo.QueryAsync(DateTime.UtcNow.AddMinutes(-1), DateTime.UtcNow.AddMinutes(1), limit: 2);
+
+        Assert.Equal(2, limited.Value!.Count);
+    }
+
+    [Fact]
     public async Task RuleSaveAsync_NewRule_GetByPointReturnsIt()
     {
         var repo = new SqliteAlarmRuleRepository(CreateContext(), NullLogger<SqliteAlarmRuleRepository>.Instance);

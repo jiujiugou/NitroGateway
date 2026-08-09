@@ -46,11 +46,14 @@ internal sealed class InMemoryAlarmRepository : IAlarmRepository
     }
 
     public Task<OperationResult<IReadOnlyList<Domain.Alarm>>> QueryAsync(
-        DateTime from, DateTime to, CancellationToken ct = default)
+        DateTime from, DateTime to, int limit = 1000, CancellationToken ct = default)
     {
+        // ADR-022 P2-2：与 Sqlite 实现对齐，limit 夹紧 1..1000 并截断
+        var safeLimit = Math.Clamp(limit, 1, 1000);
         var results = _alarms.Values
             .Where(a => a.OccurredAt >= from && a.OccurredAt <= to)
             .OrderByDescending(a => a.OccurredAt)
+            .Take(safeLimit)
             .ToList();
         return Task.FromResult<OperationResult<IReadOnlyList<Domain.Alarm>>>(results);
     }

@@ -13,6 +13,7 @@ namespace NitroGateway.IntegrationTests;
 /// Dequeue 失败必须返回失败结果并记 Error；Commit/MarkFailed 失败必须记 Error，
 /// 不再静默吞掉，避免转发停滞无信号、批次卡 InFlight 无法发现。
 /// </summary>
+[Collection("Forwarder")]
 public class ForwarderFailureTests
 {
     private static ForwarderImpl CreateForwarder(
@@ -140,5 +141,29 @@ public class ForwarderFailureTests
 
         Assert.True(result.IsSuccess);
         Assert.Empty(logger.Entries);
+    }
+
+    /// <summary>
+    /// ADR-017 P2-2：取消不是转发失败——不 MarkFailed、不记"卡 InFlight"错误日志，
+    /// OCE 上抛由引擎停机路径处理。
+    /// </summary>
+    [Fact]
+    public async Task ForwardBatchAsync_Cancelled_DoesNotMarkFailedAndRethrows()
+    {
+        var batch = NewBatch(Guid.NewGuid());
+        var buffer = new FakeForwardBuffer();
+        await buffer.EnqueueAsync(batch);
+        var mqtt = new FakeMqttClient { PublishException = new OperationCanceledException("停机取消") };
+        var logger = new CapturingLogger<ForwarderImpl>();
+        var forwarder = CreateForwarder(buffer, mqtt, logger);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => forwarder.ForwardBatchAsync(10, cts.Token));
+
+        Assert.Empty(buffer.MarkedFailed);
+        Assert.DoesNotContain(logger.Entries, e => e.Message.Contains("标记"));
     }
 }

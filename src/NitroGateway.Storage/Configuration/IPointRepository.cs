@@ -18,6 +18,9 @@ public interface IPointRepository
     /// <summary>删除指定设备下的指定点位</summary>
     Task<OperationResult> DeleteAsync(Guid deviceId, Guid pointId, CancellationToken ct = default);
 
-    /// <summary>获取指定设备下的全部点位</summary>
+    /// <summary>
+    /// 获取指定设备下的全部点位。
+    /// ADR-021 P2-1：全量加载无分页（单设备点位通常数百，可接受）；点位量大时需新增分页重载（接口只增不删）。
+    /// </summary>
     Task<OperationResult<IReadOnlyList<DevicePoint>>> GetByDeviceAsync(Guid deviceId, CancellationToken ct = default);
 }

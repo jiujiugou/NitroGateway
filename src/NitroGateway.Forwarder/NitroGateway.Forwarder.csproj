@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\NitroGateway.Host\NitroGateway.Host.csproj" />
     <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />

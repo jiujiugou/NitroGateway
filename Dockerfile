@@ -39,6 +39,8 @@ COPY --from=build /app .
 # 创建数据目录
 RUN mkdir -p /app/data /app/logs
 ENV DOTNET_ENVIRONMENT=Production
+# ADR-022 P1-4：容器内必须监听 0.0.0.0，否则 appsettings 的 Urls=localhost 使宿主机/前端容器无法访问 API
+ENV ASPNETCORE_URLS=http://0.0.0.0:5100
 EXPOSE 5100
 
 ENTRYPOINT ["dotnet", "NitroGateway.Webapi.dll"]

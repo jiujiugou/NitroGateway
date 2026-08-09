@@ -6,12 +6,21 @@ using NitroGateway.Telemetry.Tracing;
 
 namespace NitroGateway.Collection;
 
-/// <summary>值转换管道实现。Modbus ushort[] → 类型转换 → 缩放 → 死区 → PointSnapshot</summary>
+/// <summary>
+/// 值转换管道实现：协议解码值 → 工程缩放（×ScaleFactor + ScaleOffset）→ 死区 → PointSnapshot。
+/// 协议解码由驱动完成（Modbus ushort[]→类型、OPC UA Variant→.NET 类型），本类不感知协议细节。
+/// <para><b>死区语义（重要）：</b>死区只影响"上次工程值缓存"的更新（供告警 Duration 判定），
+/// 不丢弃数据——快照照常下发，SignalR 推送与存储写入不受死区影响。</para>
+/// <para><b>边界：</b>Bool/String 不做缩放与死区；非数值类型直接透传；
+/// 数值缩放失败产出 Uncertain 快照而非抛异常；单点位失败不影响整批。</para>
+/// </summary>
 public sealed class PointValuePipeline : IPointValuePipeline
 {
+    /// <summary>上次工程值缓存（内存态，重启丢失）。仅数值点位有记录。</summary>
     private readonly ConcurrentDictionary<Guid, double> _lastValues = new();
 
     /// <inheritdoc />
+    /// <remarks>逐点位独立转换：单点失败（缩放异常）返回 Uncertain 快照，其他点位不受影响。</remarks>
     public IReadOnlyList<PointSnapshot> Process(
         Guid deviceId, IReadOnlyList<RawPointValue> rawValues)
     {
@@ -40,7 +49,12 @@ public sealed class PointValuePipeline : IPointValuePipeline
 
     // ---- 内部 ----
 
-    /// <summary>处理单个值：缩放 + 死区。不做协议解码（驱动已完成）</summary>
+    /// <summary>
+    /// 处理单个值：按数据类型走透传/缩放，再更新死区缓存。
+    /// </summary>
+    /// <param name="deviceId">所属设备 ID</param>
+    /// <param name="raw">原始值（含点位定义与驱动解码后的值）</param>
+    /// <returns>转换后的快照；数值缩放失败时返回 Uncertain 质量快照</returns>
     private PointSnapshot? ConvertSingle(Guid deviceId, RawPointValue raw)
     {
         var point = raw.Point;
@@ -126,6 +140,9 @@ public sealed class PointValuePipeline : IPointValuePipeline
         };
     }
 
+    /// <summary>判断点位类型是否为数值型（可参与缩放与死区判定）。</summary>
+    /// <param name="type">点位数据类型</param>
+    /// <returns>Float/Double/Int16..UInt64 返回 true，其余（Bool/String/未知）返回 false</returns>
     private static bool IsNumericType(DataType type) => type switch
     {
         DataType.Float => true,

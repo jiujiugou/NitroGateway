@@ -79,21 +79,34 @@ public class StatusController : ControllerBase
     [HttpGet("system")]
     public async Task<ActionResult<ApiResponse<object>>> SystemStatus()
     {
+        // ADR-015: 诊断路径只读 State（纯查询），不调用 TryEnterProbe——
+        // 读会抢占 HalfOpen 探测名额并饿死自愈探测；"是否熔断"由 State == Open 推导。
         var breakerStates = _breakers.GetAll().Select(kv => new
         {
             DeviceId = kv.Key.ToString(),
             State = kv.Value.State.ToString(),
-            IsOpen = kv.Value.IsOpen
+            IsOpen = kv.Value.State == CircuitState.Open
         }).ToList();
 
         var onlineResult = await _devices.GetByStatusAsync(Domain.Devices.DeviceStatus.Online);
         var onlineCount = onlineResult.IsSuccess ? onlineResult.Value!.Count : 0;
 
+        // ADR-017 P3-3：客户端在计数查询完成前断开时返回 0 而非 500（GetCountAsync 取消时仍抛 OCE）
+        var bufferBacklog = 0;
+        try
+        {
+            bufferBacklog = await _buffer.GetCountAsync(HttpContext.RequestAborted);
+        }
+        catch (OperationCanceledException)
+        {
+            // 请求已中止，结果不再送达，直接按 0 收尾
+        }
+
         return Ok(ApiResponse<object>.Ok(new
         {
             MqttState = _mqtt.State.ToString(),
             MqttConnected = _mqtt.State == MqttConnectionState.Connected,
-            BufferBacklog = await _buffer.GetCountAsync(HttpContext.RequestAborted),
+            BufferBacklog = bufferBacklog,
             ThrottleBatchSize = _throttle.MaxBatchSize,
             ThrottleDelayMs = _throttle.DelayMs,
             OnlineDevices = onlineCount,

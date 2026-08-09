@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NitroGateway.Protocol.Modbus" />
+    <InternalsVisibleTo Include="NitroGateway.Protocol.S7" />
+    <InternalsVisibleTo Include="NitroGateway.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Polly.Core" Version="8.7.0" />
   </ItemGroup>
 

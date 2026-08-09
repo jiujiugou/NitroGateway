@@ -8,7 +8,9 @@ using Polly;
 namespace NitroGateway.Transport.HTTP;
 
 /// <summary>
-/// <see cref="IHttpClient"/> 的实现，基于 <c>IHttpClientFactory</c> + Polly 重试。
+/// <see cref="IHttpClient"/> 的实现，基于 <see cref="System.Net.Http.HttpClient"/> + Polly 重试。
+/// ADR-020 P2-2：仅幂等 HTTP 方法（GET/PUT/DELETE/HEAD/OPTIONS/TRACE）启用重试；
+/// 非幂等（POST 上传）不重试，避免超时后云端已处理导致重复批次。
 /// </summary>
 public sealed class HttpClientWrapper : IHttpClient
 {
@@ -16,6 +18,7 @@ public sealed class HttpClientWrapper : IHttpClient
     private readonly ILogger<HttpClientWrapper> _logger;
     private readonly System.Net.Http.HttpClient _inner;
     private readonly ResiliencePipeline<HttpResponseMessage> _resilience;
+    private readonly ResiliencePipeline<HttpResponseMessage> _noRetry;
     private int _consecutiveFailures;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -31,11 +34,20 @@ public sealed class HttpClientWrapper : IHttpClient
 
     /// <summary>创建 HTTP 客户端实例</summary>
     public HttpClientWrapper(HttpConnectionOptions options, ILogger<HttpClientWrapper> logger)
+        : this(options, logger, new HttpClientHandler())
+    {
+    }
+
+    /// <summary>
+    /// 测试用构造函数：允许注入 <see cref="HttpMessageHandler"/> 替身（NitroGateway.IntegrationTests 专用，
+    /// 模拟成功/超时/5xx/断网等，无需真实 HTTP 服务）。
+    /// </summary>
+    internal HttpClientWrapper(HttpConnectionOptions options, ILogger<HttpClientWrapper> logger, HttpMessageHandler handler)
     {
         _options = options;
         _logger = logger;
 
-        _inner = new System.Net.Http.HttpClient
+        _inner = new System.Net.Http.HttpClient(handler)
         {
             BaseAddress = new Uri(options.BaseUrl.TrimEnd('/')),
             Timeout = TimeSpan.FromMilliseconds(options.TimeoutMs)
@@ -57,12 +69,15 @@ public sealed class HttpClientWrapper : IHttpClient
                     .HandleResult(r => (int)r.StatusCode >= 500),
                 OnRetry = args =>
                 {
-                    logger.LogWarning("HTTP 重试 {Attempt}/{Max}，等待 {Delay}ms",
+                    _logger.LogWarning("HTTP 重试 {Attempt}/{Max}，等待 {Delay}ms",
                         args.AttemptNumber, options.MaxRetries, args.RetryDelay.TotalMilliseconds);
                     return default;
                 }
             })
             .Build();
+
+        // ADR-020 P2-2：非幂等请求的直通管线（不重试）。空管线仅执行一次回调。
+        _noRetry = new ResiliencePipelineBuilder<HttpResponseMessage>().Build();
     }
 
     /// <inheritdoc />
@@ -70,10 +85,16 @@ public sealed class HttpClientWrapper : IHttpClient
     {
         try
         {
-            var httpMsg = BuildHttpMessage(request);
-
-            var response = await _resilience.ExecuteAsync(
-                async token => await _inner.SendAsync(httpMsg, token), ct);
+            // ADR-020 P2-2：重试只对幂等方法生效；POST 等非幂等请求走直通管线
+            var pipeline = IsIdempotent(request.Method) ? _resilience : _noRetry;
+            var response = await pipeline.ExecuteAsync(
+                async token =>
+                {
+                    // ADR-020 P2-3：每次尝试新建 HttpRequestMessage——复用同一实例重试会抛
+                    // "request message was already sent"（HttpClient 不允许重复发送同一消息）
+                    using var httpMsg = BuildHttpMessage(request);
+                    return await _inner.SendAsync(httpMsg, token);
+                }, ct);
 
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -85,10 +106,16 @@ public sealed class HttpClientWrapper : IHttpClient
                 Body = body
             };
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // ADR-020 P2-1：调用方取消不是失败——上抛交停机/取消路径，不计连续失败
+            throw;
+        }
         catch (Exception ex)
         {
             OnFailure(ex);
-            return OperationalError.Timeout($"HTTP 请求失败 [{request.Method} {request.Path}]: {ex.Message}");
+            return OperationResult<HttpResponse>.Failure(
+                ClassifyError(ex, $"HTTP 请求失败 [{request.Method} {request.Path}]"));
         }
     }
 
@@ -97,7 +124,9 @@ public sealed class HttpClientWrapper : IHttpClient
     {
         try
         {
-            var response = await _resilience.ExecuteAsync(
+            // ADR-020 P2-2：POST 非幂等，禁重试——超时后云端可能已处理，重试会产生重复批次；
+            // ADR-011 落地时以 batchId 幂等键（服务端去重）重新开启重试。
+            var response = await _noRetry.ExecuteAsync(
                 async token => await _inner.PostAsJsonAsync(path, payload, JsonOptions, token), ct);
 
             OnSuccess();
@@ -108,10 +137,15 @@ public sealed class HttpClientWrapper : IHttpClient
             var body = await response.Content.ReadAsStringAsync(ct);
             return OperationalError.General($"HTTP 上传失败 [{path}]: {response.StatusCode} - {body}");
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // ADR-020 P2-1：调用方取消不是失败——上抛交停机/取消路径，不计连续失败
+            throw;
+        }
         catch (Exception ex)
         {
             OnFailure(ex);
-            return OperationalError.Timeout($"HTTP 上传失败 [{path}]: {ex.Message}");
+            return ClassifyError(ex, $"HTTP 上传失败 [{path}]");
         }
     }
 
@@ -128,7 +162,7 @@ public sealed class HttpClientWrapper : IHttpClient
         var result = await SendAsync(request, ct);
         return result.IsSuccess
             ? OperationResult.Success()
-            : result.Error!;
+            : OperationResult.Failure(result.Error!);
     }
 
     // ---- 内部 ----
@@ -173,4 +207,21 @@ public sealed class HttpClientWrapper : IHttpClient
             StateChanged?.Invoke(State);
         }
     }
+
+    /// <summary>
+    /// ADR-020 P2-1：按异常类型分类错误，避免把连接失败/协议错误一律误报为超时。
+    /// </summary>
+    private static OperationalError ClassifyError(Exception ex, string context)
+    {
+        return ex switch
+        {
+            TaskCanceledException => OperationalError.Timeout($"{context}: {ex.Message}"),
+            HttpRequestException => OperationalError.Communication($"{context}: {ex.Message}"),
+            _ => OperationalError.General($"{context}: {ex.Message}")
+        };
+    }
+
+    /// <summary>幂等方法（RFC 7231）允许重试；POST 等非幂等方法不重试</summary>
+    private static bool IsIdempotent(HttpMethod method) =>
+        method.Method.ToUpperInvariant() is "GET" or "PUT" or "DELETE" or "HEAD" or "OPTIONS" or "TRACE";
 }

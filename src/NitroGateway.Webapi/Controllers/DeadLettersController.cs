@@ -24,7 +24,9 @@ public class DeadLettersController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<DeadLetterDto>>>> GetAll([FromQuery] int maxCount = 100)
     {
-        var result = await _buffer.GetDeadLettersAsync(maxCount);
+        // ADR-022 P1-3：夹紧到 1..1000。SQLite 中 LIMIT 为负值表示无上限，直接透传会全表返回
+        var safeMax = Math.Clamp(maxCount, 1, 1000);
+        var result = await _buffer.GetDeadLettersAsync(safeMax);
         if (result.IsFailure)
             return BadRequest(ApiResponse<List<DeadLetterDto>>.Fail("GetDeadLetters", result.Error!.Message));
 

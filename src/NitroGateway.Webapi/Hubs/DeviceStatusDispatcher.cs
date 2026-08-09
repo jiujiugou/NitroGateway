@@ -49,8 +49,9 @@ public class DeviceStatusDispatcher : IPointStoredSink, IDeviceHealthListener, I
 
     public ValueTask OnHealthChangedAsync(DeviceHealthChanged e, CancellationToken ct = default)
     {
-        _logger.LogInformation(
-    "SignalRDispatcher 收到 DeviceHealthChanged");
+        // ADR-022 P3-9：日志带设备与状态，便于排查（健康变更低频，保持 Information）
+        _logger.LogInformation("SignalRDispatcher 设备健康变更: Device={DeviceId} {Old} → {New}",
+            e.DeviceId, e.OldStatus, e.NewStatus);
         if (!_writer.TryWrite(new OutboxMessage
         {
             Method = "DeviceStatusChanged",

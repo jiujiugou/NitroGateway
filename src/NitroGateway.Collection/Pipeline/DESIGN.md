@@ -1,5 +1,8 @@
 # PointValuePipeline 设计文档 v1
 
+> ⚠ **历史快照（ADR-016 P3-6）**：本文为 v1 设计稿，接口片段中"死区丢弃"的表述已过时——
+> 实现语义为"死区只影响上次工程值缓存（供告警 Duration），不丢弃数据"，以代码为准。
+
 ## 定位
 
 值转换管道。`RawPointValue` → 类型转换 → 缩放 → 死区 → `PointSnapshot`。

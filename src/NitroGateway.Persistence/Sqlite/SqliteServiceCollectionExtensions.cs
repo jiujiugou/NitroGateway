@@ -9,13 +9,18 @@ using NitroGateway.Storage.TimeSeries;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>SQLite 存储 DI 注册</summary>
+/// <summary>
+/// SQLite 存储 DI 注册入口。Webapi 启动时调用，按存储类别注册合适的生命周期：
+/// EF 配置仓储 Scoped、Dapper 存储 Singleton（内部每操作独立连接）、保留清理后台任务 HostedService。
+/// </summary>
 public static class SqliteServiceCollectionExtensions
 {
     /// <summary>
     /// 注册全部 SQLite 存储服务。
     /// Configuration 用 EF Core；TimeSeries、Buffer、Alarm 均按操作创建独立连接
     /// （ADR-001 P1-4：共享 Singleton 裸连接跨线程并发不安全）。
+    /// 连接串从配置项 <c>Persistence:ConnectionString</c> 读取，缺失时抛出
+    /// <see cref="InvalidOperationException"/>（配置错误应快速失败）。
     /// </summary>
     public static IServiceCollection AddNitroSqlite(
         this IServiceCollection services, IConfiguration configuration)
@@ -31,7 +36,12 @@ public static class SqliteServiceCollectionExtensions
         services.AddScoped<IPointRepository, SqlitePointRepository>();
 
         services.AddSingleton<IMeasurementStore>(_ => new SqliteMeasurementStore(connectionString));
-        services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardBuffer(connectionString, sp.GetRequiredService<ILogger<SqliteForwardBuffer>>()));
+        // ADR-018 P2-3：缓冲入队上限 + 死信保留天数均可配置，防止 MQTT 长期离线/坏消息无限累积
+        services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardBuffer(
+            connectionString,
+            sp.GetRequiredService<ILogger<SqliteForwardBuffer>>(),
+            maxRetries: 5,
+            maxPending: configuration.GetValue("Persistence:ForwardBufferMaxPending", 100_000)));
 
         // ADR-002 P1-2：measurements 保留任务（后台周期清理，防止时序表无限增长）
         services.AddHostedService(sp => new MeasurementRetentionService(
@@ -39,6 +49,13 @@ public static class SqliteServiceCollectionExtensions
             sp.GetRequiredService<ILogger<MeasurementRetentionService>>(),
             retentionDays: configuration.GetValue("Persistence:MeasurementRetentionDays", 30),
             interval: configuration.GetValue<TimeSpan?>("Persistence:MeasurementRetentionInterval") ?? TimeSpan.FromHours(24)));
+
+        // ADR-018 P2-3：死信保留任务（后台周期清理，防止死信表无限增长，与 measurements 保留对称）
+        services.AddHostedService(sp => new DeadLetterRetentionService(
+            sp.GetRequiredService<IForwardBuffer>(),
+            sp.GetRequiredService<ILogger<DeadLetterRetentionService>>(),
+            retentionDays: configuration.GetValue("Persistence:DeadLetterRetentionDays", 30),
+            interval: configuration.GetValue<TimeSpan?>("Persistence:DeadLetterRetentionInterval") ?? TimeSpan.FromHours(24)));
 
         // 告警持久化（EF Core，Scoped 适配 DbContext；AlarmHostedService 每事件建 scope 解析）
         services.AddScoped<IAlarmRuleRepository, SqliteAlarmRuleRepository>();

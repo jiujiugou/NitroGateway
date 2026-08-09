@@ -161,10 +161,10 @@ public class SqliteMeasurementStoreTests
         await store.WriteAsync([NewSnapshot(deviceId, pointId, now.AddDays(-1))]);
 
         var purge = await store.PurgeAsync(now.AddDays(-30));
-        Assert.True(purge.IsSuccess);
+        Assert.True(purge.IsSuccess, purge.Error?.Message);
 
         var result = await store.QueryAsync(deviceId, pointId, now.AddDays(-45), now.AddDays(1));
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, result.Error?.Message);
         var row = Assert.Single(result.Value!);
         Assert.True((now.AddDays(-1) - row.Timestamp).Duration() < TimeSpan.FromMinutes(5));
     }
@@ -279,6 +279,50 @@ public class SqliteMeasurementStoreTests
         Assert.Equal(2, rows.Count);
         Assert.Equal(2, rows.Select(r => r.DevicePointId).Distinct().Count());
         Assert.All(rows, r => Assert.True((now - r.Timestamp).Duration() < TimeSpan.FromMinutes(5)));
+    }
+
+    /// <summary>ADR-018 P2-1：分批删除——小批量上限下仍能清空全部过期行，边界之后保留</summary>
+    [Fact]
+    public async Task PurgeAsync_WithSmallBatchSize_DeletesAllOldRows_KeepsRecent()
+    {
+        using var db = new TempMeasurementDb();
+        var store = new SqliteMeasurementStore(db.ConnectionString, purgeBatchSize: 2);
+        var deviceId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        // 5 行过期 + 1 行未过期，分批上限 2 强制走多轮循环
+        for (var i = 0; i < 5; i++)
+            await store.WriteAsync([NewSnapshot(deviceId, Guid.NewGuid(), now.AddDays(-40 - i))]);
+        await store.WriteAsync([NewSnapshot(deviceId, Guid.NewGuid(), now.AddDays(-1))]);
+
+        var purge = await store.PurgeAsync(now.AddDays(-30));
+        Assert.True(purge.IsSuccess, purge.Error?.Message);
+
+        var result = await store.QueryByDeviceAsync(deviceId, now.AddDays(-45), now);
+        Assert.True(result.IsSuccess);
+        var row = Assert.Single(result.Value!);
+        Assert.True((now.AddDays(-1) - row.Timestamp).Duration() < TimeSpan.FromMinutes(5));
+    }
+
+    /// <summary>ADR-018 P3-2：同点位两条记录 timestamp 相同时，每点最多返回一条最新</summary>
+    [Fact]
+    public async Task QueryLatestAsync_PointIdNull_SameTimestamp_DeduplicatesPerPoint()
+    {
+        using var db = new TempMeasurementDb();
+        var store = new SqliteMeasurementStore(db.ConnectionString);
+        var deviceId = Guid.NewGuid();
+        var pointId = Guid.NewGuid();
+        var sameTimestamp = DateTime.UtcNow;
+
+        // 同点位同时间戳写两条（修复前 MAX(timestamp) join 会返回多行）
+        await store.WriteAsync([NewSnapshot(deviceId, pointId, sameTimestamp)]);
+        await store.WriteAsync([NewSnapshot(deviceId, pointId, sameTimestamp)]);
+
+        var result = await store.QueryLatestAsync(deviceId, pointId: null);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        var row = Assert.Single(result.Value!);
+        Assert.Equal(pointId, row.DevicePointId);
     }
 
     private static void DropMeasurementsTable(string connectionString)

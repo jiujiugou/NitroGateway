@@ -2,10 +2,15 @@ using FluentMigrator;
 
 namespace NitroGateway.Persistence.Migrations;
 
-/// <summary>创建 alarm_rules 和 alarms 表</summary>
+/// <summary>
+/// 创建告警规则表（alarm_rules）与告警记录表（alarms）。
+/// 规则按 (device_id, point_id) 索引加速点位评估加载；告警按 (device_id, state) 索引加速活跃告警查询、
+/// 按 occurred_at 倒序索引加速历史页展示。时间列均为 O 格式字符串，字符串比较与时间序一致。
+/// </summary>
 [Migration(5)]
 public sealed class M005_AddAlarmTables : Migration
 {
+    /// <summary>正向：建 alarm_rules/alarms 表 + 查询索引</summary>
     public override void Up()
     {
         // ── 告警规则表 ──
@@ -52,6 +57,7 @@ public sealed class M005_AddAlarmTables : Migration
             .OnColumn("occurred_at").Descending();
     }
 
+    /// <summary>回滚：先删 alarms 再删 alarm_rules</summary>
     public override void Down()
     {
         Delete.Table("alarms");

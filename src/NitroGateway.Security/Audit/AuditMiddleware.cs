@@ -39,7 +39,14 @@ public sealed class AuditMiddleware
 
         // ADR-004 P3-3：刻意不记请求体——写类操作的变更内容属敏感数据，
         // 边缘网关适配范围按 method/path/status 审计即可；如需 body 摘要需先 EnableBuffering
-        if (statusCode >= 400)
+        // ADR-022 P3-5：只读 GET 降 Debug（前端仪表盘 3-10s 轮询），避免高频轮询刷屏日志
+        if (HttpMethods.IsGet(context.Request.Method))
+        {
+            _logger.LogDebug(
+                "AUDIT User={User} Role={Role} {Method} {Path} → {StatusCode} ({Elapsed}ms) IP={IP}",
+                user, role, method, path, statusCode, elapsedMs, ip);
+        }
+        else if (statusCode >= 400)
         {
             _logger.LogWarning(
                 "AUDIT User={User} Role={Role} {Method} {Path} → {StatusCode} ({Elapsed}ms) IP={IP}",

@@ -63,4 +63,19 @@ public class LoginRateLimiterTests
 
         Assert.False(limiter.IsLocked("admin|1.2.3.4", out _));
     }
+
+    [Fact]
+    public void ExpiredEntries_AreTrimmed_WhenOverCapacity()
+    {
+        // ADR-022 P3-3：条目超上限时清理窗口已过期的记录，字典有界
+        var limiter = new LoginRateLimiter(maxFailures: 3, window: TimeSpan.FromMilliseconds(50), maxEntries: 2);
+        limiter.RecordFailure("expired|1");
+
+        Thread.Sleep(80);
+
+        limiter.RecordFailure("fresh-a|1");
+        limiter.RecordFailure("fresh-b|1");   // 触发 trim，清掉已过期的 expired|1
+
+        Assert.Equal(2, limiter.Count);
+    }
 }

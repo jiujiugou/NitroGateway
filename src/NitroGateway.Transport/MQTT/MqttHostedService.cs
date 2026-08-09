@@ -34,10 +34,18 @@ internal sealed class MqttHostedService : BackgroundService
                 if (_mqtt.State is MqttConnectionState.Faulted
                     || (_mqtt.State is MqttConnectionState.Disconnected && _options.MaxReconnectAttempts > 0))
                 {
-                    var r = await _mqtt.ConnectAsync(ct);
-                    if (r.IsFailure)
-                        _logger.LogWarning("MQTT 监督重连失败: {Error}，{Interval}ms 后重试",
-                            r.Error?.Message, _options.ReconnectMaxIntervalMs);
+                    try
+                    {
+                        var r = await _mqtt.ConnectAsync(ct);
+                        if (r.IsFailure)
+                            _logger.LogWarning("MQTT 监督重连失败: {Error}，{Interval}ms 后重试",
+                                r.Error?.Message, _options.ReconnectMaxIntervalMs);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // ADR-020 P1-2：ConnectAsync 在取消时上抛 OCE（不再吞掉），停机时正常退出监督循环
+                        break;
+                    }
                 }
 
                 try

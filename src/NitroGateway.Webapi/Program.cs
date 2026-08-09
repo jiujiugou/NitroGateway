@@ -24,10 +24,16 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 // ── 参数 ──
-var dbPath = builder.Configuration["Persistence:DbPath"];
+// ADR-014：健康检查与 AddNitroSqlite 统一读取 Persistence:ConnectionString；
+// 此前误读不存在的 Persistence:DbPath，导致 sqlite 健康检查拿到空连接串。
+var dbConnectionString = builder.Configuration["Persistence:ConnectionString"]
+    ?? throw new InvalidOperationException("Persistence:ConnectionString 未配置。");
 
 // ── Serilog ──
 
+// ADR-014：Serilog 作为唯一日志输出（appsettings.json 已移除 Logging 段），
+// 清掉宿主内置 Console/Debug 提供程序，避免与 Serilog Console sink 双写。
+builder.Logging.ClearProviders();
 builder.Host.UseSerilog((context, services, configuration) =>
 {
     configuration.ReadFrom.Configuration(context.Configuration)
@@ -49,15 +55,18 @@ builder.Services.AddNitroDevice();
 builder.Services.AddNitroProtocol();
 builder.Services.AddNitroSignalR();
 builder.Services.AddNitroAlarm();
-builder.Services.AddNitroCollection(intervalMs: 1000);
-builder.Services.AddNitroForwarder(intervalMs: 5000);
+// ADR-016 P1-1：Forwarder 必须先于 Collection 注册——HostedService 按注册序反向停止，
+// 这样关闭时先停采集（最后一轮入缓冲）再停转发（停机排空），MQTT 由 Singleton 兜底保持连接。
+// ADR-022 P3-7：Forwarder 轮询间隔配置化（与 Collection 一致），缺省 5000ms
+builder.Services.AddNitroForwarder(intervalMs: builder.Configuration.GetValue("Forwarder:IntervalMs", 5000));
+builder.Services.AddNitroCollection(builder.Configuration);
 builder.Services.AddNitroMqtt(builder.Configuration);
 
 builder.Services.AddNitroTelemetry();
 
 // ── 健康检查 ──
 builder.Services.AddHealthChecks()
-    .AddCheck("sqlite", new SqliteHealthCheck($"Data Source={dbPath}"), tags: ["db", "ready"])
+    .AddCheck("sqlite", new SqliteHealthCheck(dbConnectionString), tags: ["db", "ready"])
     .AddCheck<MqttHealthCheck>("mqtt", tags: ["mqtt", "ready"]);
 
 builder.Services.AddSignalR();
@@ -65,8 +74,12 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "NitroGateway API", Version = "v1",
-        Description = "工业协议边缘网关 REST API — 设备管理、点位采集、告警、死信" });
+    c.SwaggerDoc("v1", new()
+    {
+        Title = "NitroGateway API",
+        Version = "v1",
+        Description = "工业协议边缘网关 REST API — 设备管理、点位采集、告警、死信"
+    });
 
     // JWT Bearer 认证
     c.AddSecurityDefinition("Bearer", new()
@@ -103,8 +116,12 @@ var app = builder.Build();
 // ── 建表 ──
 app.InitializeDatabase();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+// ADR-022 P3-6：Swagger 仅开发环境暴露；生产 API 面不对外展示（本地开发由 launchSettings 驱动）
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -115,6 +132,6 @@ app.MapHealthChecks("/healthz", new() { Predicate = _ => true });
 app.MapHealthChecks("/readyz", new() { Predicate = r => r.Tags.Contains("ready") });
 app.MapMetrics();
 app.MapControllers();
-app.MapHub<LiveDataHub>("/hubs/live");
+// ADR-022 P1-1：Hub 强制登录（JWT 经 query string access_token 校验），禁止匿名订阅
+app.MapHub<LiveDataHub>("/hubs/live").RequireAuthorization();
 app.Run();
-

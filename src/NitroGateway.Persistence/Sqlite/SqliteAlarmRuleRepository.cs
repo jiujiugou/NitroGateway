@@ -15,6 +15,7 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
     private readonly NitroGatewayDbContext _db;
     private readonly ILogger<SqliteAlarmRuleRepository> _logger;
 
+    /// <summary>注入 EF 上下文与日志；依赖 DI 保证上下文生命周期不超出仓储</summary>
     public SqliteAlarmRuleRepository(NitroGatewayDbContext db, ILogger<SqliteAlarmRuleRepository> logger)
     {
         _db = db;
@@ -123,7 +124,10 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
         }
     }
 
-    /// <summary>EF 实体 → 领域模型</summary>
+    /// <summary>
+    /// EF 实体 → 领域模型。Operator 保持字符串原样（由告警评估层解释），
+    /// Severity 按枚举字符串解析。
+    /// </summary>
     private static AlarmDomain.AlarmRule ToDomain(AlarmRuleEntity e) => new()
     {
         Id = Guid.Parse(e.Id),
@@ -138,7 +142,7 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
         Enabled = e.Enabled
     };
 
-    /// <summary>领域模型 → EF 实体</summary>
+    /// <summary>领域模型 → EF 实体；枚举（Severity）转字符串存储</summary>
     private static AlarmRuleEntity ToEntity(AlarmDomain.AlarmRule r) => new()
     {
         Id = r.Id.ToString(),
@@ -153,7 +157,10 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
         Enabled = r.Enabled
     };
 
-    /// <summary>解包 DbUpdateException 后统一走 SqliteErrorClassifier</summary>
+    /// <summary>
+    /// 统一异常归类：EF 的 DbUpdateException 内层才是真正的 SqliteException，
+    /// 解包后交给 <see cref="SqliteErrorClassifier"/> 映射为对应的 OperationalError。
+    /// </summary>
     private static OperationalError Classify(Exception ex, string context)
     {
         var inner = (ex as DbUpdateException)?.InnerException;

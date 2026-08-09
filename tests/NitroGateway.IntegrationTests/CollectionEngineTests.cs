@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NitroGateway.Collection;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Host;
@@ -49,7 +50,7 @@ public class CollectionEngineTests
         var engine = new CollectionEngine(
             provider.GetRequiredService<IServiceScopeFactory>(),
             new GatewayLifecycle(),
-            TimeSpan.FromMilliseconds(30),
+            Options.Create(new CollectionOption { IntervalMs = 30 }),
             NullLogger<CollectionEngine>.Instance,
             TimeSpan.FromMilliseconds(50));
 

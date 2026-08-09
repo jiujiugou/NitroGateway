@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Protocols;
+using NitroGateway.Protocols.Modbus;
 using NitroGateway.Webapi.Models;
 
 using NitroGateway.Security;
@@ -15,12 +17,21 @@ public class DevicesController : ControllerBase
     private readonly IDeviceManager _devices;
     private readonly IPointManager _points;
     private readonly IDeviceHealthMonitor _healthMonitor;
+    private readonly IProtocolDriverFactory _driverFactory;
+    private readonly ISerialPortManager _serialPorts;
 
-    public DevicesController(IDeviceManager devices, IPointManager points, IDeviceHealthMonitor healthMonitor)
+    public DevicesController(
+        IDeviceManager devices,
+        IPointManager points,
+        IDeviceHealthMonitor healthMonitor,
+        IProtocolDriverFactory driverFactory,
+        ISerialPortManager serialPorts)
     {
         _devices = devices;
         _points = points;
         _healthMonitor = healthMonitor;
+        _driverFactory = driverFactory;
+        _serialPorts = serialPorts;
     }
 
     [HttpGet]
@@ -38,6 +49,7 @@ public class DevicesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<DeviceDto>>> Create(DeviceDto d)
     {
         var device = ToDomain(d);
@@ -46,16 +58,18 @@ public class DevicesController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<DeviceDto>>> Update(Guid id, DeviceDto d)
     {
         var existing = await _devices.GetAsync(id);
         if (existing.IsFailure) return NotFound(ApiResponse<DeviceDto>.Fail("NotFound", "设备不存在"));
-        var device = new Device { Id = id, Name = d.Name, Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect }, Connection = new DeviceConnection { Endpoint = d.Connection.Endpoint, ConnectTimeoutMs = d.Connection.ConnectTimeoutMs, RequestTimeoutMs = d.Connection.RequestTimeoutMs, RetryCount = d.Connection.RetryCount, RetryIntervalMs = d.Connection.RetryIntervalMs, Parameters = d.Connection.Parameters }, Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown };
+        var device = new Device { Id = id, Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown };
         var r = await _devices.RegisterAsync(device);
         return r.IsSuccess ? Ok(ApiResponse<DeviceDto>.Ok(Map(r.Value!))) : BadRequest(ApiResponse<DeviceDto>.Fail("Update", r.Error!.Message));
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<object>>> Delete(Guid id)
     {
         var r = await _devices.UnregisterAsync(id);
@@ -63,9 +77,12 @@ public class DevicesController : ControllerBase
     }
 
     [HttpPut("{id}/status")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<DeviceDto>>> UpdateStatus(Guid id, [FromBody] string status)
     {
-        var s = Enum.Parse<DeviceStatus>(status);
+        // ADR-022 P2-1：非法状态值返回 400，不再抛 FormatException 转 500
+        if (!Enum.TryParse<DeviceStatus>(status, out var s))
+            return BadRequest(ApiResponse<DeviceDto>.Fail("Status", $"无效的设备状态: {status}"));
         var r = await _devices.UpdateStatusAsync(id, s);
         if (r.IsFailure) return BadRequest(ApiResponse<DeviceDto>.Fail("Status", r.Error!.Message));
         _healthMonitor.UpdateStatus(id, s);
@@ -81,22 +98,35 @@ public class DevicesController : ControllerBase
     }
 
     [HttpPost("{deviceId}/points")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<PointDto>>> AddPoint(Guid deviceId, PointDto d)
     {
-        var p = ToDomainPoint(d);
+        // ADR-022 P2-1/P2-4：创建路径校验枚举并忽略客户端 ID（服务端生成，防 POST 覆盖既有点位）
+        if (!Enum.TryParse<DataType>(d.DataType, out var dataType))
+            return BadRequest(ApiResponse<PointDto>.Fail("AddPoint", $"无效的 DataType: {d.DataType}"));
+        if (!Enum.TryParse<PointAccess>(d.Access, out var access))
+            return BadRequest(ApiResponse<PointDto>.Fail("AddPoint", $"无效的 Access: {d.Access}"));
+        var p = new DevicePoint { Id = Guid.NewGuid(), Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset };
         var r = await _points.AddAsync(deviceId, p);
         return r.IsSuccess ? Ok(ApiResponse<PointDto>.Ok(MapPoint(r.Value!))) : BadRequest(ApiResponse<PointDto>.Fail("AddPoint", r.Error!.Message));
     }
 
     [HttpPut("{deviceId}/points/{pointId}")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<PointDto>>> UpdatePoint(Guid deviceId, Guid pointId, PointDto d)
     {
-        var p = new DevicePoint { Id = pointId, Name = d.Name, Address = d.Address, Description = d.Description, DataType = Enum.Parse<DataType>(d.DataType), Access = Enum.Parse<PointAccess>(d.Access), Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset };
+        // ADR-022 P2-1：非法枚举返回 400
+        if (!Enum.TryParse<DataType>(d.DataType, out var dataType))
+            return BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", $"无效的 DataType: {d.DataType}"));
+        if (!Enum.TryParse<PointAccess>(d.Access, out var access))
+            return BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", $"无效的 Access: {d.Access}"));
+        var p = new DevicePoint { Id = pointId, Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset };
         var r = await _points.UpdateAsync(deviceId, p);
         return r.IsSuccess ? Ok(ApiResponse<PointDto>.Ok(MapPoint(p))) : BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", r.Error!.Message));
     }
 
     [HttpDelete("{deviceId}/points/{pointId}")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<object>>> DeletePoint(Guid deviceId, Guid pointId)
     {
         var r = await _points.RemoveAsync(deviceId, pointId);
@@ -105,23 +135,19 @@ public class DevicesController : ControllerBase
 
     /// <summary>测试设备连接。前端保存前验证网络是否可达。</summary>
     [HttpPost("test-connection")]
+    [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<object>>> TestConnection(DeviceDto d)
     {
-        var factory = HttpContext.RequestServices.GetRequiredService<Protocols.IProtocolDriverFactory>();
-        var protocol = new Domain.Devices.ProtocolIdentifier { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect };
-        var connection = new DeviceConnection
-        {
-            Endpoint = d.Connection.Endpoint,
-            ConnectTimeoutMs = d.Connection.ConnectTimeoutMs,
-            RequestTimeoutMs = d.Connection.RequestTimeoutMs,
-            RetryCount = 0,
-            RetryIntervalMs = 0,
-            Parameters = d.Connection.Parameters
-        };
+        if (d.Protocol is null || d.Connection is null)
+            return Ok(ApiResponse<object>.Ok(new { success = false, latencyMs = 0L, error = "Protocol/Connection 不能为空" }));
+
+        var protocol = new Domain.Devices.ProtocolIdentifier { Name = d.Protocol.Name ?? "", Dialect = d.Protocol.Dialect };
+        // 连接测试不重试：RetryCount/RetryIntervalMs 置 0，避免失败重试拖长页面等待
+        var connection = BuildConnection(d.Connection) with { RetryCount = 0, RetryIntervalMs = 0 };
 
         try
         {
-            using var driver = factory.Create(protocol, connection);
+            using var driver = _driverFactory.Create(protocol, connection);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var result = await driver.ConnectAsync();
             sw.Stop();
@@ -149,7 +175,7 @@ public class DevicesController : ControllerBase
     [HttpGet("serial-ports")]
     public ActionResult<ApiResponse<List<string>>> GetSerialPorts()
     {
-        var ports = HttpContext.RequestServices.GetRequiredService<Protocols.Modbus.ISerialPortManager>().GetAvailablePorts();
+        var ports = _serialPorts.GetAvailablePorts();
         return Ok(ApiResponse<List<string>>.Ok(ports.ToList()));
     }
 
@@ -157,7 +183,7 @@ public class DevicesController : ControllerBase
     [HttpGet("serial-port-status")]
     public ActionResult<ApiResponse<List<Protocols.Modbus.SerialPortInfo>>> GetSerialPortStatus()
     {
-        var status = HttpContext.RequestServices.GetRequiredService<Protocols.Modbus.ISerialPortManager>().GetStatus();
+        var status = _serialPorts.GetStatus();
         return Ok(ApiResponse<List<Protocols.Modbus.SerialPortInfo>>.Ok(status.ToList()));
     }
 
@@ -169,6 +195,10 @@ public class DevicesController : ControllerBase
         Status = d.Status.ToString(), Points = d.Points.Select(MapPoint).ToList()
     };
     static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset };
-    static Device ToDomain(DeviceDto d) => new() { Id = string.IsNullOrEmpty(d.Id) ? Guid.NewGuid() : Guid.Parse(d.Id), Name = d.Name, Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect }, Connection = new DeviceConnection { Endpoint = d.Connection.Endpoint, ConnectTimeoutMs = d.Connection.ConnectTimeoutMs, RequestTimeoutMs = d.Connection.RequestTimeoutMs, RetryCount = d.Connection.RetryCount, RetryIntervalMs = d.Connection.RetryIntervalMs, Parameters = d.Connection.Parameters }, Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
-    static DevicePoint ToDomainPoint(PointDto d) => new() { Id = string.IsNullOrEmpty(d.Id) ? Guid.NewGuid() : Guid.Parse(d.Id), Name = d.Name, Address = d.Address, Description = d.Description, DataType = Enum.Parse<DataType>(d.DataType), Access = Enum.Parse<PointAccess>(d.Access), Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset };
+    // ADR-022 P2-4：创建路径一律服务端生成新 ID，忽略客户端传入的 Id（仓储 SaveAsync 为 upsert，防 POST 覆盖既有设备）
+    static Device ToDomain(DeviceDto d) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
+
+    private static DeviceConnection BuildConnection(ConnectionDto? c) => c is null
+        ? new DeviceConnection { Endpoint = "" }
+        : new DeviceConnection { Endpoint = c.Endpoint ?? "", ConnectTimeoutMs = c.ConnectTimeoutMs, RequestTimeoutMs = c.RequestTimeoutMs, RetryCount = c.RetryCount, RetryIntervalMs = c.RetryIntervalMs, Parameters = c.Parameters };
 }

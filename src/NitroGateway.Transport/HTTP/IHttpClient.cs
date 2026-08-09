@@ -4,7 +4,8 @@ namespace NitroGateway.Transport.HTTP;
 
 /// <summary>
 /// HTTP 客户端接口。
-/// 基于 <c>IHttpClientFactory</c> + Polly 实现，统一返回 <see cref="OperationResult"/>。
+/// 基于 <see cref="System.Net.Http.HttpClient"/> + Polly 实现（仅幂等方法重试，ADR-020 P2-2），
+/// 统一返回 <see cref="OperationResult"/>。
 /// </summary>
 public interface IHttpClient
 {

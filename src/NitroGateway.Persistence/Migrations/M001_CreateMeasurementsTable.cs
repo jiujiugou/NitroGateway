@@ -2,10 +2,16 @@ using FluentMigrator;
 
 namespace NitroGateway.Persistence.Migrations;
 
-/// <summary>创建 measurements 时序数据表</summary>
+/// <summary>
+/// 创建 measurements 时序数据表。
+/// 单行即一次采集快照：设备/点位冗余标识 + 原始值与工程量值 + 时间戳（O 格式 UTC 字符串，
+/// 字典序即时间序，便于字符串比较查询）+ 质量码与错误信息。
+/// 复合索引 (device_id, point_id, timestamp) 支撑按设备+点位的时间范围查询。
+/// </summary>
 [Migration(1)]
 public sealed class M001_CreateMeasurementsTable : Migration
 {
+    /// <summary>正向：建表 + 查询索引</summary>
     public override void Up()
     {
         Create.Table("measurements")
@@ -27,5 +33,6 @@ public sealed class M001_CreateMeasurementsTable : Migration
             .OnColumn("timestamp").Ascending();
     }
 
+    /// <summary>回滚：删表</summary>
     public override void Down() => Delete.Table("measurements");
 }

@@ -52,7 +52,10 @@ public sealed class DeviceManager : IDeviceManager
         var device = await _repository.GetByIdAsync(deviceId, ct);
         if (device.IsFailure) return device.Error!;
 
-        await _repository.DeleteAsync(deviceId, ct);
+        // ADR-018 P2-2：删除失败不再静默（修复前忽略返回值，仓储异常不归类时该分支不可达）
+        var deleted = await _repository.DeleteAsync(deviceId, ct);
+        if (deleted.IsFailure) return deleted.Error!;
+
         _driverPool.Evict(deviceId);
         _healthMonitor.Remove(deviceId);
         _logger.LogInformation("设备已注销: {DeviceId}", deviceId);
@@ -83,7 +86,9 @@ public sealed class DeviceManager : IDeviceManager
         if (oldStatus == status) return OperationResult.Success();
 
         device.Status = status;
-        await _repository.SaveAsync(device, ct);
+        // ADR-018 P2-2：状态持久化失败不再静默，返回错误由调用方处置
+        var saved = await _repository.SaveAsync(device, ct);
+        if (saved.IsFailure) return saved.Error!;
 
         // 下线/维护时释放连接；恢复后下一轮采集重建
         _driverPool.Evict(deviceId);

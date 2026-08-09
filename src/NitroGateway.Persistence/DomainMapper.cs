@@ -1,11 +1,17 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Persistence;
 
-/// <summary>Domain ↔ EF Entity 映射（双向）</summary>
+/// <summary>
+/// Domain ↔ EF Entity 映射（双向），被 SqliteDeviceRepository / SqlitePointRepository 调用。
+/// 枚举与 Guid 在两侧均转换为字符串/基础类型，连接参数（Parameters）以 CamelCase JSON 存储；
+/// 空参数映射为 "{}"（序列化侧）或空字典（反序列化侧）。
+/// 反序列化侧枚举解析容错（未知字符串回退默认值，ADR-018 P3-4），脏/历史数据不致配置读取整体失败。
+/// </summary>
 public static class DomainMapper
 {
+    /// <summary>连接参数 JSON 序列化选项：CamelCase 属性命名，与前端 DTO 约定一致</summary>
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -30,7 +36,8 @@ public static class DomainMapper
             RetryCount = entity.RetryCount,
             Parameters = DeserializeParams(entity.ConnectionParams)
         },
-        Status = Enum.Parse<DeviceStatus>(entity.Status)
+        // ADR-018 P3-4：未知枚举字符串回退默认值（Unknown），不抛异常
+        Status = ParseEnum<DeviceStatus>(entity.Status)
     };
 
     /// <summary>领域模型 → EF 实体</summary>
@@ -56,8 +63,9 @@ public static class DomainMapper
         Name = entity.Name,
         Address = entity.Address,
         Description = entity.Description,
-        DataType = Enum.Parse<DataType>(entity.DataType),
-        Access = Enum.Parse<PointAccess>(entity.Access),
+        // ADR-018 P3-4：未知枚举字符串回退默认值，不抛异常
+        DataType = ParseEnum<DataType>(entity.DataType),
+        Access = ParseEnum<PointAccess>(entity.Access),
         Enabled = entity.Enabled,
         ScanIntervalMs = entity.ScanIntervalMs,
         Deadband = entity.Deadband,
@@ -82,12 +90,26 @@ public static class DomainMapper
         ScaleOffset = domain.ScaleOffset
     };
 
+    /// <summary>
+    /// 枚举容错解析（ADR-018 P3-4）：未知/空字符串回退默认值，不抛异常。
+    /// 与 measurements 侧 ParseDataType 的容错语义对齐；静态映射器无日志通道，
+    /// 回退行为通过 XML 注释与测试锁定，脏数据不再导致整份配置读取失败。
+    /// </summary>
+    internal static T ParseEnum<T>(string? value) where T : struct, Enum
+        => Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : default;
+
+    /// <summary>
+    /// 解析连接参数 JSON；null/空串返回空字典，避免调用方判空。
+    /// </summary>
     private static Dictionary<string, object> DeserializeParams(string? json)
     {
         if (string.IsNullOrEmpty(json)) return [];
         return JsonSerializer.Deserialize<Dictionary<string, object>>(json, JsonOptions) ?? [];
     }
 
+    /// <summary>
+    /// 序列化连接参数为 CamelCase JSON；null/空字典返回 "{}" 以保持列非空语义。
+    /// </summary>
     private static string SerializeParams(Dictionary<string, object>? parameters)
     {
         if (parameters is null || parameters.Count == 0) return "{}";

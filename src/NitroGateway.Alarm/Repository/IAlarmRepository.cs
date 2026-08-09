@@ -17,6 +17,6 @@ public interface IAlarmRepository
     /// <summary>查询所有活跃告警</summary>
     Task<OperationResult<IReadOnlyList<Domain.Alarm>>> GetAllActiveAsync(CancellationToken ct = default);
 
-    /// <summary>按时间范围查询历史告警</summary>
-    Task<OperationResult<IReadOnlyList<Domain.Alarm>>> QueryAsync(DateTime from, DateTime to, CancellationToken ct = default);
+    /// <summary>按时间范围查询历史告警（倒序；limit 夹紧 1..1000，默认 1000）</summary>
+    Task<OperationResult<IReadOnlyList<Domain.Alarm>>> QueryAsync(DateTime from, DateTime to, int limit = 1000, CancellationToken ct = default);
 }

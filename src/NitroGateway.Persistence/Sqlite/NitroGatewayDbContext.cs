@@ -2,16 +2,33 @@ using Microsoft.EntityFrameworkCore;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>EF Core 数据上下文，管理 Configuration 表（设备 + 点位）</summary>
+/// <summary>
+/// EF Core 数据上下文，管理配置类表：devices / points（PascalCase 列名）与
+/// alarms / alarm_rules（snake_case 列名，M005 建表）。
+/// 仅用于配置读写；时序（measurements）与转发缓冲（forward_buffer）走 Dapper 独立连接，不在此上下文内。
+/// </summary>
 public sealed class NitroGatewayDbContext : DbContext
 {
+    /// <summary>设备表（含点位导航集合，删除级联）</summary>
     public DbSet<DeviceEntity> Devices => Set<DeviceEntity>();
+
+    /// <summary>点位表</summary>
     public DbSet<PointEntity> Points => Set<PointEntity>();
+
+    /// <summary>告警记录表（snake_case 列名）</summary>
     public DbSet<AlarmEntity> Alarms => Set<AlarmEntity>();
+
+    /// <summary>告警规则表（snake_case 列名）</summary>
     public DbSet<AlarmRuleEntity> AlarmRules => Set<AlarmRuleEntity>();
 
+    /// <summary>以指定选项创建上下文；选项由 DI 的 AddDbContext 注册（UseSqlite）</summary>
     public NitroGatewayDbContext(DbContextOptions<NitroGatewayDbContext> options) : base(options) { }
 
+    /// <summary>
+    /// 配置实体映射：表名、主键、必填/长度约束、外键级联与索引。
+    /// devices/points 列名保持 M003 的 PascalCase 历史现状（见 M003 类注释）；
+    /// alarms/alarm_rules 显式映射 snake_case 列名。
+    /// </summary>
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<DeviceEntity>(d =>

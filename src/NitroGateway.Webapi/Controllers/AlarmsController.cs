@@ -50,9 +50,11 @@ public class AlarmsController : ControllerBase
 
     /// <summary>查询历史告警</summary>
     [HttpGet("history")]
-    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> History([FromQuery] DateTime from, [FromQuery] DateTime to)
+    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> History([FromQuery] DateTime from, [FromQuery] DateTime to, [FromQuery] int limit = 1000)
     {
-        var r = await _alarms.QueryAsync(from, to);
+        // ADR-022 P2-2：limit 夹紧 1..1000，仓储层 Take 限制结果集，防大窗口全量内存
+        var safeLimit = Math.Clamp(limit, 1, 1000);
+        var r = await _alarms.QueryAsync(from, to, safeLimit);
         return r.IsSuccess
             ? Ok(ApiResponse<List<AlarmDto>>.Ok(r.Value!.Select(Map).ToList()))
             : BadRequest(ApiResponse<List<AlarmDto>>.Fail("History", r.Error!.Message));

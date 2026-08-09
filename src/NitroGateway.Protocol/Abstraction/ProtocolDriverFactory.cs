@@ -38,7 +38,12 @@ public sealed class ProtocolDriverFactory : IProtocolDriverFactory
         if (_factories.TryGetValue(protocol.Name, out var factory))
         {
             var inner = factory(_services, connection, _loggerFactory.CreateLogger(protocol.Name));
-            return new ReliableProtocolDriver(inner, _loggerFactory.CreateLogger<ReliableProtocolDriver>());
+            // ADR-019 P2-4：重试管线超时与设备单次请求超时对齐（取 RequestTimeoutMs），
+            // 避免管线 3s 乐观超时先于设备 5s 超时触发导致误报"超时"与重试窗口被拉长
+            return new ReliableProtocolDriver(
+                inner,
+                _loggerFactory.CreateLogger<ReliableProtocolDriver>(),
+                requestTimeout: TimeSpan.FromMilliseconds(Math.Max(100, connection.RequestTimeoutMs)));
         }
 
         throw new NotSupportedException($"不支持的协议: {protocol.Name}");

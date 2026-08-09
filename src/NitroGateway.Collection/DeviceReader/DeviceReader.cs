@@ -13,6 +13,8 @@ namespace NitroGateway.Collection;
 /// 通过 <see cref="IProtocolDriverPool"/> 按设备复用长连接驱动，
 /// 连接参数不变时保持 socket/串口打开，避免每轮采集反复握手与关闭；
 /// 通信失败由 <see cref="ReliableProtocolDriver"/> 自动建连/重试恢复。
+/// <para><b>边界：</b>只取 <c>Enabled = true</c> 的点位；无启用点位直接返回空列表，
+/// 不视为错误。协议层异常被转换为 <see cref="OperationResult"/> 失败而非抛出。</para>
 /// </summary>
 public sealed class DeviceReader : IDeviceReader
 {
@@ -43,7 +45,8 @@ public sealed class DeviceReader : IDeviceReader
         activity?.SetTag(GatewayActivityTags.DeviceId, device.Id.ToString());
         activity?.SetTag(GatewayActivityTags.DeviceProtocol, device.Protocol.Name);
 
-        _logger.LogInformation("开始读取设备：{Device}", device.Name);
+        // ADR-019 P2-5：每轮采集日志降 Debug（离线设备 N 台 × 每秒一行 Info 刷屏）
+        _logger.LogDebug("开始读取设备：{Device}", device.Name);
 
         var points = device.Points.Where(p => p.Enabled).ToList();
 

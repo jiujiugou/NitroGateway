@@ -14,11 +14,19 @@ public sealed class CircuitBreakerHealthListener : IDeviceHealthListener
 {
     private readonly ICircuitBreakerRegistry _breakers;
 
+    /// <summary>创建健康监听器。</summary>
+    /// <param name="breakers">熔断器注册表</param>
     public CircuitBreakerHealthListener(ICircuitBreakerRegistry breakers)
     {
         _breakers = breakers;
     }
 
+    /// <summary>
+    /// 处理健康状态变更：Online → 重置熔断器（恢复闭合）；Offline → 打开熔断器（防雪崩）。
+    /// Unknown/Error/Maintenance 不处理（Error 仍允许采集探测）。
+    /// </summary>
+    /// <param name="e">健康状态变更事件</param>
+    /// <param name="ct">取消令牌（本实现同步完成，不使用）</param>
     public ValueTask OnHealthChangedAsync(DeviceHealthChanged e, CancellationToken ct = default)
     {
         switch (e.NewStatus)

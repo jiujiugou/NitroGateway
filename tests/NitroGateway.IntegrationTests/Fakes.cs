@@ -58,10 +58,15 @@ public sealed class FakeForwardBuffer : IForwardBuffer
     /// <summary>注入标记失败失败，非 null 时 MarkFailedAsync 返回该失败</summary>
     public OperationalError? MarkFailedError { get; set; }
 
+    /// <summary>注入积压计数异常（ADR-017 P1-1 引擎韧性测试用），非 null 时 GetCountAsync 抛出</summary>
+    public Exception? GetCountError { get; set; }
+
     public int Count => Pending.Count;
 
     public Task<int> GetCountAsync(CancellationToken ct = default)
-        => Task.FromResult(Pending.Count);
+        => GetCountError is not null
+            ? Task.FromException<int>(GetCountError)
+            : Task.FromResult(Pending.Count);
 
     public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
     {
@@ -101,6 +106,9 @@ public sealed class FakeForwardBuffer : IForwardBuffer
     public Task<OperationResult> RetryDeadLetterAsync(Guid batchId, CancellationToken ct = default)
         => Task.FromResult(OperationResult.Success());
 
+    public Task<OperationResult> PurgeDeadLettersAsync(DateTime before, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+
     public Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default)
         => Task.FromResult(OperationResult.Success());
 }
@@ -113,6 +121,9 @@ public sealed class FakeMqttClient : IMqttClient
 
     /// <summary>注入发布失败，非 null 时 PublishAsync 返回该失败</summary>
     public OperationResult? PublishResult { get; set; }
+
+    /// <summary>注入发布异常（ADR-017 P2-2 取消路径测试用），非 null 时 PublishAsync 直接抛出</summary>
+    public Exception? PublishException { get; set; }
 
     public event Action<MqttConnectionState>? StateChanged;
 
@@ -130,6 +141,8 @@ public sealed class FakeMqttClient : IMqttClient
 
     public Task<OperationResult> PublishAsync(string topic, byte[] payload, int qos = 1, CancellationToken ct = default)
     {
+        if (PublishException is not null)
+            throw PublishException;
         if (PublishResult is not null)
             return Task.FromResult(PublishResult);
         Published.Add((topic, payload));
@@ -178,6 +191,9 @@ public sealed class FakeMqttInnerClient : MQTTnet.IMqttClient
     {
         ConnectCalls++;
         Options = options;
+        // ADR-020 P1-2：替身尊重取消令牌——模拟真实 MQTTnet 在 ct 取消时抛 OCE 的行为
+        if (cancellationToken.IsCancellationRequested)
+            throw new OperationCanceledException(cancellationToken);
         if (ConnectException is not null) throw ConnectException;
         if (ConnectResultCode != MQTTnet.MqttClientConnectResultCode.Success)
             return Task.FromResult(new MQTTnet.MqttClientConnectResult { ResultCode = ConnectResultCode });

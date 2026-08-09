@@ -69,7 +69,8 @@ public static class NitroMetrics
     /// <summary>MQTT 连接状态。0=Disconnected, 1=Connecting, 2=Connected, 3=Reconnecting, 4=Faulted</summary>
     public static readonly Gauge MqttState = Metrics.CreateGauge(
         "nitro_mqtt_state",
-        "MQTT 连接状态 0=Disconnected 1=Connected 2=Reconnecting 3=Connecting 4=Faulted");
+        // ADR-009 P2-2：help 与 MqttConnectionState 枚举序对齐（Disconnected=0 Connecting=1 Connected=2 Reconnecting=3 Faulted=4）
+        "MQTT 连接状态 0=Disconnected 1=Connecting 2=Connected 3=Reconnecting 4=Faulted");
 
     // ═══════════════════════════════════════════════════════════════
     //  设备
@@ -84,4 +85,13 @@ public static class NitroMetrics
     public static readonly Gauge DevicesAvailable = Metrics.CreateGauge(
         "nitro_devices_available",
         "当前可用设备数");
+
+    // ═══════════════════════════════════════════════════════════════
+    //  存储
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>时序库落库失败次数（ADR-018 P2-1：WriteAsync 失败不再静默丢弃，告警指标）</summary>
+    public static readonly Counter StoreWriteFailures = Metrics.CreateCounter(
+        "nitro_store_write_failures_total",
+        "时序库落库失败总次数");
 }

@@ -35,6 +35,11 @@ public static class SecurityServiceCollectionExtensions
         if (Encoding.UTF8.GetByteCount(jwtConfig.JwtSecretKey) < 32)
             throw new InvalidOperationException("Security:JwtSecretKey 长度不足 32 字节，请配置强密钥后启动");
 
+        // ADR-022 P1-5：仓库内公开占位符（如 docker-compose 曾回退的 Production-ChangeMe）一律拒绝启动，
+        // 防止"忘了设置 JWT_SECRET"时用公开密钥上线，被离线伪造 Admin token
+        if (jwtConfig.JwtSecretKey.Contains("ChangeMe", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Security:JwtSecretKey 含公开占位符（ChangeMe），禁止用于生产，请配置强密钥后启动");
+
         if (jwtConfig.ExpireHours < 1)
             throw new InvalidOperationException("Security:ExpireHours 必须 ≥ 1 小时");
 

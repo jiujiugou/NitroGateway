@@ -54,41 +54,81 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
             _lease.Rtu.Station = _unitId;
     }
 
-    public override Task<OperationResult> ConnectAsync(CancellationToken ct = default)
+    public override async Task<OperationResult> ConnectAsync(CancellationToken ct = default)
     {
         // 已连接且串口句柄健康：直接复用
         if (State == DriverState.Connected && _lease is { } alive && alive.Rtu.IsOpen())
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
 
-        State = DriverState.Connecting;
-
+        // ADR-019 P3-3：租约替换与读写共用同一闸门——先用驱动内锁串行化"连接管理"自身，
+        // 再拿当前句柄的共享端口闸门做替换，防止在途读写持有已关闭句柄（帧交错/句柄竞争）
+        await _sync.WaitAsync(ct);
         try
         {
-            // 句柄失效（设备拔出/串口异常）时释放旧租约并重新打开；
-            // 串口管理器负责端口共享，同端口多从站仍共用同一句柄
-            _lease?.Dispose();
-            _lease = _serialPorts.Acquire(_settings);
+            // 二次检查（等待 _sync 期间可能已被其他连接请求完成）
+            if (State == DriverState.Connected && _lease is { } healthy && healthy.Rtu.IsOpen())
+                return OperationResult.Success();
 
-            State = DriverState.Connected;
-            Logger.LogInformation("Modbus RTU 串口就绪: {Port} 从站 {UnitId}",
-                _settings.PortName, _unitId);
-            return Task.FromResult(OperationResult.Success());
+            State = DriverState.Connecting;
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                // 句柄失效（设备拔出/串口异常）时释放旧租约并重新打开；
+                // 串口管理器负责端口共享，同端口多从站仍共用同一句柄
+                var gate = _lease?.Gate;
+                if (gate is not null) await gate.WaitAsync(ct);
+                try
+                {
+                    _lease?.Dispose();
+                    _lease = _serialPorts.Acquire(_settings);
+                    State = DriverState.Connected;
+                    Logger.LogInformation("Modbus RTU 串口就绪: {Port} 从站 {UnitId}",
+                        _settings.PortName, _unitId);
+                    return OperationResult.Success();
+                }
+                finally
+                {
+                    gate?.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                State = DriverState.Faulted;
+                _lease?.Dispose();
+                _lease = null;
+                return OperationalError.Communication($"串口连接失败: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            State = DriverState.Faulted;
-            _lease?.Dispose();
-            _lease = null;
-            return Task.FromResult<OperationResult>(OperationalError.Communication($"串口连接失败: {ex.Message}"));
+            _sync.Release();
         }
     }
 
-    public override Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
+    public override async Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
     {
-        _lease?.Dispose();
-        _lease = null;
-        State = DriverState.Disconnected;
-        return Task.FromResult(OperationResult.Success());
+        await _sync.WaitAsync(ct);
+        try
+        {
+            var gate = _lease?.Gate;
+            if (gate is not null) await gate.WaitAsync(ct);
+            try
+            {
+                _lease?.Dispose();
+                _lease = null;
+                State = DriverState.Disconnected;
+                return OperationResult.Success();
+            }
+            finally
+            {
+                gate?.Release();
+            }
+        }
+        finally
+        {
+            _sync.Release();
+        }
     }
 
     public override void Dispose() => DisconnectAsync().GetAwaiter().GetResult();

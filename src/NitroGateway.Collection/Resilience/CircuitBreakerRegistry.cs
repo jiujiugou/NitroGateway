@@ -2,12 +2,19 @@ using System.Collections.Concurrent;
 
 namespace NitroGateway.Collection;
 
-/// <summary>熔断器注册表实现。线程安全，按设备 ID 管理独立熔断器</summary>
+/// <summary>
+/// 熔断器注册表实现。线程安全，按设备 ID 管理独立熔断器。
+/// 实例惰性创建（<see cref="ConcurrentDictionary{TKey,TValue}.GetOrAdd"/>），
+/// 已注册的熔断器随网关生命周期常驻内存。
+/// </summary>
 public sealed class CircuitBreakerRegistry : ICircuitBreakerRegistry
 {
+    /// <summary>设备 ID（字符串）→ 熔断器 的并发字典。</summary>
     private readonly ConcurrentDictionary<string, ICircuitBreaker> _map = new();
 
+    /// <summary>新熔断器的起步冷却时长。</summary>
     private readonly TimeSpan _baseOpenDuration;
+    /// <summary>新熔断器的冷却翻倍上限。</summary>
     private readonly TimeSpan _maxOpenDuration;
 
     /// <summary>
@@ -24,6 +31,7 @@ public sealed class CircuitBreakerRegistry : ICircuitBreakerRegistry
     }
 
     /// <inheritdoc />
+    /// <remarks>首次请求时按注册表配置创建熔断器，后续请求复用同一实例。</remarks>
     public ICircuitBreaker Get(Guid deviceId)
     {
         return _map.GetOrAdd(

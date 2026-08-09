@@ -14,7 +14,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ADR-022：控制器/授权测试需要引用 Webapi 组合根与其 ASP.NET Core 类型 -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <!-- ADR-019：ReliableProtocolDriver（internal）与 EndpointParser 测试需要引用 Abstraction -->
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
+    <!-- ADR-019：S7Driver 测试（internal 构造器注入客户端）需要引用 S7 -->
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\S7\NitroGateway.Protocol.S7.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Protocol\Modbus\NitroGateway.Protocol.Modbus.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Device\NitroGateway.Device.csproj" />
@@ -23,6 +32,7 @@
     <ProjectReference Include="..\..\src\NitroGateway.Security\NitroGateway.Security.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Webapi\NitroGateway.Webapi.csproj" />
   </ItemGroup>
 
 </Project>

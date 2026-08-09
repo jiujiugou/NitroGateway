@@ -14,11 +14,19 @@ public interface IMeasurementStore
     /// <summary>批量写入快照。内部应做批量优化而非逐条 INSERT</summary>
     Task<OperationResult> WriteAsync(IReadOnlyList<PointSnapshot> snapshots, CancellationToken ct = default);
 
-    /// <summary>按设备、点位、时间范围查询历史快照</summary>
+    /// <summary>
+    /// 按设备、点位、时间范围查询历史快照。
+    /// ADR-021 P2-1/P2-2：无上限全量查询，生产已无调用方（控制器走 <see cref="QueryPagedAsync"/> / <see cref="QueryLatestAsync"/>），
+    /// 遗留接口保留（接口只增不删），勿新增消费方；大结果集请用 <see cref="QueryPagedAsync"/>。
+    /// </summary>
     Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryAsync(
         Guid deviceId, Guid pointId, DateTime from, DateTime to, CancellationToken ct = default);
 
-    /// <summary>按设备查询时间范围内的所有快照（用于批量取最新值）</summary>
+    /// <summary>
+    /// 按设备查询时间范围内的所有快照（用于批量取最新值）。
+    /// ADR-021 P2-1/P2-2：无上限全量查询，生产已无调用方（最新值走 <see cref="QueryLatestAsync"/>），
+    /// 遗留接口保留（接口只增不删），勿新增消费方。
+    /// </summary>
     Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryByDeviceAsync(
         Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default);
 

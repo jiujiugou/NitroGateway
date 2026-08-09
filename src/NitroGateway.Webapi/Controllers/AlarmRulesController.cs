@@ -15,12 +15,10 @@ namespace NitroGateway.Webapi.Controllers;
 public class AlarmRulesController : ControllerBase
 {
     private readonly IAlarmRuleRepository _rules;
-    private readonly IDeviceManager _devices;
 
-    public AlarmRulesController(IAlarmRuleRepository rules, IDeviceManager devices)
+    public AlarmRulesController(IAlarmRuleRepository rules)
     {
         _rules = rules;
-        _devices = devices;
     }
 
     /// <summary>获取所有告警规则</summary>
@@ -37,7 +35,9 @@ public class AlarmRulesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ApiResponse<AlarmRuleDto>>> Create(AlarmRuleDto d)
     {
-        var rule = ToDomain(d);
+        // ADR-022 P2-1：非法 Guid/枚举返回 400，不再抛 FormatException 转 500
+        if (!TryBuildRule(Guid.NewGuid(), d, out var rule, out var error))
+            return BadRequest(ApiResponse<AlarmRuleDto>.Fail("Create", error));
         var r = await _rules.SaveAsync(rule);
         return r.IsSuccess
             ? Ok(ApiResponse<AlarmRuleDto>.Ok(Map(rule)))
@@ -48,19 +48,9 @@ public class AlarmRulesController : ControllerBase
     [HttpPut("{id}")]
     public async Task<ActionResult<ApiResponse<AlarmRuleDto>>> Update(Guid id, AlarmRuleDto d)
     {
-        var rule = new AlarmDomain.AlarmRule
-        {
-            Id = id,
-            DeviceId = Guid.Parse(d.DeviceId),
-            PointId = Guid.Parse(d.PointId),
-            Operator = d.Operator,
-            Threshold = d.Threshold,
-            ThresholdUpper = d.ThresholdUpper,
-            DurationSeconds = d.DurationSeconds,
-            Severity = Enum.Parse<AlarmDomain.AlarmSeverity>(d.Severity),
-            MessageTemplate = d.MessageTemplate,
-            Enabled = d.Enabled
-        };
+        // ADR-022 P2-1：非法 Guid/枚举返回 400
+        if (!TryBuildRule(id, d, out var rule, out var error))
+            return BadRequest(ApiResponse<AlarmRuleDto>.Fail("Update", error));
         var r = await _rules.SaveAsync(rule);
         return r.IsSuccess
             ? Ok(ApiResponse<AlarmRuleDto>.Ok(Map(rule)))
@@ -91,19 +81,44 @@ public class AlarmRulesController : ControllerBase
         Enabled = r.Enabled
     };
 
-    private static AlarmDomain.AlarmRule ToDomain(AlarmRuleDto d) => new()
+    /// <summary>DTO → 领域模型；Guid/枚举解析失败返回 false + 错误文案（ADR-022 P2-1）</summary>
+    private static bool TryBuildRule(Guid id, AlarmRuleDto d, out AlarmDomain.AlarmRule rule, out string error)
     {
-        Id = Guid.NewGuid(),
-        DeviceId = Guid.Parse(d.DeviceId),
-        PointId = Guid.Parse(d.PointId),
-        Operator = d.Operator,
-        Threshold = d.Threshold,
-        ThresholdUpper = d.ThresholdUpper,
-        DurationSeconds = d.DurationSeconds,
-        Severity = Enum.Parse<AlarmDomain.AlarmSeverity>(d.Severity),
-        MessageTemplate = d.MessageTemplate,
-        Enabled = d.Enabled
-    };
+        if (!Guid.TryParse(d.DeviceId, out var deviceId))
+        {
+            rule = null!;
+            error = $"无效的 DeviceId: {d.DeviceId}";
+            return false;
+        }
+        if (!Guid.TryParse(d.PointId, out var pointId))
+        {
+            rule = null!;
+            error = $"无效的 PointId: {d.PointId}";
+            return false;
+        }
+        if (!Enum.TryParse<AlarmDomain.AlarmSeverity>(d.Severity, out var severity))
+        {
+            rule = null!;
+            error = $"无效的 Severity: {d.Severity}";
+            return false;
+        }
+
+        rule = new AlarmDomain.AlarmRule
+        {
+            Id = id,
+            DeviceId = deviceId,
+            PointId = pointId,
+            Operator = d.Operator,
+            Threshold = d.Threshold,
+            ThresholdUpper = d.ThresholdUpper,
+            DurationSeconds = d.DurationSeconds,
+            Severity = severity,
+            MessageTemplate = d.MessageTemplate,
+            Enabled = d.Enabled
+        };
+        error = "";
+        return true;
+    }
 }
 
 /// <summary>告警规则 DTO</summary>

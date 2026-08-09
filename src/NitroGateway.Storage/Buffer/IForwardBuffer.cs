@@ -39,6 +39,14 @@ public interface IForwardBuffer
     /// <summary>丢弃死信（物理删除）</summary>
     Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default);
 
+    /// <summary>
+    /// 清理指定入队时间之前的死信（物理删除）。ADR-018 P2-3：防止坏消息持续累积死信表，
+    /// 与 measurements 保留清理对称；实现应分批删除避免长时间持锁。
+    /// </summary>
+    /// <param name="before">清理边界（含边界之前的所有死信）</param>
+    /// <param name="ct">取消令牌</param>
+    Task<OperationResult> PurgeDeadLettersAsync(DateTime before, CancellationToken ct = default);
+
     /// <summary>当前队列中待转发的批次数（不含死信）</summary>
     int Count { get; }
 

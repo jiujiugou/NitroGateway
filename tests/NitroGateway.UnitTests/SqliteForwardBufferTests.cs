@@ -127,7 +127,11 @@ public class SqliteForwardBufferTests
     private static string Serialize(BatchMeasurements batch) =>
         JsonSerializer.Serialize(batch, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-    /// <summary>P0-1①：构造时把遗留 InFlight 重置为 Pending，进程崩溃后批次可继续出队</summary>
+    /// <summary>
+    /// P0-1①：遗留 InFlight 在首次使用时重置为 Pending，进程崩溃后批次可继续出队。
+    /// ADR-018 P3-5：启动恢复从构造器移出（构造器不再同步打开连接阻塞首解析），
+    /// 因此构造后 Count 仍为 0，首次 Dequeue 触发恢复后再出队。
+    /// </summary>
     [Fact]
     public async Task Constructor_ResetsStaleInFlight_ToPending()
     {
@@ -136,7 +140,7 @@ public class SqliteForwardBufferTests
         InsertRow(db.ConnectionString, batchId, "{}", "InFlight");
         var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
 
-        Assert.Equal(1, buffer.Count);
+        Assert.Equal(0, buffer.Count);
 
         var result = await buffer.DequeueAsync(10);
         Assert.True(result.IsSuccess);
@@ -265,6 +269,25 @@ public class SqliteForwardBufferTests
         Assert.Contains("broker", lastError);
     }
 
+    /// <summary>ADR-009 P2-1：MarkFailed 超限进死信时上报 ForwardTotal{status=deadletter}</summary>
+    [Fact]
+    public async Task MarkFailed_OverMaxRetries_ReportsDeadletterMetric()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxRetries: 2);
+        var batch = NewBatch(Guid.NewGuid());
+
+        await buffer.EnqueueAsync(batch);
+        await buffer.MarkFailedAsync(batch.Id, "broker 不可达");
+        await buffer.MarkFailedAsync(batch.Id, "broker 不可达");
+
+        using var stream = new MemoryStream();
+        await Prometheus.Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
+        var exported = System.Text.Encoding.UTF8.GetString(stream.ToArray());
+        // 存在性断言而非精确值：其他走死信路径的测试（如损坏负载恢复）也会累加该计数器
+        Assert.Contains("nitro_forward_total{status=\"deadletter\"}", exported);
+    }
+
     /// <summary>ADR-001 P3-13：GetCountAsync 异步返回 Pending 批次数，不含死信</summary>
     [Fact]
     public async Task GetCountAsync_ReturnsPendingCount_ExcludesDeadLetters()
@@ -277,6 +300,23 @@ public class SqliteForwardBufferTests
         var count = await buffer.GetCountAsync();
 
         Assert.Equal(1, count);
+    }
+
+    /// <summary>
+    /// ADR-017 P1-1：DB 瞬时故障时 GetCountAsync 不抛出，按 0 处理——
+    /// 否则 BackgroundService 未捕获异常会触发 StopHost 整机退出。
+    /// </summary>
+    [Fact]
+    public async Task GetCountAsync_OnDbError_ReturnsZeroInsteadOfThrowing()
+    {
+        // 目录不存在的连接串：OpenAsync 必然抛 SqliteException
+        var buffer = new SqliteForwardBuffer(
+            "Data Source=C:\\no-such-dir-ntg\\no.db;Pooling=False",
+            NullLogger<SqliteForwardBuffer>.Instance);
+
+        var count = await buffer.GetCountAsync();
+
+        Assert.Equal(0, count);
     }
 
     /// <summary>P1-6：死信查询返回条目（批次上下文 + 重试次数）</summary>
@@ -403,5 +443,83 @@ public class SqliteForwardBufferTests
         Assert.True(result.IsFailure);
         Assert.Equal(ErrorCategory.Storage, result.Error!.Category);
         Assert.Contains("死信丢弃失败", result.Error.Message);
+    }
+
+    /// <summary>ADR-018 P2-3：达到入队上限后拒绝入队并返回 Storage 失败，不静默丢数据</summary>
+    [Fact]
+    public async Task Enqueue_WhenQueueFull_ReturnsFailure()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardBuffer(
+            db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxPending: 2);
+
+        Assert.True((await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()))).IsSuccess);
+        Assert.True((await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()))).IsSuccess);
+
+        var third = await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()));
+
+        Assert.True(third.IsFailure);
+        Assert.Equal(ErrorCategory.Storage, third.Error!.Category);
+        Assert.Contains("已满", third.Error.Message);
+    }
+
+    /// <summary>ADR-018 P2-3：按入队时间清理过期死信，保留期内死信不动</summary>
+    [Fact]
+    public async Task PurgeDeadLetters_RemovesOldKeepsRecent()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        InsertRow(db.ConnectionString, Guid.NewGuid().ToString(), "{}", "DeadLetter");
+
+        // 手动插入一条较新的死信（InsertRow 固定 2026-08-06，这里用更新时间戳）
+        var recentId = Guid.NewGuid().ToString();
+        using (var connection = Open(db.ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                INSERT INTO forward_buffer (id, payload, status, enqueued_at, retry_count, last_error)
+                VALUES (@id, '{}', 'DeadLetter', @ts, 0, NULL);
+                """;
+            command.Parameters.AddWithValue("@id", recentId);
+            command.Parameters.AddWithValue("@ts", "2026-08-09T00:00:00Z");
+            command.ExecuteNonQuery();
+        }
+
+        var purge = await buffer.PurgeDeadLettersAsync(new DateTime(2026, 8, 7, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.True(purge.IsSuccess, purge.Error?.Message);
+        // 旧死信已删，新死信仍在
+        using (var connection = Open(db.ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT COUNT(*) FROM forward_buffer WHERE status = 'DeadLetter'";
+            Assert.Equal(1L, command.ExecuteScalar());
+        }
+    }
+
+    /// <summary>ADR-018 P3-1：Commit 只删 InFlight 行，Pending 行（未实际发送）不被 stale commit 误删</summary>
+    [Fact]
+    public async Task Commit_DoesNotDeletePendingRow()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        // 先触发启动恢复完成（否则预插的 InFlight 会被当作崩溃遗留重置为 Pending）
+        await buffer.DequeueAsync(10);
+
+        var pendingId = Guid.NewGuid();
+        var inFlightId = Guid.NewGuid();
+        InsertRow(db.ConnectionString, pendingId.ToString(), "{}", "Pending");
+        InsertRow(db.ConnectionString, inFlightId.ToString(), "{}", "InFlight");
+
+        var commit = await buffer.CommitAsync([pendingId, inFlightId]);
+
+        Assert.True(commit.IsSuccess, commit.Error?.Message);
+        Assert.Equal("Pending", ReadRow(db.ConnectionString, pendingId.ToString()).Status);
+        // InFlight 行被正常删除
+        using var connection = Open(db.ConnectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM forward_buffer WHERE id = @id;";
+        command.Parameters.AddWithValue("@id", inFlightId.ToString());
+        Assert.Equal(0L, command.ExecuteScalar());
     }
 }

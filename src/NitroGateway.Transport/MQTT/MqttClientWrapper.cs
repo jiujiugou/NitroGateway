@@ -18,6 +18,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     private readonly ILogger<MqttClientWrapper> _logger;
     private readonly MqttNet.IMqttClient _inner;
     private readonly Channel<MqttMessage> _channel;
+    private readonly IEnumerable<IMqttStateListener> _stateListeners;
 
     // ADR-006 P1-2：记录已订阅主题（topic→qos）。CleanStart 会话断开即清订阅，
     // 重连成功后必须重放，否则下行通道静默失效。
@@ -46,20 +47,21 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// </summary>
     /// <param name="options">连接参数</param>
     /// <param name="logger">日志记录器</param>
-    public MqttClientWrapper(MqttConnectionOptions options, ILogger<MqttClientWrapper> logger)
-        : this(options, logger, new MqttNet.MqttClientFactory().CreateMqttClient())
+    public MqttClientWrapper(MqttConnectionOptions options, ILogger<MqttClientWrapper> logger, IEnumerable<IMqttStateListener> stateListeners)
+        : this(options, logger, new MqttNet.MqttClientFactory().CreateMqttClient(), stateListeners)
     {
     }
 
     /// <summary>
-    /// 测试用构造函数：允许注入 MQTTnet 客户端替身（NitroGateway.IntegrationTests 专用，
-    /// 用于模拟断线/重连/订阅重放，无需真实 broker）。
+    /// 测试/组合用构造函数：允许注入 MQTTnet 客户端替身与状态监听者
+    /// （NitroGateway.IntegrationTests 专用，用于模拟断线/重连/订阅重放/状态推送，无需真实 broker）。
     /// </summary>
-    internal MqttClientWrapper(MqttConnectionOptions options, ILogger<MqttClientWrapper> logger, MqttNet.IMqttClient inner)
+    internal MqttClientWrapper(MqttConnectionOptions options, ILogger<MqttClientWrapper> logger, MqttNet.IMqttClient inner, IEnumerable<IMqttStateListener> stateListeners)
     {
         _options = options;
         _logger = logger;
         _inner = inner;
+        _stateListeners = stateListeners;
         _channel = Channel.CreateBounded<MqttMessage>(new BoundedChannelOptions(10_000)
         {
             FullMode = BoundedChannelFullMode.Wait
@@ -108,6 +110,13 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
             // ADR-006 P1-3：连接被拒绝也纳入重连流程（不依赖 DisconnectedAsync 事件时序）
             return HandleConnectFailure($"MQTT 连接失败: {result.ResultCode} - {result.ReasonString}");
+        }
+        catch (OperationCanceledException)
+        {
+            // ADR-020 P1-2：取消不是连接失败——不触发重连（重连循环用独立 CTS，取消后继续重连会破坏停机语义），
+            // 回落到 Disconnected 后上抛，交调用方停机/取消路径处理。
+            SetState(MqttConnectionState.Disconnected);
+            throw;
         }
         catch (Exception ex)
         {
@@ -266,6 +275,31 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         _logger.LogDebug("MQTT 状态变更: {Old} → {New}", old, state);
 
         StateChanged?.Invoke(state);
+        NotifyStateListeners(state);
+    }
+
+    /// <summary>
+    /// ADR-020 P1-1：通知注册的 <see cref="IMqttStateListener"/>（SignalR 推送等）。
+    /// fire-and-forget + 异常隔离——监听者故障只记日志，不影响连接状态机与事件链。
+    /// </summary>
+    private void NotifyStateListeners(MqttConnectionState state)
+    {
+        foreach (var listener in _stateListeners)
+        {
+            _ = NotifyListenerAsync(listener, state);
+        }
+    }
+
+    private async Task NotifyListenerAsync(IMqttStateListener listener, MqttConnectionState state)
+    {
+        try
+        {
+            await listener.OnStateChangedAsync(state);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "MQTT 状态监听者通知失败: {Listener}", listener.GetType().Name);
+        }
     }
 
     /// <summary>
@@ -351,8 +385,16 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
                 try { await Task.Delay(delayMs, token); }
                 catch (OperationCanceledException) { return; }
 
-                var result = await ConnectAsync(token);
-                if (result.IsSuccess) return;
+                try
+                {
+                    var result = await ConnectAsync(token);
+                    if (result.IsSuccess) return;
+                }
+                catch (OperationCanceledException)
+                {
+                    // ADR-020 P1-2：取消（DisconnectAsync/DisposeAsync 触发 CancelReconnect）正常退出重连
+                    return;
+                }
             }
 
             _logger.LogError("MQTT 重连失败，已达最大重试次数 {Max}", _options.MaxReconnectAttempts);

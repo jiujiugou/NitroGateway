@@ -13,6 +13,9 @@ public static class TelemetryServiceCollectionExtensions
     public static IServiceCollection AddNitroTelemetry(this IServiceCollection services)
     {
         // prometheus-net 的 CollectorRegistry 自动管理，无需额外注册
+        // ADR-009 P2-4 决策：OpenTelemetry 包保留为"预留入口"（未来接 SDK/导出器用），
+        // 当前不接执行层——生产无 ActivityListener/导出器，StartActivity 返回 null，追踪为 dormant 状态；
+        // 指标（NitroMetrics）与 /metrics 是当前实际生效的观测契约。
         return services;
     }
 }

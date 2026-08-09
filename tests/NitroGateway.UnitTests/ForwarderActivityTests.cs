@@ -59,6 +59,9 @@ public class ForwarderActivityTests
         public Task<OperationResult> RetryDeadLetterAsync(Guid batchId, CancellationToken ct = default)
             => Task.FromResult(OperationResult.Success());
 
+        public Task<OperationResult> PurgeDeadLettersAsync(DateTime before, CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
+
         public Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default)
             => Task.FromResult(OperationResult.Success());
     }

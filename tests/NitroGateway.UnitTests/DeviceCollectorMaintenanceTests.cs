@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NitroGateway.Collection;
 using NitroGateway.DeviceManagement;
@@ -23,7 +24,13 @@ public class DeviceCollectorMaintenanceTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNitroCollection(intervalMs: 1000, maxConcurrency: 1);
+        services.AddNitroCollection(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Collection:IntervalMs"] = "1000",
+                ["Collection:MaxConcurrency"] = "1"
+            })
+            .Build());
         services.AddSingleton<IDeviceManager>(_manager);
         services.AddSingleton<IDeviceReader>(_reader);
         services.AddSingleton<IPointValuePipeline>(new FakePipeline());
@@ -85,6 +92,27 @@ public class DeviceCollectorMaintenanceTests
 
         var read = Assert.Single(_reader.ReadDevices);
         Assert.Equal(onlineDevice.Id, read.Id);
+    }
+
+    /// <summary>ADR-009 P1-1/P1-2：每轮采集刷新 devices_online 并上报整轮耗时（哑火指标接线回归）</summary>
+    [Fact]
+    public async Task CollectOnceAsync_ReportsOnlineAndDurationMetrics()
+    {
+        var device = MakeDevice("PLC");
+        _manager.Devices.Add(device);
+        _monitor.Statuses[device.Id] = DeviceStatus.Online;
+
+        await using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+        var collector = scope.ServiceProvider.GetRequiredService<IDeviceCollector>();
+
+        await collector.CollectOnceAsync(CancellationToken.None);
+
+        using var stream = new MemoryStream();
+        await Prometheus.Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
+        var exported = System.Text.Encoding.UTF8.GetString(stream.ToArray());
+        Assert.Contains("nitro_devices_online", exported);
+        Assert.Contains("nitro_collection_duration_ms_count", exported);
     }
 
     // ── Helpers ──

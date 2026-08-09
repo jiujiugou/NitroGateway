@@ -12,6 +12,10 @@ namespace NitroGateway.Persistence.Migrations;
 [Migration(3)]
 public sealed class M003_CreateDeviceTables : Migration
 {
+    /// <summary>
+    /// 正向：建 devices/points 表 + 点位设备外键索引；
+    /// 防御性跳过已存在的表（幂等迁移机制下通常不会触发）。
+    /// </summary>
     public override void Up()
     {
         if (Schema.Table("devices").Exists()) return;
@@ -45,6 +49,7 @@ public sealed class M003_CreateDeviceTables : Migration
         Create.Index("IX_points_DeviceId").OnTable("points").OnColumn("DeviceId");
     }
 
+    /// <summary>回滚：先删 points 再删 devices（外键顺序）</summary>
     public override void Down()
     {
         Delete.Table("points");
