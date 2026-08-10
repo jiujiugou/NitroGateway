@@ -12,6 +12,12 @@
     <Project Path="src/NitroGateway.Telemetry/NitroGateway.Telemetry.csproj" />
     <Project Path="src/NitroGateway.Webapi/NitroGateway.Webapi.csproj" />
   </Folder>
+  <Folder Name="/src/NitroGateway.Ingest/">
+    <Project Path="src/NitroGateway.Ingest/NitroGateway.Ingest.csproj" />
+  </Folder>
+  <Folder Name="/src/NitroGateway.Desktop/">
+    <Project Path="src/NitroGateway.Desktop/NitroGateway.Desktop.csproj" />
+  </Folder>
   <Folder Name="/src/NitroGateway.Protocol/">
     <Project Path="src/NitroGateway.Protocol/NitroGateway.Protocols/NitroGateway.Protocols.csproj" Id="d2b4bb3c-4fa3-419b-97cb-19019ecdcf5e" />
   </Folder>
@@ -46,3 +52,4 @@
     <Project Path="tests/NitroGateway.UnitTests/NitroGateway.UnitTests.csproj" />
   </Folder>
 </Solution>
+

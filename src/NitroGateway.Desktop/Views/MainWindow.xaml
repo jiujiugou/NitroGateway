@@ -1,0 +1,52 @@
+﻿<Window x:Class="NitroGateway.Desktop.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:NitroGateway.Desktop.ViewModels"
+        xmlns:views="clr-namespace:NitroGateway.Desktop.Views"
+        Title="NitroGateway 现场采集端" Height="720" Width="1180"
+        WindowStartupLocation="CenterScreen" FontSize="13">
+    <Window.Resources>
+        <DataTemplate DataType="{x:Type vm:DevicesViewModel}"><views:DevicesView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:RealtimeViewModel}"><views:RealtimeView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AlarmsViewModel}"><views:AlarmsView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:HistoryViewModel}"><views:HistoryView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SettingsViewModel}"><views:SettingsView /></DataTemplate>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="170" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#F0F2F5" BorderBrush="#D9DEE4" BorderThickness="0,0,1,0">
+                <ListBox ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNav}"
+                         Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Title}" Padding="16,10" FontSize="14" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+            <ContentControl Grid.Column="1" Content="{Binding CurrentViewModel}" />
+        </Grid>
+
+        <!-- 状态栏（ADR-026 D9：MQTT 状态 + 缓冲水位现场可视） -->
+        <Border Grid.Row="1" Background="#2B3A4A" Padding="10,5">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="MQTT：" Foreground="#9FB3C8" />
+                <TextBlock Text="{Binding MqttStateText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
+                <TextBlock Text="缓冲积压：" Foreground="#9FB3C8" />
+                <TextBlock Text="{Binding BufferBacklogText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
+                <TextBlock Text="设备：" Foreground="#9FB3C8" />
+                <TextBlock Text="{Binding DeviceCountText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
+                <TextBlock Text="{Binding StatusText}" Foreground="#9FB3C8" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

@@ -1,0 +1,28 @@
+﻿<UserControl x:Class="NitroGateway.Desktop.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="16" MaxWidth="680" HorizontalAlignment="Left">
+            <GroupBox Header="MQTT 上报（中心 broker，ADR-025 契约）" Padding="12" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Margin="0,3"><Run Text="Broker：" /><Run Text="{Binding MqttBroker}" /></TextBlock>
+                    <TextBlock Margin="0,3"><Run Text="ClientId：" /><Run Text="{Binding MqttClientId}" /></TextBlock>
+                    <TextBlock Margin="0,3"><Run Text="连接状态：" /><Run Text="{Binding MqttStateText}" FontWeight="SemiBold" /></TextBlock>
+                    <TextBlock Margin="0,3"><Run Text="转发缓冲积压：" /><Run Text="{Binding BufferBacklogText}" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="本地存储与采集" Padding="12" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Margin="0,3" TextWrapping="Wrap"><Run Text="SQLite 路径：" /><Run Text="{Binding DatabasePath}" /></TextBlock>
+                    <TextBlock Margin="0,3" TextWrapping="Wrap"><Run Text="日志目录：" /><Run Text="{Binding LogDirectory}" /></TextBlock>
+                    <TextBlock Margin="0,3"><Run Text="采集间隔：" /><Run Text="{Binding CollectionInterval}" /> 毫秒</TextBlock>
+                    <TextBlock Margin="0,3"><Run Text="转发间隔：" /><Run Text="{Binding ForwarderInterval}" /> 毫秒</TextBlock>
+                </StackPanel>
+            </GroupBox>
+
+            <TextBlock Text="说明：桌面端仅本机 UI、本机会话免登录（ADR-026 D5）；远程查看走中心 Webapi/Vue（ADR-025）。"
+                       Foreground="#888" TextWrapping="Wrap" Margin="0,4,0,0" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

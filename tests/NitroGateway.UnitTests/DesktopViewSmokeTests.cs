@@ -1,0 +1,45 @@
+﻿using System.Windows;
+using System.Windows.Threading;
+using NitroGateway.Desktop.Views;
+using Xunit;
+
+namespace NitroGateway.UnitTests;
+
+/// <summary>
+/// ADR-026：WPF 视图冒烟——在 STA 线程实例化含 LiveCharts2 图表的视图，
+/// 验证 SkiaSharp/LiveCharts 依赖在运行时可用（构建期仅有 NU1701 兼容性警告）。
+/// 注意：不创建 Application（ADR-027 测试稳定性）——Application.Current 是 AppDomain
+/// 级单例，遗留实例会让其他测试的 UiDispatcher.Post 改走 Dispatcher 通道导致竞态测试挂起。
+/// </summary>
+public sealed class DesktopViewSmokeTests
+{
+    [Fact]
+    public void RealtimeView_initializes_with_chart()
+    {
+        Exception? error = null;
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var view = new RealtimeView();
+                Assert.NotNull(view);
+
+                // 强制布局，触发图表控件的实际创建
+                view.Measure(new Size(800, 600));
+                view.Arrange(new Rect(0, 0, 800, 600));
+                view.UpdateLayout();
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join(TimeSpan.FromSeconds(30));
+
+        Assert.Null(error);
+        Assert.False(thread.IsAlive);
+    }
+}

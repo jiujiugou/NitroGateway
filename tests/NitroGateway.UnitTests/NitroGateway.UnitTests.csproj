@@ -1,10 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsTestProject>true</IsTestProject>
+    <!-- ADR-026：引用 WPF 桌面端（EventBridge/路径配置单测） -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +18,12 @@
   <ItemGroup>
     <!-- ADR-022：控制器/授权测试需要引用 Webapi 组合根与其 ASP.NET Core 类型 -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- net10.0-windows + UseWPF 的隐式 using 不含 System.IO/System.Net.Http，补回（ADR-026 TFM 调整） -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
   </ItemGroup>
 
   <ItemGroup>
@@ -33,6 +41,9 @@
     <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Webapi\NitroGateway.Webapi.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Desktop\NitroGateway.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Ingest\NitroGateway.Ingest.csproj" />
+
   </ItemGroup>
 
 </Project>

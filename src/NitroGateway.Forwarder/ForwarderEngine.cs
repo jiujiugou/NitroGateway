@@ -80,6 +80,10 @@ public sealed class ForwarderEngine : BackgroundService
     /// 此处捕获并正常结束循环</param>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // 启动信号：与末尾 "ForwarderEngine Stopped." 配对，便于运维确认引擎生命周期；
+        // 同时是测试确定引擎真正开始执行（而非 Task.Run 排队中）的握手点（ADR-028 P1-1）。
+        _logger.LogInformation("ForwarderEngine Started.");
+
         using var timer = new PeriodicTimer(_interval);
 
         try

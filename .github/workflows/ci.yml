@@ -1,3 +1,6 @@
+# NitroGateway CI（ADR-028 P1-1 修复：Linux/Windows 双 job 拆分）
+# - build-server:   ubuntu 构建服务器端（Webapi + Ingest 依赖图，不含 WPF Desktop）+ 集成测试
+# - build-windows:  windows 全量构建 slnx（含 WPF Desktop）+ 单测（net10.0-windows）+ 集成测试
 name: CI
 
 on:
@@ -6,8 +9,32 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  build-server:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: |
+          dotnet restore src/NitroGateway.Webapi/NitroGateway.Webapi.csproj
+          dotnet restore src/NitroGateway.Ingest/NitroGateway.Ingest.csproj
+
+      - name: Build
+        run: |
+          dotnet build src/NitroGateway.Webapi/NitroGateway.Webapi.csproj --no-restore --configuration Release
+          dotnet build src/NitroGateway.Ingest/NitroGateway.Ingest.csproj --no-restore --configuration Release
+          dotnet build tests/NitroGateway.IntegrationTests/NitroGateway.IntegrationTests.csproj --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test tests/NitroGateway.IntegrationTests/NitroGateway.IntegrationTests.csproj --no-build --configuration Release
+
+  build-windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -23,4 +50,7 @@ jobs:
         run: dotnet build NitroGateway.slnx --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test NitroGateway.slnx --no-build --configuration Release
+        # 顺序跑两个测试项目，避免跨进程并行（UnitTests 为 WPF TFM，与 IntegrationTests 并行曾复现 ForwarderEngineTests 停机排空 flaky，ADR-028 P1-1）
+        run: |
+          dotnet test tests/NitroGateway.UnitTests/NitroGateway.UnitTests.csproj --no-build --configuration Release
+          dotnet test tests/NitroGateway.IntegrationTests/NitroGateway.IntegrationTests.csproj --no-build --configuration Release

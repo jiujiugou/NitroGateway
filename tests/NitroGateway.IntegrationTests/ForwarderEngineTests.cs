@@ -170,9 +170,11 @@ public class ForwarderEngineTests
         await engine.StartAsync(CancellationToken.None);
         try
         {
-            // StartAsync 直接调用 ExecuteAsync（同步跑完首轮后挂起在周期等待），等待任务已创建且未结束即可；
-            // 该等待兼作防御：若运行时实现改为 Task.Run 调度，也能覆盖调度窗口
-            await WaitForAsync(() => engine.ExecuteTask is { } t && !t.IsCompleted, TimeSpan.FromSeconds(5));
+            // .NET 10 BackgroundService.StartAsync 用 Task.Run 调度 ExecuteAsync（不再同步执行）。
+            // 若在委托真正启动前 StopAsync 取消令牌，Task.Run 直接返回 Canceled 任务且引擎体从未运行，
+            // 停机排空不会发生（本地并行 slnx 下 ~50% 复现，ExecuteTask=[Canceled]、日志为空）。
+            // 因此以引擎的 "ForwarderEngine Started." 日志作为真正开始执行的确定性信号（ADR-028 P1-1）。
+            await WaitForAsync(() => logger.Entries.Any(e => e.Message.Contains("ForwarderEngine Started.")), TimeSpan.FromSeconds(5));
 
             // 停机瞬间现场：缓冲有 3 批待发，MQTT 仍连接
             buffer.Pending.AddRange(CreateBacklogBuffer(3).Pending);
@@ -184,6 +186,11 @@ public class ForwarderEngineTests
         {
             await engine.StopAsync(CancellationToken.None);
         }
+
+        // ADR-028 P1-1 验证加固：StopAsync 语义上已等待 ExecuteTask（含停机排空）完成，
+        // 但跨测试进程并行/高负载下，取消 → drain 的衔接可能被调度延后（本地复现偶发 flaky），
+        // 这里条件等待 drain 结果就绪再断言，避免对调度窗口的脆弱假设。
+        await WaitForAsync(() => buffer.Pending.Count == 0 && mqtt.Published.Count > 0, TimeSpan.FromSeconds(5));
 
         Assert.Empty(buffer.Pending);
         Assert.NotEmpty(mqtt.Published);

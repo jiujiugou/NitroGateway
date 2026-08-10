@@ -35,6 +35,30 @@ services:
       - mqtt
     restart: unless-stopped
 
+  # ── 中心 Ingest（ADR-025 D1：独立容器，订阅现场上行入库）──
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_PROJECT: src/NitroGateway.Ingest/NitroGateway.Ingest.csproj
+    entrypoint: ["dotnet", "NitroGateway.Ingest.dll"]
+    ports:
+      - "5200:5200"
+    volumes:
+      - center-data:/app/data
+      - center-logs:/app/logs
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+      - Persistence__ConnectionString=Data Source=/app/data/center.db
+      - MQTT__Host=mqtt
+      - MQTT__Port=1883
+      - ASPNETCORE_URLS=http://0.0.0.0:5200
+    depends_on:
+      - mqtt
+    restart: unless-stopped
+
+
   # ── 前端 ──
   web:
     build:
@@ -49,3 +73,5 @@ services:
 volumes:
   gateway-data:
   gateway-logs:
+  center-data:
+  center-logs:

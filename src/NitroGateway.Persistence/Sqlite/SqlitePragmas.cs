@@ -8,8 +8,9 @@ namespace NitroGateway.Persistence.Sqlite;
 /// 默认 rollback journal 模式读写互斥，与 1s 采集写 + 前端查询 + Alarm 并发不匹配；
 /// WAL 允许读写并行，synchronous=NORMAL 兼顾持久性与写入性能，
 /// busy_timeout 避免并发写锁冲突时立即报 "database is locked"。
+/// 供同程序集内各存储与外部宿主（Ingest 中心库）共用，保证库级设置一致。
 /// </summary>
-internal static class SqlitePragmas
+public static class SqlitePragmas
 {
     /// <summary>
     /// 已确认 WAL 模式的数据库文件路径集合（<see cref="SqliteConnection.DataSource"/>）。

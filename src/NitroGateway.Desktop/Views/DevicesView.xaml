@@ -1,0 +1,25 @@
+﻿<UserControl x:Class="NitroGateway.Desktop.Views.DevicesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <Button Content="刷新" Command="{Binding RefreshCommand}" Padding="12,4" />
+        </StackPanel>
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True"
+                  AlternatingRowBackground="#F5F7FA" GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="设备名称" Binding="{Binding Name}" Width="*" />
+                <DataGridTextColumn Header="协议" Binding="{Binding Protocol}" Width="130" />
+                <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="80" />
+                <DataGridTextColumn Header="上次采集" Binding="{Binding LastCollectionText}" Width="100" />
+                <DataGridTextColumn Header="点位" Binding="{Binding PointsCount}" Width="60" />
+                <DataGridTextColumn Header="错误" Binding="{Binding LastError}" Width="*" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

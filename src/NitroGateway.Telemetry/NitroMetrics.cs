@@ -94,4 +94,35 @@ public static class NitroMetrics
     public static readonly Counter StoreWriteFailures = Metrics.CreateCounter(
         "nitro_store_write_failures_total",
         "时序库落库失败总次数");
+
+    // ═══════════════════════════════════════════════════════════════
+    //  中心 Ingest（ADR-025 P0）
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>中心接收消息数。label: kind (measurements|alarms)</summary>
+    public static readonly Counter IngestReceivedTotal = Metrics.CreateCounter(
+        "nitro_ingest_received_total",
+        "中心接收消息总数",
+        new CounterConfiguration
+        {
+            LabelNames = ["kind"]
+        });
+
+    /// <summary>中心去重记录数（主键冲突被忽略的遥测记录）。label: kind (measurements|alarms)</summary>
+    public static readonly Counter IngestDedupTotal = Metrics.CreateCounter(
+        "nitro_ingest_dedup_total",
+        "中心去重记录总数（主键冲突）",
+        new CounterConfiguration
+        {
+            LabelNames = ["kind"]
+        });
+
+    /// <summary>中心处理失败数（反序列化失败 / 写失败重试后仍失败）。label: kind (measurements|alarms)</summary>
+    public static readonly Counter IngestFailuresTotal = Metrics.CreateCounter(
+        "nitro_ingest_failures_total",
+        "中心处理失败总数",
+        new CounterConfiguration
+        {
+            LabelNames = ["kind"]
+        });
 }
