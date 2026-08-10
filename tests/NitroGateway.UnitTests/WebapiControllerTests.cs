@@ -116,6 +116,70 @@ public class WebapiControllerTests
         Assert.NotEqual(clientPointId, points.LastAdded!.Id);
     }
 
+    // ────── DevicesController：连接测试语义（ADR-023）──────
+
+    [Fact]
+    public async Task Devices_TestConnection_ConnectAndPingOk_ReturnsSuccess()
+    {
+        var driver = new FakeProtocolDriver(OperationResult.Success(), OperationResult.Success());
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
+        var dto = TestConnectionDto();
+
+        var result = await ctrl.TestConnection(dto);
+        var data = ReadTestData(result);
+
+        Assert.True(data.success);
+        Assert.Equal("ok", data.ping);
+    }
+
+    [Fact]
+    public async Task Devices_TestConnection_ConnectOk_PingFail_ReturnsFailure()
+    {
+        var driver = new FakeProtocolDriver(OperationResult.Success(), OperationalError.Timeout("Ping 失败: 从站无响应"));
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
+        var dto = TestConnectionDto();
+
+        var result = await ctrl.TestConnection(dto);
+        var data = ReadTestData(result);
+
+        Assert.False(data.success);
+        Assert.Contains("从站无响应", data.error);
+    }
+
+    [Fact]
+    public async Task Devices_TestConnection_ConnectFail_ReturnsFailure()
+    {
+        var driver = new FakeProtocolDriver(OperationalError.Communication("Modbus 连接失败: 拒绝连接"), OperationResult.Success());
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
+        var dto = TestConnectionDto();
+
+        var result = await ctrl.TestConnection(dto);
+        var data = ReadTestData(result);
+
+        Assert.False(data.success);
+        Assert.Contains("拒绝连接", data.error);
+    }
+
+    private static TestConnectionData ReadTestData(ActionResult<ApiResponse<object>> result)
+    {
+        var data = ((ApiResponse<object>)((OkObjectResult)result.Result!).Value!).Data!;
+        var json = System.Text.Json.JsonSerializer.Serialize(data);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        return new TestConnectionData(
+            root.GetProperty("success").GetBoolean(),
+            root.TryGetProperty("error", out var err) ? err.GetString() : null,
+            root.TryGetProperty("ping", out var ping) ? ping.GetString() : null);
+    }
+
+    private sealed record TestConnectionData(bool success, string? error, string? ping);
+
+    private static DeviceDto TestConnectionDto() => new()
+    {
+        Name = "test",
+        Protocol = new ProtocolDto { Name = "Modbus", Dialect = "TCP" },
+        Connection = new ConnectionDto { Endpoint = "127.0.0.1:502", Parameters = new Dictionary<string, object> { ["UnitId"] = 11 } }
+    };
     // ── AlarmRulesController：P2-1 非法 Guid/枚举 400 ──
 
     [Fact]
@@ -250,8 +314,12 @@ public sealed class FakeHealthMonitor : IDeviceHealthMonitor
 
 public sealed class FakeDriverFactory : IProtocolDriverFactory
 {
+    public FakeDriverFactory(IProtocolDriver? driver = null) => Driver = driver;
+
+    public IProtocolDriver? Driver { get; }
+
     public IProtocolDriver Create(ProtocolIdentifier protocol, DeviceConnection connection)
-        => throw new NotImplementedException("连接测试用例不需要真实驱动");
+        => Driver ?? throw new NotImplementedException("连接测试用例需要注入 FakeProtocolDriver");
 }
 
 public sealed class FakeSerialPorts : ISerialPortManager
@@ -319,4 +387,43 @@ public sealed class FakeAlarmRuleRepository : IAlarmRuleRepository
 
     public Task<OperationResult> DeleteAsync(Guid ruleId, CancellationToken ct = default)
         => Task.FromResult(OperationResult.Success());
+}
+public sealed class FakeProtocolDriver : IProtocolDriver
+{
+    private readonly OperationResult _connectResult;
+    private readonly OperationResult _pingResult;
+
+    public FakeProtocolDriver(OperationResult connectResult, OperationResult pingResult)
+    {
+        _connectResult = connectResult;
+        _pingResult = pingResult;
+    }
+
+    public DriverState State => DriverState.Connected;
+    public DriverCapability Capability => new();
+
+    public Task<OperationResult> ConnectAsync(CancellationToken ct = default)
+        => Task.FromResult(_connectResult);
+
+    public Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+
+    public Task<OperationResult> PingAsync(CancellationToken ct = default)
+        => Task.FromResult(_pingResult);
+
+    public Task<OperationResult<RawPointValue>> ReadAsync(DevicePoint point, CancellationToken ct = default)
+        => throw new NotSupportedException();
+
+    public Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadBatchAsync(
+        IEnumerable<DevicePoint> points, CancellationToken ct = default)
+        => Task.FromResult(OperationResult<IReadOnlyList<RawPointValue>>.Success(Array.Empty<RawPointValue>()));
+
+    public Task<OperationResult> WriteAsync(DevicePoint point, object value, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+
+    public Task<OperationResult> WriteBatchAsync(
+        IEnumerable<KeyValuePair<DevicePoint, object>> entries, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+
+    public void Dispose() { }
 }

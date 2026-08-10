@@ -108,4 +108,45 @@ public class S7DriverTests
         var r = await driver.ReadAsync(Point("M1", "M100", DataType.Float));
         Assert.True(r.IsFailure, "M 区失败读应返回 Failure");
     }
+
+    // ══════════════════════════════════════════════════
+    //  CpuType 解析（ADR-024 P1-1：默认值不再抛 SwitchExpressionException，未知型号显式报错）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>红绿对照：修复前默认 "S71200" 不在 switch 分支，无 default 抛 SwitchExpressionException</summary>
+    [Fact]
+    public void ParseCpuType_Default_ReturnsS1200()
+    {
+        Assert.Equal(SiemensPLCS.S1200, S7Driver.ParseCpuType(null));
+        Assert.Equal(SiemensPLCS.S1200, S7Driver.ParseCpuType(""));
+        Assert.Equal(SiemensPLCS.S1200, S7Driver.ParseCpuType("S-1200"));
+    }
+
+    [Theory]
+    [InlineData("S-1500", SiemensPLCS.S1500)]
+    [InlineData("S-300", SiemensPLCS.S300)]
+    [InlineData("S-400", SiemensPLCS.S400)]
+    public void ParseCpuType_KnownTypes_Map(string raw, SiemensPLCS expected)
+    {
+        Assert.Equal(expected, S7Driver.ParseCpuType(raw));
+    }
+
+    /// <summary>未知 CpuType 显式报错（ADR-024 P2-1），不再静默默认为 S1200</summary>
+    [Fact]
+    public void ParseCpuType_Unknown_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => S7Driver.ParseCpuType("S-200"));
+        Assert.Contains("未知的 S7 CpuType", ex.Message);
+    }
+
+    /// <summary>地址类型与 DataType 冲突时读返回 Failure（携带明确原因），不静默读错字节</summary>
+    [Fact]
+    public async Task ReadAsync_AddressTypeConflict_ReturnsFailureWithReason()
+    {
+        var driver = CreateDriver();
+        var r = await driver.ReadAsync(Point("T", "MW10", DataType.Float));
+        Assert.True(r.IsFailure, "地址类型冲突应返回 Failure");
+        Assert.Contains("不兼容", r.Error?.Message ?? "");
+    }
 }
+

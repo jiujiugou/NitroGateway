@@ -1,4 +1,4 @@
-import client from './client'
+﻿import client from './client'
 import type { ApiResponse, Device, DevicePoint } from './types'
 
 export async function getDevices(): Promise<Device[]> {
@@ -56,7 +56,7 @@ export async function importPoints(deviceId: string, csvText: string): Promise<n
   return data.data?.count ?? 0
 }
 
-export async function generatePoints(deviceId: string, req: { nameTemplate: string; startAddress: number; count: number; dataType: string; access: string }): Promise<number> {
+export async function generatePoints(deviceId: string, req: { nameTemplate: string; startAddress: string; count: number; dataType: string; access: string; protocol?: string }): Promise<number> {
   const { data } = await client.post<ApiResponse<{ count: number }>>(`/devices/${deviceId}/points/generate`, req)
   return data.data?.count ?? 0
 }
@@ -92,3 +92,4 @@ export async function getSerialPortStatus(): Promise<SerialPortInfo[]> {
   const { data } = await client.get<ApiResponse<SerialPortInfo[]>>('/devices/serial-port-status')
   return data.data ?? []
 }
+

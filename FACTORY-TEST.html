@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NitroGateway 项目测试标准（FACTORY-TEST）</title>
+<style>body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; max-width: 960px; margin: 0 auto; padding: 24px; line-height: 1.7; color: #222; background: #fafafa; }
+h1 { border-bottom: 3px solid #2f6fed; padding-bottom: 8px; }
+h2 { border-left: 4px solid #2f6fed; padding-left: 10px; margin-top: 32px; }
+h3 { margin-bottom: 4px; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; background: #fff; }
+th, td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; font-size: 14px; }
+th { background: #eef2fb; }
+pre { background: #f0f2f5; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+code { background: #eef1f5; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+.nav { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.nav a { color: #2f6fed; text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+.meta { color: #666; font-size: 13px; }
+ul { padding-left: 22px; }
+.table-wrap { overflow-x: auto; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.badge.p0 { background: #f8d7da; color: #842029; }
+.badge.p1 { background: #fff3cd; color: #856404; }
+.badge.p2 { background: #e2e3e5; color: #41464b; }
+strong { color: #1a1a1a; }
+@media print { body { background: #fff; } .nav { display: none; } }</style>
+</head>
+<body>
+<h1>NitroGateway 项目测试标准（FACTORY-TEST）</h1>
+<p class="meta">生成时间: 2026-08-09 | 对应 FACTORY-TEST.md | 判定规则: P0 + P1 全部通过 → 判定可用</p>
+<div class="nav">
+  <strong>目录:</strong>
+  <a href="#s0">0. 文档目的与判定总则</a>
+  <a href="#s1">1. 测试环境与工具</a>
+  <a href="#s2">2. 观测点与健康判定口径（所有测试共用）</a>
+  <a href="#s3">3. T0 构建与启动基线（P0，10 分钟）</a>
+  <a href="#s4">4. T1 单设备端到端功能（P0，20 分钟）</a>
+  <a href="#s5">5. T2 多设备并发（P0 核心，30 分钟）</a>
+  <a href="#s6">6. T3 长时间运行 8 小时（P0 核心，8 小时）</a>
+  <a href="#s7">7. T4 故障恢复（P1，1.5 小时）</a>
+  <a href="#s8">8. T5 安全与权限（P1，10 分钟）</a>
+  <a href="#s9">9. T6 前端验收（P2，10 分钟）</a>
+  <a href="#s10">10. 最终判定表（验收汇总）</a>
+  <a href="#s11">11. 缺陷分级</a>
+  <a href="#s12">12. 演示场景（验收/面试演示用）</a>
+</div>
+<h1>NitroGateway 项目测试标准（FACTORY-TEST）</h1>
+<h2 id="s0">0. 文档目的与判定总则</h2>
+<p><strong>目的</strong>：定义验证“项目可以使用、可长期运行”的可量化测试标准，作为出厂验收与版本发布依据。</p>
+<p><strong>适用范围</strong>：工厂环境模拟验收、发布前回归、多设备/长时间运行专项验证。</p>
+<p><strong>判定总则</strong></p>
+<ul>
+<li>测试分三级：<strong>P0 基线门禁</strong>（必须全过）/ <strong>P1 核心场景</strong>（多设备、长稳，必须全过）/ <strong>P2 辅助场景</strong>（可记录缺陷后置）</li>
+<li><strong>放行规则</strong>：P0 + P1 全部通过 → 判定“可用、可长期运行”；任一 P0/P1 不通过 → 判定不通过，修复后回归</li>
+<li>每次测试的实测数据与结论记录到 <code>notes/worklog/YYYY-MM-DD.md</code></li>
+</ul>
+<h2 id="s1">1. 测试环境与工具</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>工具</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Modbus 从站模拟</td>
+<td>Modbus Slave / ModRSsim2 / pymodbus</td>
+<td>≥10 台，端口 :502，每台 50 点位</td>
+</tr>
+<tr>
+<td>MQTT Broker</td>
+<td><code>eclipse-mosquitto:2</code>（docker compose）</td>
+<td>端口 :1883</td>
+</tr>
+<tr>
+<td>网络扰动</td>
+<td>clumsy（Windows）/ tc（Linux）</td>
+<td>200ms 延迟 + 5% 丢包</td>
+</tr>
+<tr>
+<td>后端</td>
+<td><code>dotnet run --project src/NitroGateway.Webapi</code></td>
+<td>:5100</td>
+</tr>
+<tr>
+<td>前端</td>
+<td><code>cd web &amp;&amp; npm run dev</code></td>
+<td>:5173，登录 admin/admin123</td>
+</tr>
+<tr>
+<td>监控</td>
+<td><code>/metrics</code> <code>/healthz</code> <code>/readyz</code> + <code>dotnet-counters</code></td>
+<td>观测口径见第 2 节</td>
+</tr>
+</tbody></table></div>
+<p><strong>测试前置条件（保证基线干净）</strong></p>
+<ul>
+<li>使用干净 SQLite 数据库：备份/删除 <code>src/NitroGateway.Webapi/nitrogateway.db*</code> 后重启，记录初始文件大小</li>
+<li>记录初始死信数（<code>GET /api/deadletters</code>），长稳测试前清理历史死信</li>
+<li>记录基线指标：启动时刻的内存、backlog、SQLite 大小、<code>collection_total</code> 计数</li>
+</ul>
+<h2 id="s2">2. 观测点与健康判定口径（所有测试共用）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>观测点</th>
+<th>来源</th>
+<th>健康判定</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>进程存活</td>
+<td><code>Get-Process dotnet</code> / <code>docker ps</code></td>
+<td>全程无退出</td>
+</tr>
+<tr>
+<td>存活检查</td>
+<td><code>GET /healthz</code></td>
+<td>200 且 <code>Healthy</code></td>
+</tr>
+<tr>
+<td>就绪检查</td>
+<td><code>GET /readyz</code></td>
+<td>MQTT 连接时 <code>Healthy</code></td>
+</tr>
+<tr>
+<td>MQTT 状态</td>
+<td><code>nitro_mqtt_state</code></td>
+<td>2=Connected 为健康；长时间 1/3/4 视为异常</td>
+</tr>
+<tr>
+<td>采集计数</td>
+<td><code>nitro_collection_total{status=&quot;success&quot;}</code></td>
+<td>随设备数持续增长</td>
+</tr>
+<tr>
+<td>采集耗时</td>
+<td><code>nitro_collection_duration_ms</code></td>
+<td>均值稳定、无持续上升</td>
+</tr>
+<tr>
+<td>转发积压</td>
+<td><code>nitro_buffer_backlog</code></td>
+<td>常态 0~5 波动；断连时上涨、恢复后归零；上限 100000</td>
+</tr>
+<tr>
+<td>熔断器</td>
+<td><code>nitro_circuit_breaker_state</code></td>
+<td>0=Closed 正常；故障设备 1=Open</td>
+</tr>
+<tr>
+<td>死信</td>
+<td><code>GET /api/deadletters</code></td>
+<td>常态不增长；重放可成功</td>
+</tr>
+<tr>
+<td>内存</td>
+<td><code>dotnet_total_memory_bytes</code> / dotnet-counters GC Heap</td>
+<td>8h 后 ≤ 初始 2 倍</td>
+</tr>
+<tr>
+<td>磁盘</td>
+<td>SQLite 文件 + <code>logs/</code> 目录</td>
+<td>8h 增量 ≤50MB；日志仅保留 7 天</td>
+</tr>
+<tr>
+<td>落库失败</td>
+<td><code>nitro_store_write_failures_total</code></td>
+<td>全程不增长</td>
+</tr>
+</tbody></table></div>
+<h2 id="s3">3. T0 构建与启动基线（P0，10 分钟）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>标准</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T0.1</td>
+<td>后端构建</td>
+<td><code>dotnet build NitroGateway.slnx</code></td>
+<td>0 错误</td>
+</tr>
+<tr>
+<td>T0.2</td>
+<td>单元测试</td>
+<td><code>dotnet test tests/NitroGateway.UnitTests</code></td>
+<td>≥292 全通过</td>
+</tr>
+<tr>
+<td>T0.3</td>
+<td>集成测试</td>
+<td><code>dotnet test tests/NitroGateway.IntegrationTests</code></td>
+<td>≥40 全通过</td>
+</tr>
+<tr>
+<td>T0.4</td>
+<td>前端构建</td>
+<td><code>cd web &amp;&amp; npm run build</code></td>
+<td>vue-tsc 0 错误，vite 构建成功</td>
+</tr>
+<tr>
+<td>T0.5</td>
+<td>启动</td>
+<td>顺序启动 MQTT → 网关</td>
+<td>≤15s 内 <code>/healthz</code> 200；<code>/readyz</code> Healthy；<code>nitro_mqtt_state=2</code></td>
+</tr>
+<tr>
+<td>T0.6</td>
+<td>登录</td>
+<td><code>POST /api/auth/login</code> admin/admin123</td>
+<td>200 且返回 JWT</td>
+</tr>
+</tbody></table></div>
+<h2 id="s4">4. T1 单设备端到端功能（P0，20 分钟）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>标准</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T1.1</td>
+<td>设备注册</td>
+<td>注册 Modbus/TCP → 127.0.0.1:502</td>
+<td>设备 Online（≤2 轮采集内）</td>
+</tr>
+<tr>
+<td>T1.2</td>
+<td>点位采集</td>
+<td>添加点位 Temp@40001(Float)</td>
+<td>3s 内 <code>nitro_collection_total{status=&quot;success&quot;}</code> 增长</td>
+</tr>
+<tr>
+<td>T1.3</td>
+<td>数据入库</td>
+<td><code>GET /api/measurements/history</code></td>
+<td>返回采集数据，值符合 WriteGuard 校验</td>
+</tr>
+<tr>
+<td>T1.4</td>
+<td>MQTT 转发</td>
+<td>订阅 <code>nitrogateway/{deviceId}/measurements</code></td>
+<td>收到与采集一致的数据</td>
+</tr>
+<tr>
+<td>T1.5</td>
+<td>前端访问</td>
+<td>仪表盘 + 系统状态页</td>
+<td>MQTT 已连接、设备 Online、数据刷新</td>
+</tr>
+</tbody></table></div>
+<h2 id="s5">5. T2 多设备并发（P0 核心，30 分钟）</h2>
+<p>前置：10 个 Modbus 从站 × 每站 50 点位。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>标准</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T2.1</td>
+<td>批量注册</td>
+<td>注册全部 10 台设备</td>
+<td>全部 Online，无注册失败</td>
+</tr>
+<tr>
+<td>T2.2</td>
+<td>并发限流</td>
+<td>观察采集过程</td>
+<td>同时采集 ≤ <code>Collection:MaxConcurrency</code>（默认 5）</td>
+</tr>
+<tr>
+<td>T2.3</td>
+<td>采集吞吐</td>
+<td>观察 10 台设备</td>
+<td>所有设备 <code>collection_total</code> 持续增长，无饿死</td>
+</tr>
+<tr>
+<td>T2.4</td>
+<td>故障隔离</td>
+<td>关闭其中 3 台从站</td>
+<td>3 台 CB=Open，其余 7 台采集不受影响（继续增长）</td>
+</tr>
+<tr>
+<td>T2.5</td>
+<td>自动恢复</td>
+<td>恢复 3 台从站</td>
+<td>3 台 ≤35s 内自动 Online、CB 回 Closed，无需人工干预</td>
+</tr>
+<tr>
+<td>T2.6</td>
+<td>批量点位</td>
+<td>批量生成 500 点位</td>
+<td>生成成功，现有采集不中断</td>
+</tr>
+</tbody></table></div>
+<p><strong>判定</strong>：T2.1~T2.6 全过 → 多设备并发能力达标。</p>
+<h2 id="s6">6. T3 长时间运行 8 小时（P0 核心，8 小时）</h2>
+<p>前置：1 台设备 × 10 点位 × 1s 采集周期（或沿用 T2 环境），先记录基线指标。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>标准</th>
+<th>采样方式</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T3.1</td>
+<td>进程存活</td>
+<td>每小时检查</td>
+<td>全程无退出</td>
+</tr>
+<tr>
+<td>T3.2</td>
+<td>健康检查</td>
+<td>每小时 <code>GET /healthz</code></td>
+<td>全程 200</td>
+</tr>
+<tr>
+<td>T3.3</td>
+<td>内存稳定</td>
+<td>dotnet-counters GC Heap Size</td>
+<td>结束时 ≤ 初始 2 倍，曲线无持续上升（无泄漏）</td>
+</tr>
+<tr>
+<td>T3.4</td>
+<td>转发积压</td>
+<td><code>nitro_buffer_backlog</code></td>
+<td>MQTT 在线期间 ≤5，不持续增长</td>
+</tr>
+<tr>
+<td>T3.5</td>
+<td>死信</td>
+<td><code>GET /api/deadletters</code></td>
+<td>不产生新死信</td>
+</tr>
+<tr>
+<td>T3.6</td>
+<td>SQLite 增长</td>
+<td>文件大小</td>
+<td>8h 增量 ≤50MB（10 点位 1s），总量 &lt;200MB</td>
+</tr>
+<tr>
+<td>T3.7</td>
+<td>日志轮转</td>
+<td><code>logs/</code> 目录</td>
+<td>仅保留最近 7 天，不占满磁盘</td>
+</tr>
+<tr>
+<td>T3.8</td>
+<td>数据连续性</td>
+<td>抽查 measurements 时间戳</td>
+<td>无大段空洞（断连期除外）；<code>nitro_store_write_failures_total</code> 不增长</td>
+</tr>
+<tr>
+<td>T3.9</td>
+<td>重启恢复</td>
+<td>8h 后 kill -9 再重启</td>
+<td>数据不丢，日志出现 InFlight→Pending 恢复，补发完成</td>
+</tr>
+</tbody></table></div>
+<p><strong>判定</strong>：T3.1~T3.9 全过 → 长时间运行达标。测试记录至少包含时间点、内存、backlog、SQLite 大小四列实测数据。</p>
+<h2 id="s7">7. T4 故障恢复（P1，1.5 小时）</h2>
+<h3>7.1 网络异常（Modbus 侧）</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>场景</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T4.1.1</td>
+<td>短断 &lt;30s</td>
+<td>关从站 → 等 10s → 恢复</td>
+<td>10s 内 CB=Open；恢复后 ≤35s 自动 Closed/Online</td>
+</tr>
+<tr>
+<td>T4.1.2</td>
+<td>长断 &gt;5min</td>
+<td>关从站 5 分钟</td>
+<td>冷却时间翻倍至 5min 上限；恢复后自动回 Online</td>
+</tr>
+<tr>
+<td>T4.1.3</td>
+<td>网络质量差</td>
+<td>clumsy 加 200ms 延迟 + 5% 丢包</td>
+<td>采集耗时升高但不崩溃；撤销后恢复</td>
+</tr>
+</tbody></table></div>
+<h3>7.2 MQTT 异常</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>场景</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T4.2.1</td>
+<td>短断</td>
+<td><code>docker stop mqtt</code> 10s 后恢复</td>
+<td>数据积压不丢，恢复后自动补发清空</td>
+</tr>
+<tr>
+<td>T4.2.2</td>
+<td>反复抖动</td>
+<td><code>docker restart mqtt</code> ×5（间隔 5s）</td>
+<td>每次自动重连成功，不产生死信</td>
+</tr>
+<tr>
+<td>T4.2.3</td>
+<td>长断 15min</td>
+<td>关闭 broker 15 分钟</td>
+<td>超重试上限的批次进死信；<code>POST /api/deadletters/{id}/retry</code> 重放成功</td>
+</tr>
+</tbody></table></div>
+<h3>7.3 进程/数据异常</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>场景</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T4.3.1</td>
+<td>进程 kill</td>
+<td>正常采集后 kill 网关进程 → 重启</td>
+<td>SQLite 未损坏、InFlight 退回 Pending、数据不丢</td>
+</tr>
+<tr>
+<td>T4.3.2</td>
+<td>DB 删除</td>
+<td>删除 nitrogateway.db → 重启</td>
+<td>FluentMigrator 自动建表，重新注册后正常采集</td>
+</tr>
+</tbody></table></div>
+<h3>7.4 配置热加载</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>场景</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T4.4.1</td>
+<td>改设备配置</td>
+<td>运行中改 IP 为无效地址再改回</td>
+<td>当前轮不中断，下一轮生效；全程无崩溃</td>
+</tr>
+<tr>
+<td>T4.4.2</td>
+<td>增删点位</td>
+<td>添加 10 / 删除 5 / 批量生成 500</td>
+<td>下一轮生效，现有采集不受影响</td>
+</tr>
+<tr>
+<td>T4.4.3</td>
+<td>CSV 导入导出</td>
+<td>export → 改 Scale → import</td>
+<td>导出列头正确，导入后 Scale 生效</td>
+</tr>
+</tbody></table></div>
+<h2 id="s8">8. T5 安全与权限（P1，10 分钟）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>标准</th>
+<th>操作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T5.1</td>
+<td>越权写</td>
+<td>viewer 登录尝试删除设备</td>
+<td>403</td>
+</tr>
+<tr>
+<td>T5.2</td>
+<td>授权写</td>
+<td>operator 登录确认告警</td>
+<td>200</td>
+</tr>
+<tr>
+<td>T5.3</td>
+<td>未认证</td>
+<td>无 Token 访问 <code>/api/devices</code></td>
+<td>401</td>
+</tr>
+<tr>
+<td>T5.4</td>
+<td>审计</td>
+<td>检查 Serilog 日志</td>
+<td>所有 <code>/api/*</code> 操作有 AUDIT 记录</td>
+</tr>
+<tr>
+<td>T5.5</td>
+<td>SignalR</td>
+<td>无 Token 建连</td>
+<td>拒绝建立 WebSocket</td>
+</tr>
+</tbody></table></div>
+<h2 id="s9">9. T6 前端验收（P2，10 分钟）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>页面</th>
+<th>检测项</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>登录</td>
+<td>admin/admin123</td>
+<td>能登录进入仪表盘</td>
+</tr>
+<tr>
+<td>仪表盘</td>
+<td>设备统计</td>
+<td>数字与 API 一致</td>
+</tr>
+<tr>
+<td>设备管理</td>
+<td>CRUD</td>
+<td>增删改查正常</td>
+</tr>
+<tr>
+<td>点位管理</td>
+<td>CSV 导入导出 + 批量生成</td>
+<td>操作成功</td>
+</tr>
+<tr>
+<td>实时监控</td>
+<td>选设备</td>
+<td>数据持续刷新</td>
+</tr>
+<tr>
+<td>历史数据</td>
+<td>时间范围查询</td>
+<td>返回正确</td>
+</tr>
+<tr>
+<td>系统状态</td>
+<td>MQTT/熔断器/设备健康</td>
+<td>与 <code>/metrics</code> 一致</td>
+</tr>
+<tr>
+<td>告警管理</td>
+<td>配规则后</td>
+<td>列表/确认正常</td>
+</tr>
+<tr>
+<td>死信管理</td>
+<td>列表/重放/丢弃</td>
+<td>操作成功</td>
+</tr>
+<tr>
+<td>Swagger</td>
+<td><code>/swagger</code></td>
+<td>可访问</td>
+</tr>
+</tbody></table></div>
+<h2 id="s10">10. 最终判定表（验收汇总）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>标准场景</th>
+<th>级别</th>
+<th>通过标准</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>构建 + 测试 + 启动</td>
+<td><span class="badge p0">P0</span></td>
+<td>T0 全过</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>2</td>
+<td>单设备端到端</td>
+<td><span class="badge p0">P0</span></td>
+<td>T1 全过（采集入库 + MQTT 转发）</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>3</td>
+<td>10 设备并发 + 隔离</td>
+<td><span class="badge p0">P0</span></td>
+<td>T2 全过</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>4</td>
+<td>8 小时长稳</td>
+<td><span class="badge p0">P0</span></td>
+<td>T3 全过（内存/SQLite/日志/重启恢复）</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>5</td>
+<td>断网 30s 自动恢复</td>
+<td><span class="badge p1">P1</span></td>
+<td>CB Open→Closed，设备自动 Online</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>6</td>
+<td>MQTT 断连节流补发</td>
+<td><span class="badge p1">P1</span></td>
+<td>积压清空、无丢数</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>7</td>
+<td>进程 kill 数据不丢</td>
+<td><span class="badge p1">P1</span></td>
+<td>重启后数据完整</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>8</td>
+<td>运行时改配置不中断</td>
+<td><span class="badge p1">P1</span></td>
+<td>下一轮生效</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>9</td>
+<td>RBAC 权限隔离</td>
+<td><span class="badge p1">P1</span></td>
+<td>401/403 生效、审计齐全</td>
+<td>[ ]</td>
+</tr>
+<tr>
+<td>10</td>
+<td>前端页面可用</td>
+<td><span class="badge p2">P2</span></td>
+<td>T6 全过</td>
+<td>[ ]</td>
+</tr>
+</tbody></table></div>
+<p><strong>放行结论</strong>：P0 + P1 全部通过 → 判定可用；任一项不通过 → 记录缺陷到 <code>notes/ADR/</code> 后修复并回归。</p>
+<h2 id="s11">11. 缺陷分级</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>级别</th>
+<th>定义</th>
+<th>示例</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><span class="badge p0">P0</span></td>
+<td>阻断发布/数据丢失/崩溃</td>
+<td>启动失败、采集数据丢失、进程崩溃</td>
+<td>必须修复后放行</td>
+</tr>
+<tr>
+<td><span class="badge p1">P1</span></td>
+<td>核心场景不达标</td>
+<td>长稳内存超 2 倍、故障隔离失效、指标超阈值</td>
+<td>必须修复</td>
+</tr>
+<tr>
+<td><span class="badge p2">P2</span></td>
+<td>体验/文档类</td>
+<td>前端样式、提示文案</td>
+<td>可记录后置</td>
+</tr>
+</tbody></table></div>
+<h2 id="s12">12. 演示场景（验收/面试演示用）</h2>
+<p><strong>场景 1 — 断连自动化恢复（2 分钟）</strong></p>
+<p>关掉 Modbus 模拟器 → 看网关日志中 CB 三态变化 → 前端设备变 Offline → 重启模拟器 → 前端自动变 Online。全程无人工操作。</p>
+<p><strong>场景 2 — 数据不丢（1 分钟）</strong></p>
+<p>网关采集一会 → kill 进程 → 重启 → SQLite 数据完整 → ForwardBuffer 无丢失。</p>
+<p><strong>场景 3 — MQTT 节流（1 分钟）</strong></p>
+<p>关 MQTT Broker → ForwardingThrottle 批量从 1000 降到 100 → 开 Broker → 自动恢复 1000。</p>
+
+</body>
+</html>

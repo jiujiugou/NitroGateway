@@ -150,19 +150,25 @@ public class DevicesController : ControllerBase
             using var driver = _driverFactory.Create(protocol, connection);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var result = await driver.ConnectAsync();
-            sw.Stop();
 
             if (result.IsSuccess)
             {
+                // ADR-023：连接成功只代表链路/串口已通，不代表目标从站存在；
+                // 必须 Ping（最小读请求）确认从站响应，否则测试结果对 UnitId 校验型从站是假阳性。
                 var pingResult = await driver.PingAsync();
-                return Ok(ApiResponse<object>.Ok(new
-                {
-                    success = true,
-                    latencyMs = sw.ElapsedMilliseconds,
-                    ping = pingResult.IsSuccess ? "ok" : "unreachable"
-                }));
+                sw.Stop();
+                if (pingResult.IsSuccess)
+                    return Ok(ApiResponse<object>.Ok(new
+                    {
+                        success = true,
+                        latencyMs = sw.ElapsedMilliseconds,
+                        ping = "ok"
+                    }));
+
+                return Ok(ApiResponse<object>.Ok(new { success = false, latencyMs = sw.ElapsedMilliseconds, error = pingResult.Error?.Message ?? "从站无响应" }));
             }
 
+            sw.Stop();
             return Ok(ApiResponse<object>.Ok(new { success = false, latencyMs = sw.ElapsedMilliseconds, error = result.Error!.Message }));
         }
         catch (Exception ex)

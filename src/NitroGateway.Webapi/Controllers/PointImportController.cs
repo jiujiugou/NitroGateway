@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
@@ -56,7 +56,17 @@ public class PointImportController : ControllerBase
 
         var access = Enum.TryParse<PointAccess>(req.Access, true, out var acc) ? acc : PointAccess.ReadOnly;
 
-        var points = _batch.Generate(deviceId, req.NameTemplate, req.StartAddress, req.Count, dataType, access);
+        // ADR-024 P3-3：起始地址为字符串（Modbus "40001" / S7 "DB1.DBD0"），非法格式返回 400 而非 500
+        IReadOnlyList<DevicePoint> points;
+        try
+        {
+            points = _batch.Generate(deviceId, req.NameTemplate, req.StartAddress, req.Count, dataType, access, req.Protocol);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail("Generate", ex.Message));
+        }
+
         var result = await _points.ImportAsync(deviceId, points);
 
         return result.IsSuccess
@@ -86,8 +96,11 @@ public class GenerateRequest
     /// <summary>名称模板，如 "AI_{###}" → AI_001, AI_002...</summary>
     public string NameTemplate { get; set; } = "Point_{###}";
 
-    /// <summary>起始地址（整数，如 Modbus 40001）</summary>
-    public int StartAddress { get; set; }
+    /// <summary>起始地址。Modbus 为数字（如 "40001"）；S7 为 DB 区地址（如 "DB1.DBD0"）</summary>
+    public string StartAddress { get; set; } = "";
+
+    /// <summary>协议名（Modbus / S7），决定起始地址解释与递增步长；缺省按 Modbus</summary>
+    public string Protocol { get; set; } = "Modbus";
 
     /// <summary>生成数量</summary>
     public int Count { get; set; }
@@ -98,3 +111,4 @@ public class GenerateRequest
     /// <summary>读写权限字符串</summary>
     public string Access { get; set; } = "ReadOnly";
 }
+

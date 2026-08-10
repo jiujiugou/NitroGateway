@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using Xunit;
@@ -73,7 +73,7 @@ public class PointBatchServiceTests
     [Fact]
     public void Generate_NameTemplate_PadsWithZeros()
     {
-        var points = _service.Generate(_deviceId, "AI_{###}", 40001, 3, DataType.Float);
+        var points = _service.Generate(_deviceId, "AI_{###}", "40001", 3, DataType.Float);
         Assert.Equal(3, points.Count);
         Assert.Equal("AI_001", points[0].Name);
         Assert.Equal("AI_002", points[1].Name);
@@ -91,7 +91,7 @@ public class PointBatchServiceTests
     [Fact]
     public void Generate_Float_IncrementsByTwo()
     {
-        var points = _service.Generate(_deviceId, "P_{###}", 40001, 3, DataType.Float);
+        var points = _service.Generate(_deviceId, "P_{###}", "40001", 3, DataType.Float);
         Assert.Equal("40001", points[0].Address);
         Assert.Equal("40003", points[1].Address);
         Assert.Equal("40005", points[2].Address);
@@ -104,7 +104,7 @@ public class PointBatchServiceTests
     [Fact]
     public void Generate_Int16_IncrementsByOne()
     {
-        var points = _service.Generate(_deviceId, "P_{###}", 40001, 3, DataType.Int16);
+        var points = _service.Generate(_deviceId, "P_{###}", "40001", 3, DataType.Int16);
         Assert.Equal("40001", points[0].Address);
         Assert.Equal("40002", points[1].Address);
         Assert.Equal("40003", points[2].Address);
@@ -118,8 +118,70 @@ public class PointBatchServiceTests
     [Fact]
     public void Generate_ZeroCount_ReturnsEmpty()
     {
-        var points = _service.Generate(_deviceId, "P_{###}", 40001, 0, DataType.Float);
+        var points = _service.Generate(_deviceId, "P_{###}", "40001", 0, DataType.Float);
         Assert.Empty(points);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  S7 批量生成（ADR-024 P3-3：DB 区按字节步长递增）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>S7 Float 占 4 字节：DB1.DBD0 → DBD4 → DBD8。</summary>
+    [Fact]
+    public void Generate_S7_Float_IncrementsByFourBytes()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "DB1.DBD0", 3, DataType.Float, protocol: "S7");
+        Assert.Equal("DB1.DBD0", points[0].Address);
+        Assert.Equal("DB1.DBD4", points[1].Address);
+        Assert.Equal("DB1.DBD8", points[2].Address);
+    }
+
+    /// <summary>S7 Int16 占 2 字节：DB3.DBW0 → DBW2 → DBW4，起始类型与数据类型一致。</summary>
+    [Fact]
+    public void Generate_S7_Int16_IncrementsByTwoBytes()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "DB3.DBW0", 3, DataType.Int16, protocol: "S7");
+        Assert.Equal("DB3.DBW0", points[0].Address);
+        Assert.Equal("DB3.DBW2", points[1].Address);
+        Assert.Equal("DB3.DBW4", points[2].Address);
+    }
+
+    /// <summary>S7 起始地址类型与数据类型不兼容时应显式报错（如 Int16 不能用 DBD）。</summary>
+    [Fact]
+    public void Generate_S7_TypeMismatch_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "DB1.DBD0", 3, DataType.Int16, protocol: "S7"));
+        Assert.Contains("不兼容", ex.Message);
+    }
+
+    /// <summary>S7 非法起始地址（非 DB 区格式）应显式报错。</summary>
+    [Fact]
+    public void Generate_S7_InvalidAddress_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "40001", 3, DataType.Float, protocol: "S7"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "M100", 3, DataType.Float, protocol: "S7"));
+    }
+
+    /// <summary>S7 Bool 位地址不支持批量生成（位步进易错），显式报错并提示手动添加。</summary>
+    [Fact]
+    public void Generate_S7_Bool_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "DB1.DBX0.0", 3, DataType.Bool, protocol: "S7"));
+        Assert.Contains("暂不支持 Bool", ex.Message);
+    }
+
+    /// <summary>Modbus 起始地址含非数字内容时应显式报错（回归：int→string 后仍拒绝垃圾输入）。</summary>
+    [Fact]
+    public void Generate_Modbus_InvalidStartAddress_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "4O001", 3, DataType.Float));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "-1", 3, DataType.Float));
     }
 
     // ══════════════════════════════════════════════════
@@ -194,3 +256,4 @@ public class PointBatchServiceTests
         Id = Guid.NewGuid(), Name = name, Address = address, DataType = type
     };
 }
+

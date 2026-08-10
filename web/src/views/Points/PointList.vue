@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-head">
     <h2 class="page-title">点位管理</h2>
     <div class="actions">
@@ -65,7 +65,8 @@
         <el-input v-model="gf.nameTemplate" placeholder="如 AI_{###} → AI_001, AI_002..." />
         <div class="hint">{{ previewName }}</div>
       </el-form-item>
-      <el-form-item label="起始地址"><el-input-number v-model="gf.startAddress" :min="0" style="width:100%" /></el-form-item>
+      <!-- ADR-024 P3-3：起始地址按协议解释（Modbus 数字 / S7 DB 区地址） -->
+      <el-form-item label="起始地址"><el-input v-model="gf.startAddress" :placeholder="deviceProtocol === 'S7' ? 'DB1.DBD0' : '40001'" style="width:100%" /></el-form-item>
       <el-form-item label="数量"><el-input-number v-model="gf.count" :min="1" :max="5000" style="width:100%" /></el-form-item>
       <el-form-item label="数据类型">
         <el-select v-model="gf.dataType" style="width:100%">
@@ -77,7 +78,7 @@
           <el-option label="只读" value="ReadOnly" /><el-option label="读写" value="ReadWrite" />
         </el-select>
       </el-form-item>
-      <div class="hint">将生成 {{ gf.count }} 个点位，地址按类型步长递增</div>
+      <div class="hint">将生成 {{ gf.count }} 个点位，地址按{{ deviceProtocol === 'S7' ? '类型字节宽度' : 'Modbus 寄存器数' }}递增{{ deviceProtocol === 'S7' ? '（DB 区，不支持 Bool）' : '' }}</div>
     </el-form>
     <template #footer><el-button @click="showGen=false">取消</el-button><el-button type="primary" @click="generate">生成</el-button></template>
   </el-dialog>
@@ -86,7 +87,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { getPoints, addPoint, updatePoint, deletePoint, importPoints, generatePoints, exportPoints } from '../../api/devices'
+import { getDevice, getPoints, addPoint, updatePoint, deletePoint, importPoints, generatePoints, exportPoints } from '../../api/devices'
 import type { DevicePoint } from '../../api/types'
 
 const route = useRoute()
@@ -96,10 +97,11 @@ const showForm = ref(false)
 const showGen = ref(false)
 const editingId = ref<string | null>(null)
 const types = ['Bool','Byte','Int16','UInt16','Int32','UInt32','Int64','UInt64','Float','Double','String']
+const deviceProtocol = ref('Modbus')
 
-const makeEmpty = () => ({ name:'', address:'40001', dataType:'Float', access:'ReadOnly', scaleFactor:1, scaleOffset:0, deadband:0, scanIntervalMs:0, enabled:true })
+const makeEmpty = () => ({ name:'', address: deviceProtocol.value === 'S7' ? 'DB1.DBD0' : '40001', dataType:'Float', access:'ReadOnly', scaleFactor:1, scaleOffset:0, deadband:0, scanIntervalMs:0, enabled:true })
 const pf = ref<Record<string, any>>(makeEmpty())
-const gf = ref({ nameTemplate:'AI_{###}', startAddress:40001, count:100, dataType:'Float', access:'ReadOnly' })
+const gf = ref({ nameTemplate:'AI_{###}', startAddress:'40001', count:100, dataType:'Float', access:'ReadOnly' })
 
 const previewName = computed(() => {
   const pad = (gf.value.nameTemplate.match(/#/g) || []).length
@@ -107,7 +109,14 @@ const previewName = computed(() => {
   return gf.value.nameTemplate.replace('#'.repeat(pad), String(1).padStart(pad, '0'))
 })
 
-onMounted(async () => { try { points.value = await getPoints(deviceId) } catch {} })
+onMounted(async () => {
+  try { points.value = await getPoints(deviceId) } catch {}
+  // ADR-024 P3-3：按设备协议决定默认起始地址（S7 用 DB 区地址）
+  try {
+    const d = await getDevice(deviceId)
+    if (d) { deviceProtocol.value = d.protocol.name; gf.value.startAddress = d.protocol.name === 'S7' ? 'DB1.DBD0' : '40001' }
+  } catch {}
+})
 
 function openAdd() {
   editingId.value = null
@@ -155,7 +164,7 @@ async function handleImport(file: any) {
 
 async function generate() {
   try {
-    const count = await generatePoints(deviceId, gf.value)
+    const count = await generatePoints(deviceId, { ...gf.value, protocol: deviceProtocol.value })
     if (count > 0) { points.value = await getPoints(deviceId); showGen.value=false }
   } catch {}
 }
@@ -168,3 +177,4 @@ async function generate() {
 .card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
 .hint { font-size:12px; color:var(--text-dim,#909399); margin-top:4px; }
 </style>
+

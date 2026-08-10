@@ -91,7 +91,19 @@ public abstract class ModbusDriverBase : IProtocolDriver
         _ => DataFormat.ABCD
     };
 
-    // ───────────────────────── 单点读 / 写 / Ping ─────────────────────────
+    // ───────────────────────── 单点读 / 写 / Ping ─────────────
+    /// <summary>Ping 失败信息转用户可读文案：超时/断连归"从站无响应"，其余归"从站异常"。</summary>
+    private static string ClassifyPingError(string? raw)
+    {
+        var m = raw ?? "";
+        if (m.Contains("超时", StringComparison.OrdinalIgnoreCase) ||
+            m.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+            m.Contains("socket exception", StringComparison.OrdinalIgnoreCase))
+        {
+            return "从站无响应（接收数据超时）：请检查从站地址/UnitId、网络与防火墙";
+        }
+        return "从站无响应：请检查从站地址/UnitId 与设备状态";
+    }
 
     public virtual async Task<OperationResult> PingAsync(CancellationToken ct = default)
     {
@@ -109,7 +121,9 @@ public abstract class ModbusDriverBase : IProtocolDriver
             }
             catch (Exception ex)
             {
-                return OperationalError.Timeout($"Ping 失败: {ex.Message}");
+                // ADR-023：HSL 原始错误（PipeTcpNet[ip:port] : Socket Exception -> 接收数据超时）对用户不可读，
+                // 转成可操作文案：超时/断连归"无响应"，其余归"从站异常"，不透传内部细节。
+                return OperationalError.Timeout(ClassifyPingError(ex.Message));
             }
         }
         finally

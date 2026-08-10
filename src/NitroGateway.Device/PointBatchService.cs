@@ -1,4 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
@@ -201,28 +202,44 @@ public sealed class PointBatchService
     // ════════════════════════════════════════════
 
     /// <summary>
-    /// 根据起始地址和数据量生成点位列表。地址按 DataType.RegisterCount 递增。
+    /// 根据起始地址和数据量生成点位列表。Modbus 地址按 DataType.RegisterCount（寄存器）递增，
+    /// S7 地址（DB{n}.DBD/DBW/DBB{offset}）按 DataType.ByteSize（字节）递增（ADR-024 P3-3）。
     /// 名称模板支持占位符：{name}_{###} → {name}_001, {name}_002...
     ///                               {name}_{000} → {name}_000, {name}_001... (零填充)
     /// </summary>
     /// <param name="deviceId">所属设备</param>
     /// <param name="nameTemplate">名称模板，### 替换为序号（零填充）</param>
-    /// <param name="startAddress">起始地址</param>
+    /// <param name="startAddress">起始地址（Modbus 为数字如 "40001"；S7 为 "DB1.DBD0" 等）</param>
     /// <param name="count">生成数量</param>
     /// <param name="dataType">数据类型</param>
     /// <param name="access">读写权限</param>
+    /// <param name="protocol">协议名（Modbus / S7），决定地址解释与步长</param>
     public IReadOnlyList<DevicePoint> Generate(
         Guid deviceId,
         string nameTemplate,
-        int startAddress,
+        string startAddress,
         int count,
         DataType dataType,
-        PointAccess access = PointAccess.ReadOnly)
+        PointAccess access = PointAccess.ReadOnly,
+        string protocol = "Modbus")
     {
         if (count <= 0) return Array.Empty<DevicePoint>();
         if (count > 5000) count = 5000;   // 安全上限
 
-        var step = dataType.RegisterCount();
+        Func<int, int, string> format;
+        int step;
+        if (protocol.Equals("S7", StringComparison.OrdinalIgnoreCase))
+        {
+            var start = S7Start.Parse(startAddress, dataType);
+            format = start.Format;
+            step = dataType.ByteSize();
+        }
+        else
+        {
+            var start = ModbusStart.Parse(startAddress);
+            format = start.Format;
+            step = dataType.RegisterCount();
+        }
         var points = new List<DevicePoint>(count);
         var padLen = CountPlaceholders(nameTemplate);  // ### → 3, 000 → 3
 
@@ -232,15 +249,15 @@ public sealed class PointBatchService
             {
                 Id = Guid.NewGuid(),
                 Name = ReplacePlaceholders(nameTemplate, i + 1, padLen),
-                Address = (startAddress + i * step).ToString(),
+                Address = format(i, step),
                 DataType = dataType,
                 Access = access,
                 Enabled = true
             });
         }
 
-        _logger.LogInformation("批量生成 {Count} 个点位，起始地址 {Addr}，步长 {Step}",
-            count, startAddress, step);
+        _logger.LogInformation("批量生成 {Count} 个点位，起始地址 {Addr}，步长 {Step}（协议 {Protocol}）",
+            count, startAddress, step, protocol);
 
         return points;
     }
@@ -299,4 +316,64 @@ public sealed class PointBatchService
         var repl = value.ToString().PadLeft(padLen, '0');
         return template[..idx] + repl + template[(idx + padLen)..];
     }
+
+    /// <summary>Modbus 起始地址解析：纯数字字符串，非法抛 ArgumentException（ADR-024 P3-3）</summary>
+    private readonly record struct ModbusStart(int Value)
+    {
+        public static ModbusStart Parse(string raw) =>
+            int.TryParse(raw, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= 0
+                ? new ModbusStart(v)
+                : throw new ArgumentException($"无效的 Modbus 起始地址: {raw}（需为非负整数，如 40001）");
+
+        /// <summary>第 i 个点位的地址：起始值 + i*寄存器步长</summary>
+        public string Format(int index, int step) => (Value + index * step).ToString();
+    }
+
+    /// <summary>S7 DB 区起始地址解析：DB{n}.DBD/DBW/DBB{offset}，按字节步长递增（ADR-024 P3-3）</summary>
+    private sealed class S7Start
+    {
+        private readonly int _db;
+        private readonly string _type;
+        private readonly int _offset;
+
+        private S7Start(int db, string type, int offset)
+        {
+            _db = db;
+            _type = type;
+            _offset = offset;
+        }
+
+        public static S7Start Parse(string raw, DataType dataType)
+        {
+            if (dataType == DataType.Bool)
+                throw new ArgumentException("S7 批量生成暂不支持 Bool 位地址（位步进易错，请手动添加）");
+
+            var m = Regex.Match(raw, @"^DB(\d+)\.DB([BDW])(\d+)$", RegexOptions.IgnoreCase);
+            if (!m.Success)
+                throw new ArgumentException($"无效的 S7 起始地址: {raw}（需为 DB 区地址，如 DB1.DBD0）");
+
+            var type = "DB" + m.Groups[2].Value.ToUpperInvariant();
+            var compatible = type switch
+            {
+                "DBB" => dataType is DataType.Byte or DataType.String,
+                "DBW" => dataType is DataType.Int16 or DataType.UInt16,
+                "DBD" => dataType is DataType.Int32 or DataType.UInt32 or DataType.Int64 or DataType.UInt64 or DataType.Float or DataType.Double,
+                _ => false
+            };
+            if (!compatible)
+                throw new ArgumentException($"S7 起始地址类型 {type} 与数据类型 {dataType} 不兼容（如 Int16 用 DBW、Float 用 DBD）");
+
+            return new S7Start(int.Parse(m.Groups[1].Value), type, int.Parse(m.Groups[3].Value));
+        }
+
+        /// <summary>第 i 个点位的地址：DB{n}.DB{T}{offset + i*字节宽}，类型保持起始地址类型</summary>
+        public string Format(int index, int step) => $"DB{_db}.{_type}{_offset + index * step}";
+    }
 }
+
+
+
+
+
+
+

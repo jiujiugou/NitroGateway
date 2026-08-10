@@ -55,32 +55,34 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
             ct.ThrowIfCancellationRequested();
 
             var (ip, port) = EndpointParser.Split(_connection.Endpoint);
-            var rack = (byte)(int)(_connection.Parameters.GetValueOrDefault("Rack") ?? 0);
-            var slot = (byte)(int)(_connection.Parameters.GetValueOrDefault("Slot") ?? 1);
-
-            var cpuType = (_connection.Parameters.GetValueOrDefault("CpuType")?.ToString() ?? "S71200") switch
-            {
-                "S-1500" => SiemensPLCS.S1500,
-                "S-300" => SiemensPLCS.S300,
-                "S-400" => SiemensPLCS.S400,
-                "S-1200" => SiemensPLCS.S1200
-            };
+            var rack = ToByteParam("Rack", 0);
+            var slot = ToByteParam("Slot", 1);
+            var cpuType = ParseCpuType(_connection.Parameters.GetValueOrDefault("CpuType")?.ToString());
 
             var client = new SiemensS7Net(cpuType) { IpAddress = ip, Port = port ?? 102, Rack = rack, Slot = slot };
-            // ADR-019 P3-3：连接走异步 API（不再同步 ConnectServer 阻塞），建连后响应取消
-            var r = await client.ConnectServerAsync();
-            ct.ThrowIfCancellationRequested();
-
-            if (r.IsSuccess)
+            try
             {
+                // ADR-019 P3-3：连接走异步 API（不再同步 ConnectServer 阻塞），建连后响应取消
+                var r = await client.ConnectServerAsync();
+                ct.ThrowIfCancellationRequested();
+
+                if (!r.IsSuccess)
+                {
+                    client.Dispose();
+                    State = DriverState.Faulted;
+                    return OperationalError.Timeout($"S7 连接失败: {r.Message}");
+                }
+
                 _client = client;
                 State = DriverState.Connected;
                 return OperationResult.Success();
             }
-
-            client.Dispose();
-            State = DriverState.Faulted;
-            return OperationalError.Timeout($"S7 连接失败: {r.Message}");
+            catch
+            {
+                // ADR-024 P1-2：建连成功后被取消也走这里——必须关闭已建立的连接，防止 PLC 连接悬挂
+                client.Dispose();
+                throw;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -122,9 +124,12 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
             if (_client is null) return OperationalError.Unavailable("S7 未连接");
             try
             {
-                // ADR-019 P3-2：ping 地址可配置（默认 DB1.DBW0），PLC 无 DB1 时不再恒 ping 失败
+                // ADR-019 P3-2：ping 地址可配置（默认 DB1.DBW0），PLC 无 DB1 时不再恒 ping 失败；
+                // ADR-024 P2-2：位地址（DBX/Mx.y）按 Bool 读，否则按 Int16 读
                 var address = _connection.Parameters.GetValueOrDefault("PingAddress")?.ToString() ?? "DB1.DBW0";
-                var r = await _client.ReadInt16Async(address);
+                HslCommunication.OperateResult r = S7AddressParser.IsBitAddress(address)
+                    ? await _client.ReadBoolAsync(address)
+                    : await _client.ReadInt16Async(address);
                 return r.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Timeout(r.Message);
             }
             catch (Exception ex)
@@ -238,25 +243,8 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
     /// M/I/Q 区类型由点位 DataType 推导（Bool→位、Byte/String→B、Int16/UInt16→W、其余→D），
     /// 因为非 DB 区地址串通常不带类型后缀（如 M100），Hsl 需要显式类型字符才能按类型读写（ADR-019 P2-3）。
     /// </summary>
-    private static string FormatAddress(DevicePoint point)
-    {
-        var a = S7AddressParser.Parse(point.Address);
-        if (a.DbNumber > 0)
-        {
-            var bit = a.VarType == "DBX" ? $".{a.BitOffset}" : "";
-            return $"DB{a.DbNumber}.{a.VarType}{a.ByteOffset}{bit}";
-        }
-
-        var type = point.DataType switch
-        {
-            DataType.Bool => "",
-            DataType.Byte or DataType.String => "B",
-            DataType.Int16 or DataType.UInt16 => "W",
-            _ => "D"
-        };
-        var bitSuffix = point.DataType == DataType.Bool ? $".{a.BitOffset}" : "";
-        return $"{a.Area}{type}{a.ByteOffset}{bitSuffix}";
-    }
+    private static string FormatAddress(DevicePoint point) =>
+        S7AddressParser.FormatForHsl(point.Address, point.DataType);
 
     /// <summary>按点位类型读取并检查 Hsl 结果，失败抛 IOException（携带设备侧错误信息）</summary>
     private static async Task<object> ReadTypedAsync(SiemensS7Net client, DataType type, string address) => type switch
@@ -274,6 +262,28 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         DataType.String => await ReadCheckedAsync(client.ReadStringAsync(address, DefaultStringLength), "读取 String"),
         _               => await ReadCheckedAsync(client.ReadFloatAsync(address), "读取 Float")
     };
+
+    /// <summary>解析 CpuType 连接参数。默认 S-1200；未知型号显式报错，不再静默默认（ADR-024 P1-1/P2-1）</summary>
+    internal static SiemensPLCS ParseCpuType(string? raw) => raw switch
+    {
+        null or "" => SiemensPLCS.S1200,
+        "S-1500" => SiemensPLCS.S1500,
+        "S-300" => SiemensPLCS.S300,
+        "S-400" => SiemensPLCS.S400,
+        "S-1200" => SiemensPLCS.S1200,
+        var other => throw new ArgumentException($"未知的 S7 CpuType: {other}（支持 S-1200/S-1500/S-300/S-400）")
+    };
+
+    /// <summary>读取 0-255 整数连接参数；支持数字与字符串（API/CSV 传参），不再 (int) 强转抛 InvalidCastException（ADR-024 P2-1）</summary>
+    private byte ToByteParam(string key, byte defaultValue)
+    {
+        if (!_connection.Parameters.TryGetValue(key, out var raw) || raw is null)
+            return defaultValue;
+        var value = Convert.ToInt32(raw, System.Globalization.CultureInfo.InvariantCulture);
+        if (value is < 0 or > 255)
+            throw new ArgumentException($"S7 参数 {key} 需在 0-255 之间: {value}");
+        return (byte)value;
+    }
 
     /// <summary>Hsl 读结果转成功值，失败抛 IOException（对齐 Modbus ReadCheckedAsync，避免失败读产出默认值）</summary>
     private static async Task<TValue> ReadCheckedAsync<TValue>(Task<OperateResult<TValue>> task, string what)
@@ -299,3 +309,4 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         _               => client.WriteAsync(address, Convert.ToSingle(value))
     };
 }
+
