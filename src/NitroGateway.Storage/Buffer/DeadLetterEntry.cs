@@ -22,6 +22,6 @@ public sealed record DeadLetterEntry
     /// <summary>最后一次失败原因</summary>
     public string? LastError { get; init; }
 
-    /// <summary>入队时间</summary>
+    /// <summary>原始入队时间（UTC，即批次首次进入转发缓冲的时间，非转死信时刻；ADR-021 P3-6）</summary>
     public DateTime EnqueuedAt { get; init; }
 }

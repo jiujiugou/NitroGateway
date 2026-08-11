@@ -12,7 +12,11 @@ public interface IDeviceRepository
     /// <summary>保存或更新设备。Id 已存在时覆盖</summary>
     Task<OperationResult> SaveAsync(Device device, CancellationToken ct = default);
 
-    /// <summary>删除指定设备</summary>
+    /// <summary>
+    /// 删除指定设备。ADR-021 P3-4 级联契约：实现侧级联删除该设备下全部点位
+    /// （EF DeleteBehavior.Cascade，见 NitroGatewayDbContext）；measurements 时序数据为独立表不受影响
+    /// （按保留策略清理）。调用方（DeviceManager.UnregisterAsync）还需清理驱动池/健康监控等运行时状态。
+    /// </summary>
     Task<OperationResult> DeleteAsync(Guid deviceId, CancellationToken ct = default);
 
     /// <summary>按 ID 查询设备，不存在时返回 Failure（General）</summary>

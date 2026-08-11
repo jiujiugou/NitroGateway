@@ -6,6 +6,12 @@ namespace NitroGateway.Domain.Measurements;
 /// </summary>
 public sealed record BatchMeasurements
 {
+    /// <summary>
+    /// 载荷版本（ADR-025 P1）。当前版本为 1。
+    /// 序列化输出顶层字段 <c>v</c>；旧版载荷无此字段，反序列化得 0，按 v1 兼容读取。
+    /// </summary>
+    public int V { get; init; } = 1;
+
     /// <summary>批次唯一标识</summary>
     public Guid Id { get; init; }
 

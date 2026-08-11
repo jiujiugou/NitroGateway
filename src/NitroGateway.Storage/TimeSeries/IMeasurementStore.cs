@@ -11,7 +11,11 @@ namespace NitroGateway.Storage.TimeSeries;
 /// </summary>
 public interface IMeasurementStore
 {
-    /// <summary>批量写入快照。内部应做批量优化而非逐条 INSERT</summary>
+    /// <summary>
+    /// 批量写入快照。内部应做批量优化而非逐条 INSERT。
+    /// ADR-021 P3-2 契约：单事务，全成功或全失败（实现侧 SqliteMeasurementStore 保证）；
+    /// 调用方必须检查 <see cref="OperationResult.IsFailure"/> 并按策略处理，不得忽略。
+    /// </summary>
     Task<OperationResult> WriteAsync(IReadOnlyList<PointSnapshot> snapshots, CancellationToken ct = default);
 
     /// <summary>
@@ -42,6 +46,7 @@ public interface IMeasurementStore
     /// <summary>
     /// 查询设备最新快照。pointId 为 null 时返回设备下每个点位的最新一条（每点一条）。
     /// ADR-002 P2-4：替代控制器"拉 1 小时全量再内存过滤"，用 SQL 直接取最新，避免大结果集。
+    /// ADR-021 P3-3 契约：每点最多一条（同时间戳多行按写入序取最新，实现侧按 MAX(timestamp) 去重）。
     /// </summary>
     Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
         Guid deviceId, Guid? pointId, CancellationToken ct = default);

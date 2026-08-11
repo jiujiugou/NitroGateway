@@ -148,6 +148,13 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
     /// 单条 INSERT，异常归类返回，不抛出（保证 DataDispatcher 的失败降级分支可达）。
     /// </summary>
     public async Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
+        => await EnqueueAsync(batch, IForwardBuffer.MqttChannel, ct);
+
+    /// <summary>
+    /// 入队到指定通道（ADR-011）：channel 列随行写入，出队按通道隔离。
+    /// 其余语义与 <see cref="EnqueueAsync(BatchMeasurements, CancellationToken)"/> 一致。
+    /// </summary>
+    public async Task<OperationResult> EnqueueAsync(BatchMeasurements batch, string channel, CancellationToken ct = default)
     {
         // P0-2：入队异常统一走 SqliteErrorClassifier，与 Dequeue/Commit/MarkFailed 一致，
         // 使 DataDispatcher 的优雅降级分支（bufResult.IsFailure）真正可达。
@@ -170,8 +177,8 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
             }
 
             await conn.ExecuteAsync(
-                "INSERT INTO forward_buffer (id, payload, status, retry_count, enqueued_at) VALUES (@id, @payload, 'Pending', 0, @ts)",
-                new { id = batch.Id.ToString(), payload, ts = DateTime.UtcNow.ToString("O") });
+                "INSERT INTO forward_buffer (id, payload, status, retry_count, enqueued_at, channel) VALUES (@id, @payload, 'Pending', 0, @ts, @channel)",
+                new { id = batch.Id.ToString(), payload, ts = DateTime.UtcNow.ToString("O"), channel });
             return OperationResult.Success();
         }
         catch (Exception ex)
@@ -189,6 +196,16 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
     public async Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(
     int maxCount,
     CancellationToken ct = default)
+        => await DequeueAsync(maxCount, IForwardBuffer.MqttChannel, ct);
+
+    /// <summary>
+    /// 出队指定通道最多 maxCount 批 Pending 数据（ADR-011）：FIFO 按 (channel, enqueued_at) 升序。
+    /// 其余语义与 <see cref="DequeueAsync(int, CancellationToken)"/> 一致。
+    /// </summary>
+    public async Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(
+    int maxCount,
+    string channel,
+    CancellationToken ct = default)
     {
         await EnsureRecoveredAsync(ct);
 
@@ -202,9 +219,9 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
             await using var tx = await conn.BeginTransactionAsync(ct);
 
             rows = (await conn.QueryAsync<BufferRow>(
-                new CommandDefinition(@"SELECT id, payload FROM forward_buffer WHERE status = 'Pending'
+                new CommandDefinition(@"SELECT id, payload FROM forward_buffer WHERE status = 'Pending' AND channel = @channel
                   ORDER BY enqueued_at ASC LIMIT @max",
-                    new { max = maxCount },
+                    new { max = maxCount, channel },
                     transaction: tx,
                     cancellationToken: ct)))
                 .ToList();

@@ -156,7 +156,26 @@
 | 死信管理 | 列表/重放/丢弃 | 操作成功 |
 | Swagger | `/swagger` | 可访问 |
 
-## 10. 最终判定表（验收汇总）
+## 10. T7 中心形态端到端（B 方案：多现场 → 一中心，P1，40 分钟）
+
+前置: 启动中心栈 `docker compose -f docker-compose.center.yml up -d --build`（mqtt + ingest + 中心 gateway + web）；
+现场端二选一——Windows 桌面端（`src/NitroGateway.Desktop`）或另一台机器/容器跑网关；Modbus 从站模拟器 ≥1 台。
+本场景验证「现场 → broker → ingest → 中心库 → 中心 Web」全链路（closure E2 的 T1/T2 中心部分）。
+
+| # | 标准 | 操作 | 通过标准 |
+|---|---|---|---|
+| T7.1 | 中心栈就绪 | 顺序启动 mqtt → ingest → 中心 gateway → web | 三服务 `/healthz` 200；ingest `/readyz` Healthy 且 `nitro_mqtt_state=2` |
+| T7.2 | 现场采集上行 | 现场端注册 Modbus 从站并正常采集 | 现场端本地库有数据，MQTT 发布 `nitrogateway/{deviceId}/measurements` 成功 |
+| T7.3 | 中心入库 | 观察 ingest 日志与指标 | `nitro_ingest_received_total{kind="measurements"}` 持续增长；日志出现「遥测入库: 批次 ... 新增 N」 |
+| T7.4 | 中心库有数 | 中心 API `GET /api/measurements/history`（:5100） | 返回与现场采集一致的数据（值/时间戳/点位名） |
+| T7.5 | 中心展示 | 浏览器 `http://localhost:5170` 登录 admin/admin123 | 仪表盘与历史曲线出现现场数据 |
+| T7.6 | 幂等去重 | 现场端重复投递（重启现场端或重发批次） | `nitro_ingest_dedup_total` 增长，中心库行数不重复（记录主键幂等） |
+| T7.7 | 断网续传 | 停现场端 MQTT 一段时间后恢复 | 现场 `forward_buffer` 排队不丢，恢复后补发清空；中心库最终一致 |
+| T7.8 | 中心重启 | `docker compose -f docker-compose.center.yml restart ingest` | 重启后继续入库，迁移幂等不报错，中心库不丢不重复 |
+
+**判定**：T7.1~T7.8 全过 → 中心形态（多现场 → 一中心）可用，闭环 E2 的中心段验证完成。
+
+## 11. 最终判定表（验收汇总）
 
 | # | 标准场景 | 级别 | 通过标准 | 结果 |
 |---|---|---|---|---|
@@ -170,10 +189,11 @@
 | 8 | 运行时改配置不中断 | P1 | 下一轮生效 | [ ] |
 | 9 | RBAC 权限隔离 | P1 | 401/403 生效、审计齐全 | [ ] |
 | 10 | 前端页面可用 | P2 | T6 全过 | [ ] |
+| 11 | 中心形态端到端 | P1 | T7 全过（现场→broker→ingest→中心库→Web） | [ ] |
 
 **放行结论**：P0 + P1 全部通过 → 判定可用；任一项不通过 → 记录缺陷到 `notes/ADR/` 后修复并回归。
 
-## 11. 缺陷分级
+## 12. 缺陷分级
 
 | 级别 | 定义 | 示例 | 处理 |
 |---|---|---|---|
@@ -181,7 +201,7 @@
 | P1 | 核心场景不达标 | 长稳内存超 2 倍、故障隔离失效、指标超阈值 | 必须修复 |
 | P2 | 体验/文档类 | 前端样式、提示文案 | 可记录后置 |
 
-## 12. 演示场景（验收/面试演示用）
+## 13. 演示场景（验收/面试演示用）
 
 **场景 1 — 断连自动化恢复（2 分钟）**
 

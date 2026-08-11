@@ -51,11 +51,13 @@ public sealed class EventBridge : IDisposable, IPointStoredSink, IDeviceHealthLi
     private readonly object _gate = new();
     private readonly List<PointSnapshot> _pendingMeasurements = [];
     private readonly List<DeviceHealthChanged> _pendingHealth = [];
-    private readonly PeriodicTimer _timer;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _loop;
     private readonly IForwardBuffer _buffer;
     private readonly ILogger<EventBridge> _logger;
+    private readonly TimeSpan _frameInterval;
+    /// <summary>帧循环异常后的重启延迟（ADR-028 P3-1 自愈）</summary>
+    private static readonly TimeSpan RestartDelay = TimeSpan.FromMilliseconds(200);
 
     private MqttConnectionState? _mqttState;
     private int? _backlog;
@@ -76,7 +78,7 @@ public sealed class EventBridge : IDisposable, IPointStoredSink, IDeviceHealthLi
     {
         _buffer = buffer;
         _logger = logger;
-        _timer = new PeriodicTimer(frameInterval ?? DefaultFrameInterval);
+        _frameInterval = frameInterval ?? DefaultFrameInterval;
         _loop = Task.Run(LoopAsync);
     }
 
@@ -101,23 +103,36 @@ public sealed class EventBridge : IDisposable, IPointStoredSink, IDeviceHealthLi
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>帧循环：每 200ms 刷新水位（每 10 帧）并发布一帧。</summary>
+    /// <summary>
+    /// 帧循环：每 200ms 刷新水位（每 10 帧）并发布一帧。
+    /// ADR-028 P3-1：循环异常后不再直接退出（修复前 UI 数据永久静止）——记 Error 后重建 PeriodicTimer
+    /// 重启循环；重启延迟 200ms，非连续异常下用户无感知，连续异常时至少保留日志与重试。
+    /// </summary>
     private async Task LoopAsync()
     {
-        try
+        while (!_cts.IsCancellationRequested)
         {
-            while (await _timer.WaitForNextTickAsync(_cts.Token))
+            using var timer = new PeriodicTimer(_frameInterval);
+            try
             {
-                _tick++;
-                if (_tick % BacklogPollFrames == 0)
-                    await RefreshBacklogAsync();
-                Flush();
+                while (await timer.WaitForNextTickAsync(_cts.Token))
+                {
+                    _tick++;
+                    if (_tick % BacklogPollFrames == 0)
+                        await RefreshBacklogAsync();
+                    Flush();
+                }
             }
-        }
-        catch (OperationCanceledException) { /* 正常释放 */ }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "EventBridge 帧循环异常");
+            catch (OperationCanceledException)
+            {
+                return; // 正常释放
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "EventBridge 帧循环异常，{Delay}ms 后重启循环", RestartDelay.TotalMilliseconds);
+                try { await Task.Delay(RestartDelay, _cts.Token); }
+                catch (OperationCanceledException) { return; }
+            }
         }
     }
 
@@ -180,7 +195,6 @@ public sealed class EventBridge : IDisposable, IPointStoredSink, IDeviceHealthLi
         _cts.Cancel();
         try { _loop.GetAwaiter().GetResult(); } catch { /* 循环异常已隔离 */ }
         _cts.Dispose();
-        _timer.Dispose();
     }
 }
 

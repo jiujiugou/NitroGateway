@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NitroGateway.DeviceManagement;
 using NitroGateway.DeviceManagement.Events;
+using NitroGateway.Storage.Buffer;
 
 namespace NitroGateway.Collection;
 
@@ -49,7 +50,16 @@ public static class CollectionServiceCollectionExtensions
 
         services.AddSingleton<IDeviceReader, DeviceReader>();
         services.AddSingleton<IPointValuePipeline, PointValuePipeline>();
-        services.AddSingleton<IDataDispatcher, DataDispatcher>();
+        // ADR-012：磁盘状态可选注入——未注册 AddNitroSqlite（无 DiskGuardService）的宿主不受影响
+        // ADR-011 P3：入队路由与 Forwarder 同一配置（Forwarder:Channels），非法值启动即报错
+        var forwardChannels = ResolveForwardChannels(configuration["Forwarder:Channels"] ?? "mqtt");
+        services.AddSingleton<IDataDispatcher>(sp => new DataDispatcher(
+            sp.GetRequiredService<MeasurementWriteHost>(),
+            sp.GetRequiredService<IForwardBuffer>(),
+            sp.GetRequiredService<SinkDispatcher>(),
+            sp.GetRequiredService<ILogger<DataDispatcher>>(),
+            sp.GetService<NitroGateway.Storage.Disk.IDiskStatus>(),
+            forwardChannels));
         services.AddSingleton<MeasurementWriteHost>();
         services.AddHostedService(sp => sp.GetRequiredService<MeasurementWriteHost>());
         services.AddSingleton<SinkDispatcher>();
@@ -70,5 +80,21 @@ public static class CollectionServiceCollectionExtensions
             sp.GetRequiredService<IOptions<CollectionOption>>().Value.MaxConcurrency));
         services.AddHostedService<CollectionEngine>();
         return services;
+    }
+
+    /// <summary>
+    /// 解析北向通道列表（ADR-011 P3）：mqtt / http / both（大小写不敏感）。
+    /// 非法值抛 <see cref="ArgumentException"/> 快速失败，与 Forwarder 注册侧校验保持一致。
+    /// </summary>
+    private static IReadOnlyList<string> ResolveForwardChannels(string channels)
+    {
+        return channels.Trim().ToLowerInvariant() switch
+        {
+            "mqtt" => [IForwardBuffer.MqttChannel],
+            "http" => [IForwardBuffer.HttpChannel],
+            "both" => [IForwardBuffer.MqttChannel, IForwardBuffer.HttpChannel],
+            var other => throw new ArgumentException(
+                $"Forwarder:Channels 取值必须为 mqtt/http/both，实际为: {other}")
+        };
     }
 }

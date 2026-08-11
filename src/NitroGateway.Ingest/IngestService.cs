@@ -153,6 +153,15 @@ public sealed class IngestService : BackgroundService
             return;
         }
 
+        // ADR-025 P1：顶层 v 版本字段兼容读取——旧版载荷无 v（反序列化为 0）按 v1 处理；
+        // 未知更高版本暂不承诺新语义，按 v1 尽力解析（STJ 忽略未知字段，前向兼容）。
+        var version = batch.V == 0 ? 1 : batch.V;
+        if (version != 1)
+        {
+            _logger.LogDebug("遥测载荷版本 {Version}（当前支持 v1），按 v1 兼容读取: {BatchId}",
+                version, batch.Id);
+        }
+
         NitroMetrics.IngestReceivedTotal.WithLabels(KindMeasurements).Inc();
 
         var result = await WithRetryAsync(

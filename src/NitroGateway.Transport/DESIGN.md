@@ -37,21 +37,29 @@ DateTime ReceivedAt { get; }
 Disconnected / Connecting / Connected / Reconnecting / Faulted
 ```
 
-### MqttConnectionOptions
+### MqttConnectionOptions（ADR-020 P3-4 同步实际签名）
 
 ```csharp
-string Broker { get; }          // 如 "tcp://192.168.1.1:1883"
-string? ClientId { get; }
+string Host { get; }                    // broker 地址，必填（注册时校验非空）
+int Port { get; }                       // 默认 1883
+string? ClientId { get; }               // 留空自动生成 NitroGateway-{MachineName}-{8位随机}
 string? Username { get; }
 string? Password { get; }
 bool UseTls { get; }
-int KeepAliveSeconds { get; }   // 默认 60
+int KeepAliveSeconds { get; }           // 默认 60，夹紧 [5, 3600]
+int MaxReconnectAttempts { get; }       // 默认 10，0 = 不自动重连，夹紧 ≥0
+int ReconnectBackoffBaseMs { get; }     // 默认 1000，夹紧 ≥1
+int ReconnectMaxIntervalMs { get; }     // 默认 30000，夹紧 ≥1
 ```
 
-### IHttpClient
+### IHttpClient（ADR-020 P3-4 同步实际签名）
 
 ```csharp
 Task<OperationResult<HttpResponse>> SendAsync(HttpRequest request, CancellationToken ct);
+Task<OperationResult> UploadAsync<T>(string path, T payload, CancellationToken ct);  // POST，非幂等不重试
+Task<OperationResult> HealthCheckAsync(CancellationToken ct);                        // GET {HealthPath ?? "/health"}
+HttpConnectionState State { get; }
+event Action<HttpConnectionState>? StateChanged;
 ```
 
 `HttpRequest` 和 `HttpResponse` 是简单的数据载体（URL、Method、Headers、Body、StatusCode），不依赖 ASP.NET Core。
@@ -109,7 +117,8 @@ Connected ──→ 断线 ──→ Reconnecting ──→ 退避重试 ──�
 3. 自动重连 — 驱动内部实现，最大重试次数可配，超过后状态变为 Faulted 并停止重试
 4. IMqttClient — 基于 MQTTnet 库封装，不自己实现 MQTT 协议
 5. IHttpClient — 基于 `HttpClient` / `SocketsHttpHandler` 封装，不引入额外的 HTTP 框架
-6. QoS — 默认 QoS=1（至少一次），配置数据同步用 QoS=2（恰好一次）
+6. QoS — 默认 QoS=1（至少一次）。ADR-020 P3-4：全仓发布点（Forwarder / MqttAlarmNotifier）均 QoS1，
+   "配置数据同步用 QoS=2" 为预留约束（中心下发通道未落地，落地时再启用）
 7. Payload — 统一 `byte[]`，不做序列化。序列化是 Forwarder 层的职责
 8. ClientId — 若不指定，自动生成 `NitroGateway-{MachineName}-{Guid}`
 

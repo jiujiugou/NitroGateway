@@ -17,6 +17,7 @@
     <ProjectReference Include="..\NitroGateway.Protocol\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\Disk\NitroGateway.Storage.Disk.csproj" />
     <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
     <ProjectReference Include="..\NitroGateway.Host\NitroGateway.Host.csproj" />

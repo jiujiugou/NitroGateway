@@ -58,16 +58,25 @@ builder.Services.AddNitroAlarm();
 // ADR-016 P1-1：Forwarder 必须先于 Collection 注册——HostedService 按注册序反向停止，
 // 这样关闭时先停采集（最后一轮入缓冲）再停转发（停机排空），MQTT 由 Singleton 兜底保持连接。
 // ADR-022 P3-7：Forwarder 轮询间隔配置化（与 Collection 一致），缺省 5000ms
-builder.Services.AddNitroForwarder(intervalMs: builder.Configuration.GetValue("Forwarder:IntervalMs", 5000));
+// ADR-011 P2：配置驱动注册（Forwarder:Channels 决定 MQTT/HTTP 引擎），缺省 mqtt 单通道
+builder.Services.AddNitroForwarder(builder.Configuration);
 builder.Services.AddNitroCollection(builder.Configuration);
 builder.Services.AddNitroMqtt(builder.Configuration);
 
 builder.Services.AddNitroTelemetry();
 
 // ── 健康检查 ──
-builder.Services.AddHealthChecks()
+var healthChecks = builder.Services.AddHealthChecks()
     .AddCheck("sqlite", new SqliteHealthCheck(dbConnectionString), tags: ["db", "ready"])
-    .AddCheck<MqttHealthCheck>("mqtt", tags: ["mqtt", "ready"]);
+    .AddCheck<MqttHealthCheck>("mqtt", tags: ["mqtt", "ready"])
+    .AddCheck<DiskHealthCheck>("disk", tags: ["disk"]);
+// ADR-011 P4：HTTP 北向通道检查——仅 http/both 通道启用时注册（IHttpClient 只在此时存在）
+var forwarderChannels = builder.Configuration["Forwarder:Channels"] ?? "mqtt";
+if (forwarderChannels.Trim().Equals("http", StringComparison.OrdinalIgnoreCase) ||
+    forwarderChannels.Trim().Equals("both", StringComparison.OrdinalIgnoreCase))
+{
+    healthChecks.AddCheck<HttpHealthCheck>("http", tags: ["http", "ready"]);
+}
 
 builder.Services.AddSignalR();
 builder.Services.AddControllers();

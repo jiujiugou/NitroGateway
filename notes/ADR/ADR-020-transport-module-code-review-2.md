@@ -14,16 +14,15 @@
 - P2-3 HTTP 测试补齐：新增 `HttpClientWrapperTests` 7 个（注入 `HttpMessageHandler` 替身，覆盖状态迁移/异常分类/幂等重试）；HTTP csproj 清理未使用依赖（Microsoft.Extensions.Http / Http.Resilience 从未使用，改显式 `Polly.Core 8.7.0` 与 Protocol.Abstractions 一致，消除 NU1605）
 - 验证: build 0 错误；UnitTests 215；IntegrationTests 40（31 + 新增 9）
 
-## 待处理条目（P3）
+## 修复记录（2026-08-10，P3 全部修复，条目已清）
 
-- P3-1 监督循环/状态日志刷屏：MqttHostedService 监督重连失败每周期 LogWarning（MqttHostedService.cs:39-40）+ OnStateChanged Faulted LogError（:73），broker 长期不可用时每 30s 一组，与 ADR-016 P2-1 热路径日志降级目标相悖。修复方向：失败明细降 Debug 或按次数限流。
-- P3-2 Options 无校验/无夹紧：MqttConnectionOptions.Port 无默认、Host 空串不校验；MqttServiceCollectionExtensions 对 Get 结果为 null 无防护（配置缺 MQTT 段 → 启动 NRE）；ReconnectBackoffBaseMs<=0 时 TryReconnectAsync 的 Task.Delay 抛 ArgumentOutOfRangeException；HttpConnectionOptions.TimeoutMs<=0 / MaxRetries<0 同理。修复方向：注册时校验/夹紧（对齐 ADR-016 P2-2 CollectionOption 模式）。
-- P3-3 TryReconnectAsync fire-and-forget 无异常兜底：`_ = TryReconnectAsync()`（MqttClientWrapper.cs:378）内部无 catch-all，非 OCE 异常（Task.Delay 参数非法等）→ 未观测异常且状态卡 Reconnecting。修复方向：方法内 catch-all 记 Error 并置 Faulted/Disconnected。
-- P3-4 DESIGN.md 漂移 ×3：`MqttConnectionOptions.Broker` vs 实际 Host+Port；IHttpClient 仅列 SendAsync vs 实际 UploadAsync/HealthCheckAsync；约束 6「配置数据同步用 QoS=2」全仓无 QoS2 发布点（Forwarder / MqttAlarmNotifier 均 QoS1）。修复方向：DESIGN.md 同步实际签名，QoS2 约束删除或标注预留。
-- P3-5 并发安全：MqttClientWrapper.State/SetState、HttpClientWrapper._consecutiveFailures/State 无同步，Singleton 实例被 Forwarder + MqttAlarmNotifier 并发发布时状态与计数竞态（当前 Forwarder 串行，影响面小）。修复方向：状态读写加锁或 Interlocked。
-- P3-6 PublishAsync 把 NoMatchingSubscribers 当成功：无订阅者时 QoS1 消息被 Broker 丢弃仍返回 Success（MqttClientWrapper.cs:175），与"至少一次"语义矛盾；遥测场景可接受但需注释明确决策。修复方向：注释说明（QoS1 为尽力投递，无订阅者不计失败）。
-- P3-7 小项：MqttMessage.ReceivedAt 用 DateTime 未标注 UTC；绕过 AddNitroMqtt 直接构造且 ClientId 为空时每次 ConnectAsync 重新生成 ID（会话漂移）；HttpConnectionOptions.HealthPath 注释「留空不做主动健康检查」与实现默认 /health（HttpClientWrapper.cs:121）不符。修复方向：注释/文档对齐。
-
+- P3-1 监督循环日志限流：MqttHostedService 重连失败 LogWarning→LogDebug、Faulted LogError→LogWarning（broker 长期不可用不再每 30s 刷屏）
+- P3-2 Options 校验/夹紧：MqttConnectionOptions 加 SectionName 常量 + Host/Port/数值 clamp；MqttServiceCollectionExtensions 走 Options+Validate+ValidateOnStart（配置缺 MQTT 段不再 NRE）；HttpConnectionOptions 数值 clamp
+- P3-3 TryReconnectAsync 异常兜底：外层 catch-all 置 Faulted 交监督循环（不再未观测异常卡 Reconnecting）
+- P3-4 Transport/DESIGN.md 同步实际签名（Host+Port / UploadAsync / HealthCheckAsync），QoS2 约束改「预留」
+- P3-5 并发安全：MqttClientWrapper `_stateLock`+State 锁读、HttpClientWrapper `_stateLock`+Interlocked（Singleton 并发发布无竞态）
+- P3-6 PublishAsync NoMatchingSubscribers 按成功：注释明确 QoS1 尽力投递决策（无订阅者不计失败）
+- P3-7 小项：MqttMessage.ReceivedAt 注释明确 UTC；HttpConnectionOptions.HealthPath 注释修正；MqttClientWrapper `_clientId` 构造时固定（防会话漂移）
 ## 亮点
 
 - ADR-006 修复扎实且有测试锁定：重连单实例互斥、订阅重放、Faulted 监督兜底、CTS 释放（MqttClientWrapperTests 8 + MqttHostedServiceTests 3）

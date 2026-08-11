@@ -62,6 +62,15 @@ public static class NitroMetrics
         "nitro_throttle_batch_size",
         "自适应节流器当前批量大小");
 
+    /// <summary>HTTP 北向通道转发次数（ADR-011）。label: status (success|failure)</summary>
+    public static readonly Counter HttpForwardTotal = Metrics.CreateCounter(
+        "nitro_http_forward_total",
+        "HTTP 北向通道转发总次数",
+        new CounterConfiguration
+        {
+            LabelNames = ["status"]
+        });
+
     // ═══════════════════════════════════════════════════════════════
     //  连接
     // ═══════════════════════════════════════════════════════════════
@@ -94,6 +103,15 @@ public static class NitroMetrics
     public static readonly Counter StoreWriteFailures = Metrics.CreateCounter(
         "nitro_store_write_failures_total",
         "时序库落库失败总次数");
+
+    /// <summary>数据目录/logs 目录剩余空间字节数（ADR-012 磁盘保护）。label: path（目录）</summary>
+    public static readonly Gauge DiskFreeBytes = Metrics.CreateGauge(
+        "nitro_disk_free_bytes",
+        "数据目录与日志目录剩余空间字节数",
+        new GaugeConfiguration
+        {
+            LabelNames = ["path"]
+        });
 
     // ═══════════════════════════════════════════════════════════════
     //  中心 Ingest（ADR-025 P0）

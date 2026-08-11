@@ -1,6 +1,6 @@
 # ADR-025: B 方案设计——桌面采集端 + MQTT + 云端中心（Ingest）
 
-- 日期: 2026-08-10 | 状态: P0 已实施（2026-08-10）；P1/P2 待办 | 来源: 方向讨论——A 方案（单机内嵌 Web）与 B 方案共用桌面壳，B 为生产演进形态（多现场 → 一中心）
+- 日期: 2026-08-10 | 状态: P0/P1 已实施（2026-08-10）；P2 待办（演进，非闭环缺口） | 来源: 方向讨论——A 方案（单机内嵌 Web）与 B 方案共用桌面壳，B 为生产演进形态（多现场 → 一中心）
 - 范围: 新增 `src/NitroGateway.Ingest`；`docker-compose.yml` 新增 ingest 服务；复用 Forwarder 契约与中心 SQLite（现有迁移）
 
 ## 设计目标（七问摘要）
@@ -29,7 +29,7 @@
 
 ## 待办
 - P0 遥测入库（已实施 2026-08-10）: src/NitroGateway.Ingest——BackgroundService 订阅 `nitrogateway/+/measurements` → 反序列化 → 批量 INSERT OR IGNORE → 指标（ingest_received_total / ingest_dedup_total / ingest_failures_total）；单测红绿对照（IngestServiceTests 6 个，375+40 全绿）
-- P0 compose（已实施 2026-08-10）: docker-compose.yml 新增 ingest 服务（端口 5200，build args 切换 Dockerfile 入口）+ center-data/center-logs 卷
+- P0 compose（已实施 2026-08-10）: docker-compose.yml 新增 ingest 服务（端口 5200，build args 切换 Dockerfile 入口）+ center-data/center-logs 卷；2026-08-10 补中心形态 `docker-compose.center.yml`（mqtt + ingest 写 center.db + 中心 Webapi 读 center.db + web），端到端验证流程定义于 FACTORY-TEST T7（现场 → broker → ingest → 中心库 → 中心 Web）
 - P2 告警上行契约已一并修复（ADR-028 P2-1，2026-08-10）: 中心订阅 `nitrogateway/+/alarms`，按 AlarmId UPSERT 到 alarms（状态迁移覆盖，非 INSERT OR IGNORE）；现场侧 MqttAlarmNotifier 契约不变
-- P1 payload 顶层 `v` 版本字段 + 兼容读取
+- P1 payload 顶层 `v` 版本字段 + 兼容读取（已实施 2026-08-10）: BatchMeasurements.V 默认 1，序列化输出顶层 `v:1`；Ingest 旧载荷（无 v，反序列化 V=0）按 v1 兼容读取，未知更高版本记 Debug 按 v1 尽力解析；红绿: IngestServiceTests.Payload_version_field_is_emitted_and_legacy_payload_accepted
 - P2 元数据同步/配置下发、WPF 桌面壳（另立 ADR）

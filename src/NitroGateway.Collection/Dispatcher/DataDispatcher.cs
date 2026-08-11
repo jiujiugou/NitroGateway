@@ -5,6 +5,7 @@ using NitroGateway.Domain.Events;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
+using NitroGateway.Storage.Disk;
 using NitroGateway.Storage.TimeSeries;
 using NitroGateway.Telemetry.Tracing;
 
@@ -20,6 +21,8 @@ public sealed class DataDispatcher : IDataDispatcher
     private readonly MeasurementWriteHost _measurement;
     private readonly IForwardBuffer _buffer;
     private readonly SinkDispatcher _sinks;
+    private readonly IDiskStatus? _diskStatus;
+    private readonly IReadOnlyList<string> _forwardChannels;
 
     private readonly ILogger<DataDispatcher> _logger;
 
@@ -28,15 +31,23 @@ public sealed class DataDispatcher : IDataDispatcher
     /// <param name="buffer">转发缓冲；MQTT 转发消费的数据源</param>
     /// <param name="sinks">事件分发器；负责把存储事件推送给各 IPointStoredSink</param>
     /// <param name="logger">日志记录器</param>
+    /// <param name="diskStatus">磁盘状态（ADR-012）；null 表示不启用降级（独立测试用）</param>
+    /// <param name="forwardChannels">北向通道列表（ADR-011 P3）；缺省或空时仅 mqtt</param>
     public DataDispatcher(
         MeasurementWriteHost measurement,
         IForwardBuffer buffer,
         SinkDispatcher sinks,
-        ILogger<DataDispatcher> logger)
+        ILogger<DataDispatcher> logger,
+        IDiskStatus? diskStatus = null,
+        IReadOnlyList<string>? forwardChannels = null)
     {
         _measurement = measurement;
         _buffer = buffer;
         _sinks = sinks;
+        _diskStatus = diskStatus;
+        _forwardChannels = forwardChannels is { Count: > 0 }
+            ? forwardChannels
+            : [IForwardBuffer.MqttChannel];
         _logger = logger;
     }
 
@@ -57,6 +68,16 @@ public sealed class DataDispatcher : IDataDispatcher
             activity?.SetStatus(ActivityStatusCode.Ok);
             return OperationResult.Success();
         }
+
+        // ADR-012 P3：磁盘 Critical 降级——跳过时序写入与转发缓冲入队，保护 SQLite 与日志；
+        // 采集循环继续运行（CPU 侧不写盘），等级恢复后数据流自动恢复。跳过不记日志（等级变化
+        // 已由 DiskGuardService 记 Warning），避免热路径每轮刷屏。
+        if (_diskStatus?.Level == DiskLevel.Critical)
+        {
+            activity?.SetTag(GatewayActivityTags.ErrorMessage, "disk critical, dispatch skipped");
+            return OperationResult.Success();
+        }
+
         // ── 写时序库 ──
         var posted=_measurement.Post(snapshots);
         if (!posted)
@@ -66,14 +87,22 @@ public sealed class DataDispatcher : IDataDispatcher
 
         // ── 入转发缓冲 ──
         var batch = ToBatchMeasurements(deviceId, snapshots);
-        var bufResult = await _buffer.EnqueueAsync(batch, ct);
-        if (bufResult.IsFailure)
+        // ADR-011 P3：按配置通道入队（mqtt/http/both）。多通道时每通道一行且独立 batchId，
+        // 避免缓冲表以 batchId 为主键时 same Id 冲突；各通道引擎按通道隔离出队互不争抢。
+        foreach (var channel in _forwardChannels)
         {
-            var err = bufResult.Error!;
-            if (err.Severity >= OperationalSeverity.Error)
-                _logger.LogError("缓冲入队失败 [{Code}] {Message}", err.Code, err.Message);
-            else
-                _logger.LogWarning("缓冲入队失败: {Message}", err.Message);
+            var channelBatch = _forwardChannels.Count > 1
+                ? batch with { Id = Guid.NewGuid() }
+                : batch;
+            var bufResult = await _buffer.EnqueueAsync(channelBatch, channel, ct);
+            if (bufResult.IsFailure)
+            {
+                var err = bufResult.Error!;
+                if (err.Severity >= OperationalSeverity.Error)
+                    _logger.LogError("缓冲入队失败 [{Code}] {Message}（通道 {Channel}）", err.Code, err.Message, channel);
+                else
+                    _logger.LogWarning("缓冲入队失败: {Message}（通道 {Channel}）", err.Message, channel);
+            }
         }
 
         // ── 通知订阅方（Channel 推送，非阻塞）──

@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NitroGateway.Alarm.Repository;
+using NitroGateway.Storage.Disk;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.Configuration;
 using NitroGateway.Storage.TimeSeries;
@@ -56,6 +58,18 @@ public static class SqliteServiceCollectionExtensions
             sp.GetRequiredService<ILogger<DeadLetterRetentionService>>(),
             retentionDays: configuration.GetValue("Persistence:DeadLetterRetentionDays", 30),
             interval: configuration.GetValue<TimeSpan?>("Persistence:DeadLetterRetentionInterval") ?? TimeSpan.FromHours(24)));
+
+        // ADR-012：磁盘守卫——同一实例同时是 IDiskStatus（供采集/转发/健康检查联动）与 HostedService
+        services.AddOptions<DiskGuardOption>()
+            .Bind(configuration.GetSection(DiskGuardOption.SectionName))
+            .Validate(o => o.WarningFreeBytes > o.CriticalFreeBytes, "Disk:WarningFreeBytes 必须大于 Disk:CriticalFreeBytes")
+            .Validate(o => o.RecoveryMarginPercent is >= 0 and <= 100, "Disk:RecoveryMarginPercent 必须在 0-100")
+            .ValidateOnStart();
+        services.AddSingleton<IDiskStatus>(sp => new DiskGuardService(
+            connectionString,
+            sp.GetRequiredService<IOptions<DiskGuardOption>>(),
+            sp.GetRequiredService<ILogger<DiskGuardService>>()));
+        services.AddHostedService(sp => (DiskGuardService)sp.GetRequiredService<IDiskStatus>());
 
         // 告警持久化（EF Core，Scoped 适配 DbContext；AlarmHostedService 每事件建 scope 解析）
         services.AddScoped<IAlarmRuleRepository, SqliteAlarmRuleRepository>();

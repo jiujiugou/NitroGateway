@@ -30,11 +30,22 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     private readonly object _reconnectLock = new();
     private bool _reconnectLoopActive;
 
+    // ADR-020 P3-5：State/SetState 用锁同步——Singleton 实例可能被 Forwarder + MqttAlarmNotifier
+    // 并发发布/重连路径并发读改，无同步时状态机可能被写丢（读-改-写非原子）。
+    private readonly object _stateLock = new();
+    private MqttConnectionState _state = MqttConnectionState.Disconnected;
+
+    /// <summary>客户端 ID：构造时固定一次（配置缺失时自动生成），避免每次 ConnectAsync 重新生成导致会话漂移（ADR-020 P3-7）</summary>
+    private readonly string _clientId;
+
     private int _reconnectCount;
     private CancellationTokenSource? _reconnectCts;
 
     /// <inheritdoc />
-    public MqttConnectionState State { get; private set; } = MqttConnectionState.Disconnected;
+    public MqttConnectionState State
+    {
+        get { lock (_stateLock) return _state; }
+    }
 
     /// <inheritdoc />
     public event Action<MqttConnectionState>? StateChanged;
@@ -62,6 +73,9 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         _logger = logger;
         _inner = inner;
         _stateListeners = stateListeners;
+        // ADR-020 P3-7：ClientId 构造时固定（绕过 AddNitroMqtt 直接构造时也只会生成一次），
+        // 避免每次 ConnectAsync 生成新 ID 造成 CleanStart 会话漂移。
+        _clientId = options.ClientId ?? $"NitroGateway-{Environment.MachineName}-{Guid.NewGuid():N}";
         _channel = Channel.CreateBounded<MqttMessage>(new BoundedChannelOptions(10_000)
         {
             FullMode = BoundedChannelFullMode.Wait
@@ -81,11 +95,8 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
         try
         {
-            var clientId = _options.ClientId
-                           ?? $"NitroGateway-{Environment.MachineName}-{Guid.NewGuid():N}";
-
             var builder = new MqttNet.MqttClientOptionsBuilder()
-                .WithClientId(clientId)
+                .WithClientId(_clientId)
                 .WithCleanStart()
                 .WithKeepAlivePeriod(TimeSpan.FromSeconds(_options.KeepAliveSeconds));
 
@@ -183,6 +194,8 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             if (result.ReasonCode is MqttNet.MqttClientPublishReasonCode.Success or
                 MqttNet.MqttClientPublishReasonCode.NoMatchingSubscribers)
             {
+                // ADR-020 P3-6：NoMatchingSubscribers 按成功处理——QoS1 为尽力投递，无订阅者时
+                // 消息被 Broker 丢弃但没有送达对象，不计失败不重试；遥测场景可接受，注释明确决策。
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 return OperationResult.Success();
             }
@@ -268,12 +281,17 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// <summary>更新连接状态并触发 <see cref="StateChanged"/> 事件</summary>
     private void SetState(MqttConnectionState state)
     {
-        if (State == state) return;
-        var old = State;
-        State = state;
+        MqttConnectionState old;
+        lock (_stateLock)
+        {
+            old = _state;
+            if (old == state) return;
+            _state = state;
+        }
         NitroMetrics.MqttState.Set((int)state);
         _logger.LogDebug("MQTT 状态变更: {Old} → {New}", old, state);
 
+        // 事件与监听者通知在锁外执行，避免监听者回调（可能反向调用 State）造成重入死锁
         StateChanged?.Invoke(state);
         NotifyStateListeners(state);
     }
@@ -365,47 +383,57 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     {
         try
         {
-            CancelReconnect();
-            _reconnectCts = new CancellationTokenSource();
-            var token = _reconnectCts.Token;
-
-            SetState(MqttConnectionState.Reconnecting);
-
-            while (_reconnectCount < _options.MaxReconnectAttempts && !token.IsCancellationRequested)
+            try
             {
-                _reconnectCount++;
+                CancelReconnect();
+                _reconnectCts = new CancellationTokenSource();
+                var token = _reconnectCts.Token;
 
-                var delayMs = Math.Min(
-                    _options.ReconnectBackoffBaseMs * (int)Math.Pow(2, _reconnectCount - 1),
-                    _options.ReconnectMaxIntervalMs);
+                SetState(MqttConnectionState.Reconnecting);
 
-                _logger.LogInformation("MQTT 重连 {Attempt}/{Max}，等待 {Delay}ms",
-                    _reconnectCount, _options.MaxReconnectAttempts, delayMs);
-
-                try { await Task.Delay(delayMs, token); }
-                catch (OperationCanceledException) { return; }
-
-                try
+                while (_reconnectCount < _options.MaxReconnectAttempts && !token.IsCancellationRequested)
                 {
-                    var result = await ConnectAsync(token);
-                    if (result.IsSuccess) return;
+                    _reconnectCount++;
+
+                    var delayMs = Math.Min(
+                        _options.ReconnectBackoffBaseMs * (int)Math.Pow(2, _reconnectCount - 1),
+                        _options.ReconnectMaxIntervalMs);
+
+                    _logger.LogInformation("MQTT 重连 {Attempt}/{Max}，等待 {Delay}ms",
+                        _reconnectCount, _options.MaxReconnectAttempts, delayMs);
+
+                    try { await Task.Delay(delayMs, token); }
+                    catch (OperationCanceledException) { return; }
+
+                    try
+                    {
+                        var result = await ConnectAsync(token);
+                        if (result.IsSuccess) return;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // ADR-020 P1-2：取消（DisconnectAsync/DisposeAsync 触发 CancelReconnect）正常退出重连
+                        return;
+                    }
                 }
-                catch (OperationCanceledException)
-                {
-                    // ADR-020 P1-2：取消（DisconnectAsync/DisposeAsync 触发 CancelReconnect）正常退出重连
-                    return;
-                }
+
+                _logger.LogError("MQTT 重连失败，已达最大重试次数 {Max}", _options.MaxReconnectAttempts);
+                SetState(MqttConnectionState.Faulted);
             }
-
-            _logger.LogError("MQTT 重连失败，已达最大重试次数 {Max}", _options.MaxReconnectAttempts);
-            SetState(MqttConnectionState.Faulted);
+            finally
+            {
+                // ADR-006 P3-2：成功/失败/取消退出循环都释放 CTS，避免残留到下次断开才清理
+                _reconnectCts?.Dispose();
+                _reconnectCts = null;
+                lock (_reconnectLock) _reconnectLoopActive = false;
+            }
         }
-        finally
+        catch (Exception ex)
         {
-            // ADR-006 P3-2：成功/失败/取消退出循环都释放 CTS，避免残留到下次断开才清理
-            _reconnectCts?.Dispose();
-            _reconnectCts = null;
-            lock (_reconnectLock) _reconnectLoopActive = false;
+            // ADR-020 P3-3：fire-and-forget 启动的重连循环必须兜底任何未预期异常——否则未观测异常
+            // 且状态卡在 Reconnecting 永不自愈；置 Faulted 交由 MqttHostedService 监督循环周期复位。
+            _logger.LogError(ex, "MQTT 重连循环异常，置 Faulted 由监督循环兜底");
+            SetState(MqttConnectionState.Faulted);
         }
     }
 

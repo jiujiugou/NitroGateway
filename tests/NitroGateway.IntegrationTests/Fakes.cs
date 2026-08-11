@@ -48,6 +48,7 @@ public sealed class FakeForwardBuffer : IForwardBuffer
     public List<BatchMeasurements> Pending { get; } = [];
     public List<Guid> Committed { get; } = [];
     public List<(Guid BatchId, string Reason)> MarkedFailed { get; } = [];
+    public List<(BatchMeasurements Batch, string Channel)> EnqueuedWithChannel { get; } = [];
 
     /// <summary>注入出队失败，非 null 时 DequeueAsync 返回该失败</summary>
     public OperationalError? DequeueError { get; set; }
@@ -71,6 +72,14 @@ public sealed class FakeForwardBuffer : IForwardBuffer
     public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
     {
         Pending.Add(batch);
+        return Task.FromResult(OperationResult.Success());
+    }
+
+    /// <summary>ADR-011：记录通道（HttpForwarderEngine 测试按 http 通道入队）</summary>
+    public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, string channel, CancellationToken ct = default)
+    {
+        Pending.Add(batch);
+        EnqueuedWithChannel.Add((batch, channel));
         return Task.FromResult(OperationResult.Success());
     }
 

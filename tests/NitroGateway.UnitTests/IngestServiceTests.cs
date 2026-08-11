@@ -82,6 +82,47 @@ public sealed class IngestServiceTests : IDisposable
         Assert.Equal(dedupBefore + 1, Metric(IngestService.KindMeasurements).Dedup);
     }
 
+    /// <summary>ADR-025 P1：payload 顶层 v 版本字段——新载荷输出 v=1 正常入库；旧载荷（无 v）按 v1 兼容读取</summary>
+    [Fact]
+    public async Task Payload_version_field_is_emitted_and_legacy_payload_accepted()
+    {
+        var service = CreateService();
+        var batch = NewBatch(1, out var deviceId);
+
+        // 新载荷：JsonMessageSerializer 在顶层输出 v=1
+        var jsonWithV = System.Text.Encoding.UTF8.GetString(new JsonMessageSerializer().Serialize(batch));
+        Assert.Contains("\"v\":1", jsonWithV);
+
+        var receivedBefore = Metric(IngestService.KindMeasurements).Received;
+        var failuresBefore = Metric(IngestService.KindMeasurements).Failures;
+
+        await service.ProcessMessageAsync(Msg(deviceId, batch), CancellationToken.None);
+        Assert.Equal(1, CountRows("measurements"));
+
+        // 旧载荷：匿名对象序列化（顶层无 v）——反序列化 V=0 → 按 v1 兼容读取，正常入库
+        var legacyRecord = NewRecord(deviceId, Guid.NewGuid(), "legacy-p1", 42.0);
+        var legacyPayload = JsonSerializer.Serialize(new
+        {
+            id = Guid.NewGuid(),
+            deviceId,
+            scanStartedAt = DateTime.UtcNow.AddSeconds(-1),
+            scanCompletedAt = DateTime.UtcNow,
+            records = new[] { legacyRecord }
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        Assert.DoesNotContain("\"v\":", legacyPayload);
+
+        var legacyMsg = new MqttMessage
+        {
+            Topic = $"nitrogateway/{deviceId}/measurements",
+            Payload = System.Text.Encoding.UTF8.GetBytes(legacyPayload)
+        };
+        await service.ProcessMessageAsync(legacyMsg, CancellationToken.None);
+
+        Assert.Equal(2, CountRows("measurements"));
+        Assert.Equal(receivedBefore + 2, Metric(IngestService.KindMeasurements).Received);
+        Assert.Equal(failuresBefore, Metric(IngestService.KindMeasurements).Failures);
+    }
+
     [Fact]
     public async Task Malformed_payload_is_dropped_with_failure_metric()
     {

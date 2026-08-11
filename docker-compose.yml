@@ -1,7 +1,11 @@
-# NitroGateway — 一键部署
+# NitroGateway — 单现场一体机演示（采集 + 本地库 + 展示装在一台机器）
 # 启动: docker compose up -d
 # 停止: docker compose down
 # 查看: http://localhost:5170
+#
+# ⚠ 角色说明：本栈里的 ingest 服务订阅本机 MQTT 上行并写入 center.db（中心库），
+#   但本栈 gateway（Webapi）读的是本机现场库 nitrogateway.db——中心展示链路不在此栈内。
+#   真正的「中心形态」（多现场 → 中心库 → 中心 Web/Vue）用 docker-compose.center.yml，见 README「部署形态」。
 
 services:
   # ── MQTT Broker ──
@@ -35,7 +39,7 @@ services:
       - mqtt
     restart: unless-stopped
 
-  # ── 中心 Ingest（ADR-025 D1：独立容器，订阅现场上行入库）──
+  # ── 中心 Ingest（ADR-025 D1：独立容器，订阅现场上行入库；演示栈内写 center.db 供中心形态复用）──
   ingest:
     build:
       context: .

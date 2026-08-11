@@ -1,6 +1,6 @@
 # ADR-012: 磁盘保护 DiskGuard（Persistence + 联动）
 
-- 日期: 2026-08-07 | 状态: 设计完成，待实现 | 用途: 7×24 无人值守下磁盘写满前预警并降级，保护 SQLite 与日志
+- 日期: 2026-08-07 | 状态: 已实施（2026-08-10） | 用途: 7×24 无人值守下磁盘写满前预警并降级，保护 SQLite 与日志
 - 范围: Storage（新 IDiskStatus 接口）、Persistence（DiskGuardService 实现）、Collection（DataDispatcher 暂停写入）、Forwarder（暂停出队）、Webapi（DiskHealthCheck + 配置）
 
 ## 设计
@@ -15,3 +15,9 @@
 
 ## 关联
 - SQLITE_FULL 兜底分类已存在（ADR-002 P3-4）；DiskGuard 是第一道防线，不改变该兜底语义
+
+## 实施记录（2026-08-10）
+- 新项目 src/NitroGateway.Storage/Disk（IDiskStatus + DiskLevel，纯接口，已入 slnx）
+- DiskGuardService（Persistence，BackgroundService 60s 周期）: 检查数据目录 + logs 剩余空间取最小，Warning/Critical 阈值 + 20% 恢复滞后防抖；DiskGuardOption（Disk:IntervalSeconds/WarningFreeBytes/CriticalFreeBytes/RecoveryMarginPercent）
+- 联动: DataDispatcher Critical 跳过快照与缓冲入队；ForwarderEngine/HttpForwarderEngine Critical 跳过出队；DiskHealthCheck Critical→Unhealthy / Warning→Degraded 接 /healthz；NitroMetrics.DiskFreeBytes 上报
+- 测试: DiskGuardTests×7（含滞后恢复/事件）+ DataDispatcherTests 磁盘 Critical 降级用例

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace NitroGateway.Transport.MQTT;
 
@@ -9,21 +10,29 @@ public static class MqttServiceCollectionExtensions
     /// <summary>
     /// 从 IConfiguration 的 "MQTT" 节点读取 <see cref="MqttConnectionOptions"/>，
     /// 自动生成 ClientId（NitroGateway-{MachineName}-{随机后缀}）。
+    /// ADR-020 P3-2：走标准 Options 管线（Bind + Validate + ValidateOnStart）——配置缺 MQTT 段或
+    /// Host 为空、Port 越界时启动即明确报错（修复前缺段直接 NRE、空 Host 不校验）。
     /// </summary>
     public static IServiceCollection AddNitroMqtt(this IServiceCollection services, IConfiguration configuration)
     {
-        var options = configuration.GetSection("MQTT").Get<MqttConnectionOptions>();
+        services.AddOptions<MqttConnectionOptions>()
+            .Bind(configuration.GetSection(MqttConnectionOptions.SectionName))
+            .Validate(o => !string.IsNullOrWhiteSpace(o.Host), "MQTT:Host 不能为空（MQTTnet 需要 broker 地址）")
+            .Validate(o => o.Port is >= 1 and <= 65535, "MQTT:Port 必须在 1-65535")
+            .ValidateOnStart();
 
-        // 自动生成唯一 ClientId。
-        // ADR-006 P1-1：修复前对整串取 [..8]，所有实例恒为 "NitroGat"，多实例连同一 broker 会按 MQTT 规范互踢；
-        // 现在只截 GUID 后缀 8 位，前缀保留 MachineName 便于排查，保证实例间唯一。
-        if (string.IsNullOrWhiteSpace(options.ClientId))
+        // 自动生成唯一 ClientId（ADR-006 P1-1）：只截 GUID 后缀 8 位，前缀保留 MachineName 便于排查，保证实例间唯一。
+        services.AddSingleton(sp =>
         {
-            var guidSuffix = Guid.NewGuid().ToString("N")[..8];
-            options = options with { ClientId = $"NitroGateway-{Environment.MachineName}-{guidSuffix}" };
-        }
+            var options = sp.GetRequiredService<IOptions<MqttConnectionOptions>>().Value;
+            if (string.IsNullOrWhiteSpace(options.ClientId))
+            {
+                var guidSuffix = Guid.NewGuid().ToString("N")[..8];
+                return options with { ClientId = $"NitroGateway-{Environment.MachineName}-{guidSuffix}" };
+            }
+            return options;
+        });
 
-        services.AddSingleton(options);
         services.AddSingleton<IMqttClient, MqttClientWrapper>();
         services.AddHostedService<MqttHostedService>();
         return services;

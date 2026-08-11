@@ -5,6 +5,7 @@ using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Persistence.Sqlite;
 using NitroGateway.Shared;
+using NitroGateway.Storage.Buffer;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
@@ -36,6 +37,7 @@ public class SqliteForwardBufferTests
                     id TEXT PRIMARY KEY,
                     payload TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'Pending',
+                    channel TEXT NOT NULL DEFAULT 'mqtt',
                     enqueued_at TEXT NOT NULL,
                     retry_count INTEGER NOT NULL DEFAULT 0,
                     last_error TEXT NULL
@@ -122,6 +124,44 @@ public class SqliteForwardBufferTests
                 }
             ]
         };
+    }
+
+    /// <summary>ADR-011 P1：通道隔离出队——mqtt/http 各行只被各自通道取出，互不争抢</summary>
+    [Fact]
+    public async Task DequeueAsync_ByChannel_IsolatesChannels()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+
+        var mqttBatch = NewBatch(Guid.NewGuid());
+        var httpBatch = NewBatch(Guid.NewGuid());
+        Assert.True((await buffer.EnqueueAsync(mqttBatch, IForwardBuffer.MqttChannel)).IsSuccess);
+        Assert.True((await buffer.EnqueueAsync(httpBatch, IForwardBuffer.HttpChannel)).IsSuccess);
+
+        var httpDequeued = await buffer.DequeueAsync(10, IForwardBuffer.HttpChannel);
+        Assert.True(httpDequeued.IsSuccess);
+        var httpItem = Assert.Single(httpDequeued.Value!);
+        Assert.Equal(httpBatch.Id, httpItem.Id);
+
+        var mqttDequeued = await buffer.DequeueAsync(10, IForwardBuffer.MqttChannel);
+        Assert.True(mqttDequeued.IsSuccess);
+        var mqttItem = Assert.Single(mqttDequeued.Value!);
+        Assert.Equal(mqttBatch.Id, mqttItem.Id);
+    }
+
+    /// <summary>ADR-011 P1：旧无通道 API 默认落到 mqtt 通道（接口只增不删，旧行为不变）</summary>
+    [Fact]
+    public async Task EnqueueAndDequeue_WithoutChannel_DefaultsToMqtt()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+
+        var batch = NewBatch(Guid.NewGuid());
+        Assert.True((await buffer.EnqueueAsync(batch)).IsSuccess);
+
+        var dequeued = await buffer.DequeueAsync(10);
+        var item = Assert.Single(dequeued.Value!);
+        Assert.Equal(batch.Id, item.Id);
     }
 
     private static string Serialize(BatchMeasurements batch) =>

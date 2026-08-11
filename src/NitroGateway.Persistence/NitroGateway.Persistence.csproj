@@ -24,6 +24,7 @@
     <ProjectReference Include="..\NitroGateway.Storage\Configuration\NitroGateway.Storage.Configuration.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
     <ProjectReference Include="..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\Disk\NitroGateway.Storage.Disk.csproj" />
     <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
     <ProjectReference Include="..\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
   </ItemGroup>

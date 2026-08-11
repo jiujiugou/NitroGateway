@@ -12,15 +12,14 @@
 - P2-2 QueryAsync/QueryByDeviceAsync 生产无调用方：接口注释标记遗留状态，防后续误用（MeasurementsController 全走 QueryPagedAsync/QueryLatestAsync，不改消费方）。
 - 验证: 纯注释改动；build 0 错误；UnitTests 215；IntegrationTests 40（2026-08-09）
 
-## 待处理条目（P3）
+## 修复记录（2026-08-10，P3 全部修复，条目已清）
 
-- P3-1 IForwardBuffer.Count 遗留债：同步查库属性（ADR-001 P3-13），生产消费方已全改 GetCountAsync（Forwarder.cs / ForwarderEngine.cs / StatusController.cs），仅测试仍用 Count；接口注释未提示阻塞风险。修复方向：接口注释补「同步查询可能阻塞，优先 GetCountAsync」。
-- P3-2 IMeasurementStore.WriteAsync 失败语义未定义：注释只说「内部应做批量优化」，未承诺原子性；实现侧单事务全成功/回滚全失败（SqliteMeasurementStore.WriteAsync），消费方 MeasurementWriteHost 忽略返回值（MeasurementWriteHost.cs:65，实现侧问题见 ADR-018 P2-1）。修复方向：接口注释明确「单事务，全成功或全失败，调用方必须处理 Failure」。
-- P3-3 QueryLatestAsync 无唯一性契约：实现按 MAX(timestamp) join（SqliteMeasurementStore.QueryLatestAsync），同时间戳多行会重复返回；MeasurementsController.LatestBatch 用 GroupBy 兜底（MeasurementsController.cs:50）——契约漏洞被消费方补丁掩盖。修复方向：接口注释承诺「每点最多一条」，实现按写入序去重。
-- P3-4 DeleteAsync 级联语义未定义：IDeviceRepository.DeleteAsync / IPointRepository.DeleteAsync 注释仅「删除指定设备/点位」，设备删除时点位、测量数据是否级联清理未定义（DeviceManager 无说明）。修复方向：接口注释定义级联策略（或明确由调用方负责）。
-- P3-5 GetByStatusAsync 状态来源语义不清：注释「按通信状态筛选设备」，但 DeviceManager.GetByStatusAsync 直通 repository（配置缓存 Status 列，DeviceManager.cs:70-72），StatusController.SystemStatus 用它统计在线数（StatusController.cs:64）——与 DeviceSummary 的 HealthMonitor 实时快照口径不一致，离线统计可能失真。修复方向：接口注释明确「状态指配置/最近一次持久化状态」，或 SystemStatus 改读 HealthMonitor 快照。
-- P3-6 DeadLetterEntry.EnqueuedAt 语义：实现取 enqueued_at（原始入队时间，SqliteForwardBuffer.GetDeadLettersAsync），转死信时刻无字段；「入队时间」易被误读为「进死信时间」。修复方向：注释明确为原始入队时间；如需转死信时间后续加列（迁移）。
-
+- P3-1 IForwardBuffer.Count 注释补「同步查询可能阻塞，async 路径请用 GetCountAsync」
+- P3-2 IMeasurementStore.WriteAsync 注释承诺「单事务，全成功或全失败，调用方必须处理 Failure」
+- P3-3 QueryLatestAsync 注释承诺「每点最多一条」（同时间戳按写入序取最新）
+- P3-4 IDeviceRepository.DeleteAsync 注释定义级联契约（EF Cascade 删点位，不动 measurements 时序表）；IPointRepository.DeleteAsync 注释明确仅删点位配置
+- P3-5 GetByStatusAsync 注释明确状态口径（配置/最近一次持久化状态，非 HealthMonitor 实时快照）
+- P3-6 DeadLetterEntry.EnqueuedAt 注释明确为原始入队时间（非转死信时刻）
 ## 亮点
 
 - ADR-005 修复到位：SaveBatchAsync 单事务、GetByIdAsync 文档对齐、QueryPagedAsync 落地、DeadLetterEntry 最小字段决策

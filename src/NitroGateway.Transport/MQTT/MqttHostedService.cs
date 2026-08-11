@@ -38,7 +38,9 @@ internal sealed class MqttHostedService : BackgroundService
                     {
                         var r = await _mqtt.ConnectAsync(ct);
                         if (r.IsFailure)
-                            _logger.LogWarning("MQTT 监督重连失败: {Error}，{Interval}ms 后重试",
+                            // ADR-020 P3-1：监督重连失败明细降 Debug——broker 长期不可用时每周期刷 Warning
+                            // 属于刷屏（与 ADR-016 P2-1 热路径日志降级目标相悖）；故障已由状态机与指标表达。
+                            _logger.LogDebug("MQTT 监督重连失败: {Error}，{Interval}ms 后重试",
                                 r.Error?.Message, _options.ReconnectMaxIntervalMs);
                     }
                     catch (OperationCanceledException)
@@ -78,7 +80,8 @@ internal sealed class MqttHostedService : BackgroundService
                 _logger.LogInformation("MQTT 正在重连...");
                 break;
             case MqttConnectionState.Faulted:
-                _logger.LogError("MQTT 重连失败，已达最大重试次数，监督循环将继续尝试");
+                // ADR-020 P3-1：Faulted 每轮监督重连都会再触发一次，长期断线会刷屏——降 Warning 保留存在感
+                _logger.LogWarning("MQTT 重连失败，已达最大重试次数，监督循环将继续尝试");
                 break;
         }
     }

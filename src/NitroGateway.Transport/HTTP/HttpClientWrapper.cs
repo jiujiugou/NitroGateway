@@ -19,7 +19,11 @@ public sealed class HttpClientWrapper : IHttpClient
     private readonly System.Net.Http.HttpClient _inner;
     private readonly ResiliencePipeline<HttpResponseMessage> _resilience;
     private readonly ResiliencePipeline<HttpResponseMessage> _noRetry;
+
+    // ADR-020 P3-5：并发安全——Singleton 实例可能被多发布者并发调用，状态与计数读写加锁/Interlocked 同步
+    private readonly object _stateLock = new();
     private int _consecutiveFailures;
+    private HttpConnectionState _state = HttpConnectionState.Disconnected;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -27,7 +31,10 @@ public sealed class HttpClientWrapper : IHttpClient
     };
 
     /// <inheritdoc />
-    public HttpConnectionState State { get; private set; } = HttpConnectionState.Disconnected;
+    public HttpConnectionState State
+    {
+        get { lock (_stateLock) return _state; }
+    }
 
     /// <inheritdoc />
     public event Action<HttpConnectionState>? StateChanged;
@@ -184,27 +191,45 @@ public sealed class HttpClientWrapper : IHttpClient
     /// <summary>请求成功时重置连续失败计数并恢复 Connected 状态</summary>
     private void OnSuccess()
     {
-        _consecutiveFailures = 0;
-        if (State != HttpConnectionState.Connected)
+        Interlocked.Exchange(ref _consecutiveFailures, 0);
+
+        HttpConnectionState old;
+        lock (_stateLock)
         {
-            State = HttpConnectionState.Connected;
+            old = _state;
+            if (old != HttpConnectionState.Connected)
+                _state = HttpConnectionState.Connected;
+        }
+
+        if (old != HttpConnectionState.Connected)
+        {
             _logger.LogInformation("HTTP 连接恢复");
-            StateChanged?.Invoke(State);
+            StateChanged?.Invoke(HttpConnectionState.Connected);
         }
     }
 
     /// <summary>请求失败时累加计数，连续失败超过阈值则进入 Faulted</summary>
     private void OnFailure(Exception ex)
     {
-        _consecutiveFailures++;
+        var failures = Interlocked.Increment(ref _consecutiveFailures);
         _logger.LogWarning("HTTP 请求失败 ({Consecutive} 次连续): {Error}",
-            _consecutiveFailures, ex.Message);
+            failures, ex.Message);
 
-        if (_consecutiveFailures >= _options.MaxRetries + 1 && State != HttpConnectionState.Faulted)
+        if (failures >= _options.MaxRetries + 1)
         {
-            State = HttpConnectionState.Faulted;
-            _logger.LogError("HTTP 连接故障，连续失败 {Count} 次", _consecutiveFailures);
-            StateChanged?.Invoke(State);
+            HttpConnectionState old;
+            lock (_stateLock)
+            {
+                old = _state;
+                if (old != HttpConnectionState.Faulted)
+                    _state = HttpConnectionState.Faulted;
+            }
+
+            if (old != HttpConnectionState.Faulted)
+            {
+                _logger.LogError("HTTP 连接故障，连续失败 {Count} 次", failures);
+                StateChanged?.Invoke(HttpConnectionState.Faulted);
+            }
         }
     }
 

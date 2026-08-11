@@ -1,6 +1,6 @@
 # ADR-010: CI 工作流（DevOps 收尾）
 
-- 日期: 2026-08-07 | 状态: 设计完成，待实现 | 用途: 解决 Q-03（.github/workflows 为空、无 CI），承接 D-02
+- 日期: 2026-08-07 | 状态: 已实现（2026-08-10，ci.yml 双 job：build-server ubuntu + build-windows windows，顺序跑测试；按 ADR-028 P1-1 调整） | 用途: 解决 Q-03（.github/workflows 为空、无 CI），承接 D-02
 - 范围: `.github/workflows/ci.yml` + README
 
 ## 设计

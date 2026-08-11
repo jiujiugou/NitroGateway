@@ -40,6 +40,9 @@
   <Folder Name="/src/NitroGateway.Storage/TimeSeries/">
     <Project Path="src/NitroGateway.Storage/TimeSeries/NitroGateway.Storage.TimeSeries.csproj" />
   </Folder>
+  <Folder Name="/src/NitroGateway.Storage/Disk/">
+    <Project Path="src/NitroGateway.Storage/Disk/NitroGateway.Storage.Disk.csproj" />
+  </Folder>
   <Folder Name="/src/NitroGateway.Transport/" />
   <Folder Name="/src/NitroGateway.Transport/HTTP/">
     <Project Path="src/NitroGateway.Transport/HTTP/NitroGateway.Transport.HTTP.csproj" />

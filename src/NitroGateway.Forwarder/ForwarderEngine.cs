@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Host;
 using NitroGateway.Storage.Buffer;
+using NitroGateway.Storage.Disk;
 using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Forwarder;
@@ -44,6 +45,9 @@ public sealed class ForwarderEngine : BackgroundService
     /// <summary>日志</summary>
     private readonly ILogger<ForwarderEngine> _logger;
 
+    /// <summary>磁盘状态（ADR-012）：Critical 时暂停出队，保护磁盘；null 表示不启用降级（独立测试用）</summary>
+    private readonly IDiskStatus? _diskStatus;
+
     /// <summary>网关生命周期：停机排空时等待采集侧完成最后一轮（ADR-016 P1-1）。</summary>
     private readonly GatewayLifecycle _lifecycle;
 
@@ -64,13 +68,15 @@ public sealed class ForwarderEngine : BackgroundService
         TimeSpan interval,
         IForwardBuffer buffer,
         ILogger<ForwarderEngine> logger,
-        GatewayLifecycle? lifecycle = null)
+        GatewayLifecycle? lifecycle = null,
+        IDiskStatus? diskStatus = null)
     {
         _scopeFactory = scopeFactory;
         _interval = interval;
         _buffer = buffer;
         _logger = logger;
         _lifecycle = lifecycle ?? new GatewayLifecycle();
+        _diskStatus = diskStatus;
     }
 
     /// <summary>
@@ -155,6 +161,10 @@ public sealed class ForwarderEngine : BackgroundService
     /// <param name="stoppingToken">取消令牌，透传给缓冲查询与转发调用</param>
     private async Task RunRoundAsync(CancellationToken stoppingToken)
     {
+        // ADR-012 P3：磁盘 Critical 降级——跳过本轮出队，剩余批次留在缓冲等磁盘恢复后续传
+        if (_diskStatus?.Level == DiskLevel.Critical)
+            return;
+
         // ── 积压检查（限流：首次立即 + 之后每 60s 一次，回落后重置）──
         int backlog;
         try

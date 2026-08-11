@@ -56,7 +56,7 @@ public sealed class GatewayHost : IAsyncDisposable
         builder.Services.AddNitroDevice();
         builder.Services.AddNitroProtocol();
         builder.Services.AddNitroAlarm();
-        builder.Services.AddNitroForwarder(builder.Configuration.GetValue("Forwarder:IntervalMs", 5000));
+        builder.Services.AddNitroForwarder(builder.Configuration);
         builder.Services.AddNitroCollection(builder.Configuration);
         builder.Services.AddNitroMqtt(builder.Configuration);
 
