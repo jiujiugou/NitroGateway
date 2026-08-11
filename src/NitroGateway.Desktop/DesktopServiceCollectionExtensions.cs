@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Services;
 using NitroGateway.Desktop.ViewModels;
@@ -32,6 +32,9 @@ public static class DesktopServiceCollectionExtensions
         services.AddSingleton<AlarmsViewModel>();
         services.AddSingleton<HistoryViewModel>();
         services.AddSingleton<SettingsViewModel>();
+
+        // ADR-029 P4：设备/点位编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
+        services.AddSingleton<IDeviceDialogService, DeviceDialogService>();
         return services;
     }
 }

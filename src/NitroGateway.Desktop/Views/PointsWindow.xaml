@@ -1,0 +1,31 @@
+<Window x:Class="NitroGateway.Desktop.Views.PointsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="760" Height="480" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <Button Content="刷新" Command="{Binding RefreshCommand}" Padding="12,4" Margin="0,0,8,0" />
+            <Button Content="+ 添加点位" Command="{Binding AddCommand}" Padding="12,4" Margin="0,0,8,0" />
+            <Button Content="编辑" Command="{Binding EditCommand}" Padding="12,4" Margin="0,0,8,0" />
+            <Button Content="删除" Command="{Binding DeleteCommand}" Padding="12,4" />
+        </StackPanel>
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedPoint}"
+                  AutoGenerateColumns="False" IsReadOnly="True" AlternatingRowBackground="#F5F7FA"
+                  GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" />
+                <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="140" />
+                <DataGridTextColumn Header="类型" Binding="{Binding DataTypeText}" Width="80" />
+                <DataGridTextColumn Header="权限" Binding="{Binding AccessText}" Width="70" />
+                <DataGridTextColumn Header="缩放 × / +" Binding="{Binding ScaleText}" Width="110" />
+                <DataGridTextColumn Header="采集间隔" Binding="{Binding ScanIntervalText}" Width="80" />
+                <DataGridTextColumn Header="启用" Binding="{Binding EnabledText}" Width="60" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</Window>

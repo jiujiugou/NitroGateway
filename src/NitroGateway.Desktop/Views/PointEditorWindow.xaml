@@ -1,0 +1,89 @@
+<Window x:Class="NitroGateway.Desktop.Views.PointEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        xmlns:dev="clr-namespace:NitroGateway.Domain.Devices;assembly=NitroGateway.Domain"
+        Width="680" SizeToContent="Height" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Window.Resources>
+        <ObjectDataProvider x:Key="DataTypeValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="dev:DataType" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="PointAccessValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="dev:PointAccess" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 行 1：名称 / 地址 / 类型 / 权限 -->
+        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,12">
+            <TextBlock Text="点位名称" />
+            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
+        <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,12">
+            <TextBlock Text="地址" />
+            <TextBox Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" ToolTip="Modbus 如 40001 / S7 如 DB1.DBD0" />
+        </StackPanel>
+        <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,12,12">
+            <TextBlock Text="数据类型" />
+            <ComboBox ItemsSource="{Binding Source={StaticResource DataTypeValues}}"
+                      SelectedItem="{Binding DataType}" />
+        </StackPanel>
+        <StackPanel Grid.Row="0" Grid.Column="3" Margin="0,0,0,12">
+            <TextBlock Text="权限" />
+            <ComboBox ItemsSource="{Binding Source={StaticResource PointAccessValues}}"
+                      SelectedItem="{Binding Access}" />
+        </StackPanel>
+
+        <!-- 行 2：缩放 / 死区 / 采集间隔 -->
+        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,12">
+            <TextBlock Text="缩放系数" />
+            <TextBox Text="{Binding ScaleFactor, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
+        <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,12">
+            <TextBlock Text="缩放偏移" />
+            <TextBox Text="{Binding ScaleOffset, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
+        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,12,12">
+            <TextBlock Text="死区" />
+            <TextBox Text="{Binding Deadband, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
+        <StackPanel Grid.Row="1" Grid.Column="3" Margin="0,0,0,12">
+            <TextBlock Text="采集间隔(ms，0=继承)" />
+            <TextBox Text="{Binding ScanIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
+
+        <!-- 行 2 追加：启用 -->
+        <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,12" Orientation="Horizontal">
+            <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
+            <TextBlock Text="启用采集" VerticalAlignment="Center" Margin="4,0,0,0" />
+        </StackPanel>
+        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,12">
+            <TextBlock Text="描述" />
+            <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
+
+        <!-- 行 3：按钮 -->
+        <StackPanel Grid.Row="3" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="保存" Width="90" Margin="0,0,12,0" IsDefault="True" Click="OnSave" />
+            <Button Content="取消" Width="90" IsCancel="True" Click="OnCancel" />
+        </StackPanel>
+    </Grid>
+</Window>

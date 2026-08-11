@@ -1,6 +1,11 @@
 ﻿using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Views;
+using NitroGateway.DeviceManagement;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
@@ -29,6 +34,52 @@ public sealed class DesktopViewSmokeTests
                 view.Measure(new Size(800, 600));
                 view.Arrange(new Rect(0, 0, 800, 600));
                 view.UpdateLayout();
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join(TimeSpan.FromSeconds(30));
+
+        Assert.Null(error);
+        Assert.False(thread.IsAlive);
+    }
+    [Fact]
+    public void DeviceConfigWindows_initialize_on_sta()
+    {
+        Exception? error = null;
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var deviceWindow = new DeviceEditorWindow(new DeviceEditor());
+                Assert.NotNull(deviceWindow);
+                deviceWindow.Measure(new Size(800, 600));
+                deviceWindow.Arrange(new Rect(0, 0, 800, 600));
+                deviceWindow.UpdateLayout();
+
+                var pointWindow = new PointEditorWindow(new PointEditor());
+                Assert.NotNull(pointWindow);
+                pointWindow.Measure(new Size(800, 600));
+                pointWindow.Arrange(new Rect(0, 0, 800, 600));
+                pointWindow.UpdateLayout();
+
+                var services = new ServiceCollection();
+                services.AddScoped<IPointManager>(_ => new StubPointManager());
+                using var provider = services.BuildServiceProvider();
+                var pointsVm = new PointsViewModel(
+                    Guid.NewGuid(), "测试设备",
+                    provider.GetRequiredService<IServiceScopeFactory>(),
+                    new StubDeviceDialogService(), NullLogger<PointsViewModel>.Instance);
+                var pointsWindow = new PointsWindow(pointsVm);
+                Assert.NotNull(pointsWindow);
+                pointsWindow.Measure(new Size(800, 600));
+                pointsWindow.Arrange(new Rect(0, 0, 800, 600));
+                pointsWindow.UpdateLayout();
             }
             catch (Exception ex)
             {
