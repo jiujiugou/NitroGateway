@@ -143,7 +143,7 @@ public class DeviceCollectorProbeTests
     private sealed class CapturingReporter : IHealthReporter
     {
         public string? LastErrorMessage { get; private set; }
-        public void Report(Guid deviceId, int successCount, int failCount, string? errorMessage)
+        public void Report(Guid deviceId, string? deviceName, int successCount, int failCount, string? errorMessage)
             => LastErrorMessage = errorMessage;
     }
 
@@ -171,8 +171,8 @@ public class DeviceCollectorProbeTests
         public int RecoveryThreshold => 3;
         public DeviceHealthSnapshot? GetSnapshot(Guid deviceId) => null;
         public IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots() => [];
-        public void ReportSuccess(Guid deviceId) { }
-        public void ReportFailure(Guid deviceId, string reason) { }
+        public void ReportSuccess(Guid deviceId, string? deviceName) { }
+        public void ReportFailure(Guid deviceId, string? deviceName, string reason) { }
         public void UpdateStatus(Guid deviceId, DeviceStatus status) { }
         public void Remove(Guid deviceId) { }
         public void AddListener(IDeviceHealthListener listener) { }

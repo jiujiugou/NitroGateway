@@ -11,11 +11,13 @@ public interface IHealthReporter
     /// 上报一次采集结果。
     /// </summary>
     /// <param name="deviceId">设备唯一标识。</param>
+    /// <param name="deviceName">设备名称；用于健康变更日志定位设备，可能为空。</param>
     /// <param name="successCount">本次采集中成功处理的数据点数量。</param>
     /// <param name="failCount">本次采集中失败的数据点数量。</param>
     /// <param name="errorMessage">采集失败原因；无错误时为空。</param>
     void Report(
         Guid deviceId,
+        string? deviceName,
         int successCount,
         int failCount,
         string? errorMessage);

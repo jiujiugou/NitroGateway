@@ -8,6 +8,9 @@ public sealed record DeviceHealthChanged
     /// <summary>设备 ID</summary>
     public required Guid DeviceId { get; init; }
 
+    /// <summary>设备名称（来自采集上报；可能为空，日志定位设备时与 DeviceId 一并输出）</summary>
+    public string? DeviceName { get; init; }
+
     /// <summary>旧状态</summary>
     public DeviceStatus OldStatus { get; init; }
 

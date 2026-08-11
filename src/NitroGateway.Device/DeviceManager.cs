@@ -93,7 +93,8 @@ public sealed class DeviceManager : IDeviceManager
         // 下线/维护时释放连接；恢复后下一轮采集重建
         _driverPool.Evict(deviceId);
         _cache.Invalidate();
-        _logger.LogInformation("设备状态变更: {DeviceId} {Old} → {New}", deviceId, oldStatus, status);
+        _logger.LogInformation("设备状态变更: {DeviceName} [{DeviceId}] {Old} → {New}",
+            device.Name, deviceId, oldStatus, status);
         return OperationResult.Success();
     }
 

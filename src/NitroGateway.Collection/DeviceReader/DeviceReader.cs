@@ -36,7 +36,7 @@ public sealed class DeviceReader : IDeviceReader
     /// </summary>
     /// <param name="device">目标设备（含协议、连接参数、点位列表）</param>
     /// <param name="ct">取消令牌</param>
-    /// <returns>原始点位值列表；设备无启用点位时返回空列表</returns>
+    /// <returns>原始点位值列表；设备无启用点位时仍会尝试连接，连接成功返回空列表，连接失败返回错误</returns>
     public async Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadDeviceAsync(
     DomainDevice device,
     CancellationToken ct)
@@ -50,8 +50,9 @@ public sealed class DeviceReader : IDeviceReader
 
         var points = device.Points.Where(p => p.Enabled).ToList();
 
-        if (points.Count == 0)
-            return Array.Empty<RawPointValue>();
+        // ADR-030 L2（用户决策）：空点位设备不跳过——仍从连接池取驱动并尝试连接/复用长连接，
+        // 连接失败经 ReliableProtocolDriver 重试机制上报失败，连续失败由健康监控判离线；
+        // 避免"无点位设备从不连接却显示在线"。驱动层对空点位列表返回空成功（Modbus/S7 均如此）。
 
         try
         {

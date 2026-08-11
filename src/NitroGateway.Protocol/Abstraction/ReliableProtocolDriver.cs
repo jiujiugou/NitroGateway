@@ -29,18 +29,23 @@ namespace NitroGateway.Protocol.Abstractions
     /// </remarks>
     internal class ReliableProtocolDriver : IProtocolDriver
     {
-        private const int MaxRetryAttempts = 3;
+        /// <summary>默认最大重试次数；生产由 DeviceConnection.RetryCount 注入（ADR-030 P1）</summary>
+        private const int DefaultMaxRetryAttempts = 3;
+        /// <summary>默认首次重试延迟；生产由 DeviceConnection.RetryIntervalMs 注入（ADR-030 P1）</summary>
+        private static readonly TimeSpan DefaultRetryInterval = TimeSpan.FromMilliseconds(500);
 
         private readonly IProtocolDriver _inner;
         private readonly ResiliencePipeline _pipeline;
         private readonly ILogger<ReliableProtocolDriver> _logger;
+        /// <summary>配置/注入的最大重试次数，用于最终失败日志（ADR-030 P1）</summary>
+        private readonly int _maxRetryAttempts;
 
         /// <summary>创建可靠驱动装饰器</summary>
         /// <param name="inner">具体协议驱动实例</param>
         /// <param name="logger">日志记录器</param>
         /// <param name="requestTimeout">单次尝试超时；null 时默认 5s（对应 DeviceConnection.RequestTimeoutMs 默认值）</param>
-        /// <param name="maxRetryAttempts">最大重试次数（测试可注入 0 加速）</param>
-        /// <param name="retryDelay">首次重试延迟（测试可注入小值加速）</param>
+        /// <param name="maxRetryAttempts">最大重试次数；0 = 不重试；null 时默认 3（DeviceConnection.RetryCount 默认值）</param>
+        /// <param name="retryDelay">首次重试延迟（指数退避起点）；null 时默认 500ms（DeviceConnection.RetryIntervalMs 由工厂注入）</param>
         public ReliableProtocolDriver(
             IProtocolDriver inner,
             ILogger<ReliableProtocolDriver> logger,
@@ -54,8 +59,9 @@ namespace NitroGateway.Protocol.Abstractions
             // 原 3s 乐观超时先于设备超时（RequestTimeoutMs，默认 5s）触发，被超时的读继续持有闸门，
             // 产生与设备实际行为不符的"超时"日志并拖长重试窗口。
             var timeout = requestTimeout ?? TimeSpan.FromSeconds(5);
-            var attempts = maxRetryAttempts ?? MaxRetryAttempts;
-            var firstDelay = retryDelay ?? TimeSpan.FromMilliseconds(500);
+            var attempts = maxRetryAttempts ?? DefaultMaxRetryAttempts;
+            var firstDelay = retryDelay ?? DefaultRetryInterval;
+            _maxRetryAttempts = attempts;
 
             var builder = new ResiliencePipelineBuilder()
                 .AddTimeout(timeout);                    // 每次尝试独立超时
@@ -142,7 +148,7 @@ namespace NitroGateway.Protocol.Abstractions
             {
                 // 最终失败：Debug 级别，不重复 Warning
                 // 上层 DeviceCollector 持有设备名，负责记录最终 Warning
-                _logger.LogDebug("通信失败（已重试 {RetryCount} 次）: {Error}", MaxRetryAttempts, ex.Message);
+                _logger.LogDebug("通信失败（已重试 {RetryCount} 次）: {Error}", _maxRetryAttempts, ex.Message);
                 return OperationResult<IReadOnlyList<RawPointValue>>.Failure(
                     OperationalError.Protocol(ex.Message));
             }

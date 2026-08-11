@@ -301,8 +301,8 @@ public sealed class FakePointManager : IPointManager
 
 public sealed class FakeHealthMonitor : IDeviceHealthMonitor
 {
-    public void ReportSuccess(Guid deviceId) { }
-    public void ReportFailure(Guid deviceId, string reason) { }
+    public void ReportSuccess(Guid deviceId, string? deviceName) { }
+    public void ReportFailure(Guid deviceId, string? deviceName, string reason) { }
     public void UpdateStatus(Guid deviceId, DeviceStatus status) { }
     public int FailureThreshold => 3;
     public int RecoveryThreshold => 3;

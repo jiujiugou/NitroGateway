@@ -56,7 +56,9 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
             if (result.IsSuccess)
             {
                 State = DriverState.Connected;
-                Logger.LogInformation("Modbus 连接成功: {Endpoint} (UnitId={UnitId}, DataFormat={DataFormat})",
+                // ADR-030 L1：连接成功降 Debug——故障设备熔断前每轮重连，INF 会刷屏；
+                // 连接失败已由 ClassifyConnectError 归类 + DeviceCollector 记 WRN，告警不丢失。
+                Logger.LogDebug("Modbus 连接成功: {Endpoint} (UnitId={UnitId}, DataFormat={DataFormat})",
                     _connection.Endpoint, _unitId, _client.DataFormat);
                 return OperationResult.Success();
             }

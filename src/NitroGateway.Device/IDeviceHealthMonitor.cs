@@ -7,10 +7,15 @@ namespace NitroGateway.DeviceManagement;
 public interface IDeviceHealthMonitor
 {
     /// <summary>上报一次成功采集</summary>
-    void ReportSuccess(Guid deviceId);
+    /// <param name="deviceId">设备唯一标识</param>
+    /// <param name="deviceName">设备名称；用于健康变更日志定位设备，可能为空</param>
+    void ReportSuccess(Guid deviceId, string? deviceName);
 
     /// <summary>上报一次失败采集</summary>
-    void ReportFailure(Guid deviceId, string reason);
+    /// <param name="deviceId">设备唯一标识</param>
+    /// <param name="deviceName">设备名称；用于健康变更日志定位设备，可能为空</param>
+    /// <param name="reason">失败原因</param>
+    void ReportFailure(Guid deviceId, string? deviceName, string reason);
 
     /// <summary>更新快照中的维护状态</summary>
     void UpdateStatus(Guid deviceId, DeviceStatus status);

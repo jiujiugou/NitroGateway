@@ -172,7 +172,7 @@ public class DeviceCollectorMaintenanceTests
 
     private sealed class FakeReporter : IHealthReporter
     {
-        public void Report(Guid deviceId, int successCount, int failCount, string? errorMessage) { }
+        public void Report(Guid deviceId, string? deviceName, int successCount, int failCount, string? errorMessage) { }
     }
 
     private sealed class FakeHealthMonitor : IDeviceHealthMonitor
@@ -185,8 +185,8 @@ public class DeviceCollectorMaintenanceTests
                 : null;
         public IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots()
             => Statuses.Select(kv => new DeviceHealthSnapshot { DeviceId = kv.Key, Status = kv.Value }).ToList();
-        public void ReportSuccess(Guid deviceId) { }
-        public void ReportFailure(Guid deviceId, string reason) { }
+        public void ReportSuccess(Guid deviceId, string? deviceName) { }
+        public void ReportFailure(Guid deviceId, string? deviceName, string reason) { }
         public void UpdateStatus(Guid deviceId, DeviceStatus status) => Statuses[deviceId] = status;
         public int FailureThreshold => 3;
         public int RecoveryThreshold => 3;

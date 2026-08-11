@@ -41,7 +41,7 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
     // ═══════ 上报 ═══════
 
     /// <inheritdoc />
-    public void ReportSuccess(Guid deviceId)
+    public void ReportSuccess(Guid deviceId, string? deviceName)
     {
         _failures.TryRemove(deviceId, out _);
         var count = _successes.AddOrUpdate(deviceId, 1, (_, v) => v + 1);
@@ -58,14 +58,16 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
             var snap = GetSnapshot(deviceId);
             if (snap?.Status != Domain.Devices.DeviceStatus.Online)
             {
-                _logger.LogInformation("设备 {DeviceId} 恢复 ({From}→Online)", deviceId, snap?.Status);
-                NotifyListeners(deviceId, snap?.Status ?? Domain.Devices.DeviceStatus.Unknown, Domain.Devices.DeviceStatus.Online);
+                _logger.LogInformation("设备 {DeviceName} [{DeviceId}] 恢复 ({From}→Online)",
+                    deviceName, deviceId, snap?.Status);
+                NotifyListeners(deviceId, deviceName,
+                    snap?.Status ?? Domain.Devices.DeviceStatus.Unknown, Domain.Devices.DeviceStatus.Online);
             }
         }
     }
 
     /// <inheritdoc />
-    public void ReportFailure(Guid deviceId, string reason)
+    public void ReportFailure(Guid deviceId, string? deviceName, string reason)
     {
         _successes.TryRemove(deviceId, out _);
         var count = _failures.AddOrUpdate(deviceId, 1, (_, v) => v + 1);
@@ -85,12 +87,14 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
             if (snap?.Status != DeviceStatus.Offline)
             {
                 _logger.LogWarning(
-                    "设备 {DeviceId} 连续失败 {Count} 次，触发离线",
+                    "设备 {DeviceName} [{DeviceId}] 连续失败 {Count} 次，触发离线",
+                    deviceName,
                     deviceId,
                     count);
 
                 NotifyListeners(
                     deviceId,
+                    deviceName,
                     snap?.Status ?? DeviceStatus.Unknown,
                     DeviceStatus.Offline);
             }
@@ -129,12 +133,13 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
 
     // ═══════ 内部 ═══════
 
-    private void NotifyListeners(Guid deviceId, Domain.Devices.DeviceStatus old, Domain.Devices.DeviceStatus @new)
+    private void NotifyListeners(Guid deviceId, string? deviceName, Domain.Devices.DeviceStatus old, Domain.Devices.DeviceStatus @new)
     {
-        _logger.LogInformation("HealthListener 数量: {Count}", _listeners.Count);
+        // ADR-030 L1：监听器数量是诊断信息，健康变更（恢复/离线）日志已分别记录，此处降 Debug 避免每次变更刷屏
+        _logger.LogDebug("HealthListener 数量: {Count}", _listeners.Count);
         UpdateSnapshot(deviceId, s => s with { Status = @new });
 
-        var e = new DeviceHealthChanged { DeviceId = deviceId, OldStatus = old, NewStatus = @new };
+        var e = new DeviceHealthChanged { DeviceId = deviceId, DeviceName = deviceName, OldStatus = old, NewStatus = @new };
         foreach (var listener in _listeners)
         {
             _ = listener.OnHealthChangedAsync(e); // fire-and-forget，异常不传播

@@ -19,14 +19,14 @@ public sealed class HealthReporter : IHealthReporter
     }
 
     /// <inheritdoc />
-    public void Report(Guid deviceId, int successCount, int failCount, string? errorMessage)
+    public void Report(Guid deviceId, string? deviceName, int successCount, int failCount, string? errorMessage)
     {
         try
         {
             if (failCount > 0)
-                _healthMonitor.ReportFailure(deviceId, errorMessage ?? "采集失败");
+                _healthMonitor.ReportFailure(deviceId, deviceName, errorMessage ?? "采集失败");
             else
-                _healthMonitor.ReportSuccess(deviceId);
+                _healthMonitor.ReportSuccess(deviceId, deviceName);
         }
         catch
         {

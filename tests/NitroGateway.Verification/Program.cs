@@ -88,9 +88,9 @@ var mlogger = NullLogger<NitroGateway.DeviceManagement.DeviceHealthMonitor>.Inst
 var monitor = new NitroGateway.DeviceManagement.DeviceHealthMonitor(mlogger);
 monitor.AddListener(new TestListener(e => { if (e.NewStatus == DeviceStatus.Offline) offline = true; }));
 
-for (int i = 0; i < 2; i++) monitor.ReportFailure(did, "timeout");
+for (int i = 0; i < 2; i++) monitor.ReportFailure(did, "测试设备", "timeout");
 Assert("2 次失败不触发(阈值3)", !offline);
-monitor.ReportFailure(did, "timeout");
+monitor.ReportFailure(did, "测试设备", "timeout");
 Assert("第 3 次触发 Offline", offline);
 
 Section("4b. HealthMonitor — Online 恢复");
@@ -100,10 +100,10 @@ var m2 = new NitroGateway.DeviceManagement.DeviceHealthMonitor(mlogger);
 m2.AddListener(new TestListener(e => { if (e.NewStatus == DeviceStatus.Online) online = true; }));
 
 // 先标记失败再恢复
-for (int i = 0; i < 10; i++) m2.ReportFailure(did, "timeout");
-for (int i = 0; i < 2; i++) m2.ReportSuccess(did);
+for (int i = 0; i < 10; i++) m2.ReportFailure(did, "测试设备", "timeout");
+for (int i = 0; i < 2; i++) m2.ReportSuccess(did, "测试设备");
 Assert("2 次成功不触发 Online", !online);
-m2.ReportSuccess(did);
+m2.ReportSuccess(did, "测试设备");
 Assert("第 3 次成功触发 Online", online);
 
 // ═══════════════════════════════════════════════════════

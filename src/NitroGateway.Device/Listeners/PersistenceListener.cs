@@ -24,11 +24,13 @@ public sealed class PersistenceListener : IDeviceHealthListener
             var manager = scope.ServiceProvider.GetRequiredService<IDeviceManager>();
             var result = await manager.UpdateStatusAsync(e.DeviceId, e.NewStatus, ct);
             if (result.IsFailure)
-                _logger.LogError("设备状态持久化失败: {DeviceId} → {Status}: {Error}", e.DeviceId, e.NewStatus, result.Error!.Message);
+                _logger.LogError("设备状态持久化失败: {DeviceName} [{DeviceId}] → {Status}: {Error}",
+                    e.DeviceName, e.DeviceId, e.NewStatus, result.Error!.Message);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "设备状态持久化异常: {DeviceId} → {Status}", e.DeviceId, e.NewStatus);
+            _logger.LogError(ex, "设备状态持久化异常: {DeviceName} [{DeviceId}] → {Status}",
+                e.DeviceName, e.DeviceId, e.NewStatus);
         }
     }
 }

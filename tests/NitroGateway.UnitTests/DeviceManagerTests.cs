@@ -225,12 +225,12 @@ public class DeviceManagerTests
             throw new NotImplementedException();
         }
 
-        public void ReportFailure(Guid deviceId, string reason)
+        public void ReportFailure(Guid deviceId, string? deviceName, string reason)
         {
             throw new NotImplementedException();
         }
 
-        public void ReportSuccess(Guid deviceId)
+        public void ReportSuccess(Guid deviceId, string? deviceName)
         {
             throw new NotImplementedException();
         }

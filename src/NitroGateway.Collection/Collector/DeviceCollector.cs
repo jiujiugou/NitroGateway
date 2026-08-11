@@ -94,7 +94,7 @@ internal sealed class DeviceCollector : IDeviceCollector
             var readResult = await _reader.ReadDeviceAsync(device, ct);
             if (readResult.IsFailure)
             {
-                _reporter.Report(device.Id, 0, 1, readResult.Error!.Message);
+                _reporter.Report(device.Id, device.Name, 0, 1, readResult.Error!.Message);
                 circuitBreaker.RecordFailure();
                 probeReleased = true;
                 NitroMetrics.CollectionTotal.WithLabels(device.Id.ToString(), "failure").Inc();
@@ -120,7 +120,9 @@ internal sealed class DeviceCollector : IDeviceCollector
             }
             else
             {
-                _logger.LogWarning("设备 {DeviceId} 没有有效点位数据，跳过分发", device.Name);
+                // ADR-030 L1：空点位设备每轮必走此分支，WRN 每秒刷屏（N 台×1s）；
+                // 属常态而非故障，降 Debug；真实读取失败仍保留 Warning。
+                _logger.LogDebug("设备 {DeviceId} 没有有效点位数据，跳过分发", device.Name);
             }
 
             // ── 4. 健康上报 ──
@@ -134,7 +136,7 @@ internal sealed class DeviceCollector : IDeviceCollector
 
             // ADR-016 P3-3：失败明细透传给 HealthMonitor（LastError 不再恒为"采集失败"占位）
             var firstBad = snapshots.FirstOrDefault(s => s.Quality != QualityCode.Good);
-            _reporter.Report(device.Id, goodCount, failCount, firstBad?.ErrorMessage);
+            _reporter.Report(device.Id, device.Name, goodCount, failCount, firstBad?.ErrorMessage);
 
             // ── 5. 熔断恢复：读成功则上报，即使部分点位质量差也不影响探测判定 ──
             circuitBreaker.RecordSuccess();
@@ -185,7 +187,7 @@ internal sealed class DeviceCollector : IDeviceCollector
             return;
         }
 
-        _logger.LogInformation("采集轮次，共 {Count} 台设备", devices.Count);
+        _logger.LogDebug("采集轮次，共 {Count} 台设备", devices.Count);
 
         using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.CollectRound);
         activity?.SetTag(GatewayActivityTags.DeviceCount, devices.Count);

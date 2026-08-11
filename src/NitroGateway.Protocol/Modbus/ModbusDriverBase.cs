@@ -224,6 +224,9 @@ public abstract class ModbusDriverBase : IProtocolDriver
             }
 
             // 4. 全部点位均未取到值 → 通信级故障：复位状态，让重试管线重新建连
+            //    ADR-030 P3：超时后 TCP socket 状态不可信（可能残留响应字节导致下个请求错位），
+            //    失败即重建连接是正确防护；重连频率由上层熔断器（连续 3 次失败 Trip）兜底，
+            //    健康设备长连接不受影响（仅故障设备每轮重连，且连接日志为 Debug）。
             if (results.Count == 0)
             {
                 State = DriverState.Faulted;

@@ -19,12 +19,13 @@ public class DeviceHealthMonitorTests
         monitor.UpdateStatus(_deviceId, DeviceStatus.Online);
         monitor.AddListener(new TestListener(e => lastEvent = e));
 
-        for (var i = 0; i < 2; i++) monitor.ReportFailure(_deviceId, "timeout");
+        for (var i = 0; i < 2; i++) monitor.ReportFailure(_deviceId, "测试设备", "timeout");
         Assert.Null(lastEvent);
 
-        monitor.ReportFailure(_deviceId, "timeout");
+        monitor.ReportFailure(_deviceId, "测试设备", "timeout");
         Assert.NotNull(lastEvent);
         Assert.Equal(DeviceStatus.Offline, lastEvent!.NewStatus);
+        Assert.Equal("测试设备", lastEvent.DeviceName);
     }
 
     /// <summary>3 次成功 → Listener 收到 Online</summary>
@@ -33,16 +34,17 @@ public class DeviceHealthMonitorTests
     {
         DeviceHealthChanged? lastEvent = null;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
-        for (var i = 0; i < 3; i++) monitor.ReportFailure(_deviceId, "timeout");
+        for (var i = 0; i < 3; i++) monitor.ReportFailure(_deviceId, "测试设备", "timeout");
         monitor.UpdateStatus(_deviceId, DeviceStatus.Offline);
         monitor.AddListener(new TestListener(e => lastEvent = e));
 
-        for (var i = 0; i < 2; i++) monitor.ReportSuccess(_deviceId);
+        for (var i = 0; i < 2; i++) monitor.ReportSuccess(_deviceId, "测试设备");
         Assert.Null(lastEvent);
 
-        monitor.ReportSuccess(_deviceId);
+        monitor.ReportSuccess(_deviceId, "测试设备");
         Assert.NotNull(lastEvent);
         Assert.Equal(DeviceStatus.Online, lastEvent!.NewStatus);
+        Assert.Equal("测试设备", lastEvent.DeviceName);
     }
 
     /// <summary>一次成功重置失败计数——3 次失败前有 1 次成功，不触发 Offline</summary>
@@ -52,10 +54,10 @@ public class DeviceHealthMonitorTests
         DeviceHealthChanged? lastEvent = null;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
         monitor.UpdateStatus(_deviceId, DeviceStatus.Online);
-        for (var i = 0; i < 2; i++) monitor.ReportFailure(_deviceId, "timeout");
-        monitor.ReportSuccess(_deviceId); // 重置
+        for (var i = 0; i < 2; i++) monitor.ReportFailure(_deviceId, "测试设备", "timeout");
+        monitor.ReportSuccess(_deviceId, "测试设备"); // 重置
         monitor.AddListener(new TestListener(e => lastEvent = e));
-        monitor.ReportFailure(_deviceId, "timeout");
+        monitor.ReportFailure(_deviceId, "测试设备", "timeout");
         Assert.Null(lastEvent);
     }
 
@@ -66,10 +68,10 @@ public class DeviceHealthMonitorTests
         DeviceHealthChanged? lastEvent = null;
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
         monitor.UpdateStatus(_deviceId, DeviceStatus.Offline);
-        for (var i = 0; i < 2; i++) monitor.ReportSuccess(_deviceId);
-        monitor.ReportFailure(_deviceId, "reset");
+        for (var i = 0; i < 2; i++) monitor.ReportSuccess(_deviceId, "测试设备");
+        monitor.ReportFailure(_deviceId, "测试设备", "reset");
         monitor.AddListener(new TestListener(e => lastEvent = e));
-        monitor.ReportSuccess(_deviceId);
+        monitor.ReportSuccess(_deviceId, "测试设备");
         Assert.Null(lastEvent);
     }
 
@@ -78,8 +80,8 @@ public class DeviceHealthMonitorTests
     public void GetConsecutiveFailures_ReturnsCorrectCount()
     {
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
-        monitor.ReportFailure(_deviceId, "a");
-        monitor.ReportFailure(_deviceId, "b");
+        monitor.ReportFailure(_deviceId, "测试设备", "a");
+        monitor.ReportFailure(_deviceId, "测试设备", "b");
         Assert.Equal(2, monitor.GetConsecutiveFailures(_deviceId));
     }
 
@@ -89,8 +91,8 @@ public class DeviceHealthMonitorTests
     {
         var monitor = new DeviceHealthMonitor(NullLogger<DeviceHealthMonitor>.Instance);
         monitor.UpdateStatus(_deviceId, DeviceStatus.Online);
-        monitor.ReportFailure(_deviceId, "timeout");
-        monitor.ReportSuccess(_deviceId);
+        monitor.ReportFailure(_deviceId, "测试设备", "timeout");
+        monitor.ReportSuccess(_deviceId, "测试设备");
 
         monitor.Remove(_deviceId);
 
