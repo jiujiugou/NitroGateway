@@ -23,6 +23,7 @@ public sealed class DataDispatcher : IDataDispatcher
     private readonly SinkDispatcher _sinks;
     private readonly IDiskStatus? _diskStatus;
     private readonly IReadOnlyList<string> _forwardChannels;
+    private readonly string _siteId;
 
     private readonly ILogger<DataDispatcher> _logger;
 
@@ -33,13 +34,15 @@ public sealed class DataDispatcher : IDataDispatcher
     /// <param name="logger">日志记录器</param>
     /// <param name="diskStatus">磁盘状态（ADR-012）；null 表示不启用降级（独立测试用）</param>
     /// <param name="forwardChannels">北向通道列表（ADR-011 P3）；缺省或空时仅 mqtt</param>
+    /// <param name="siteId">站点标识（ADR-035 第 1 步）；随 BatchMeasurements 负载上行，缺省空串</param>
     public DataDispatcher(
         MeasurementWriteHost measurement,
         IForwardBuffer buffer,
         SinkDispatcher sinks,
         ILogger<DataDispatcher> logger,
         IDiskStatus? diskStatus = null,
-        IReadOnlyList<string>? forwardChannels = null)
+        IReadOnlyList<string>? forwardChannels = null,
+        string? siteId = null)
     {
         _measurement = measurement;
         _buffer = buffer;
@@ -48,6 +51,7 @@ public sealed class DataDispatcher : IDataDispatcher
         _forwardChannels = forwardChannels is { Count: > 0 }
             ? forwardChannels
             : [IForwardBuffer.MqttChannel];
+        _siteId = siteId ?? "";
         _logger = logger;
     }
 
@@ -120,7 +124,7 @@ public sealed class DataDispatcher : IDataDispatcher
     /// </summary>
     /// <param name="deviceId">所属设备 ID</param>
     /// <param name="snapshots">点位快照列表</param>
-    private static BatchMeasurements ToBatchMeasurements(
+    private BatchMeasurements ToBatchMeasurements(
         Guid deviceId, IReadOnlyList<PointSnapshot> snapshots)
     {
         var now = DateTime.UtcNow;
@@ -131,6 +135,8 @@ public sealed class DataDispatcher : IDataDispatcher
         {
             Id = Guid.NewGuid(),
             DeviceId = deviceId,
+            // ADR-035 第 1 步：负载携带站点标识，HTTP 等无 topic 通道据此区分站点
+            SiteId = _siteId,
             ScanStartedAt = timestamps.Min(),
             ScanCompletedAt = timestamps.Max(),
             Records = snapshots.Select(s => new MeasurementRecord

@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using NitroGateway.Domain.Devices;
+using System.Globalization;
 
 namespace NitroGateway.Persistence;
 
@@ -37,7 +38,10 @@ public static class DomainMapper
             Parameters = DeserializeParams(entity.ConnectionParams)
         },
         // ADR-018 P3-4：未知枚举字符串回退默认值（Unknown），不抛异常
-        Status = ParseEnum<DeviceStatus>(entity.Status)
+        Status = ParseEnum<DeviceStatus>(entity.Status),
+        // ADR-033 阶段 3/4：同步版本字段；空串（旧数据）等价 DateTime.MinValue（最旧）
+        UpdatedAt = ParseUpdatedAt(entity.UpdatedAt),
+        IsDeleted = entity.IsDeleted
     };
 
     /// <summary>领域模型 → EF 实体</summary>
@@ -53,7 +57,9 @@ public static class DomainMapper
         RequestTimeoutMs = domain.Connection.RequestTimeoutMs,
         RetryCount = domain.Connection.RetryCount,
         ConnectionParams = SerializeParams(domain.Connection.Parameters),
-        Status = domain.Status.ToString()
+        Status = domain.Status.ToString(),
+        UpdatedAt = FormatUpdatedAt(domain.UpdatedAt),
+        IsDeleted = domain.IsDeleted
     };
 
     /// <summary>EF 实体 → 领域模型</summary>
@@ -70,7 +76,9 @@ public static class DomainMapper
         ScanIntervalMs = entity.ScanIntervalMs,
         Deadband = entity.Deadband,
         ScaleFactor = entity.ScaleFactor,
-        ScaleOffset = entity.ScaleOffset
+        ScaleOffset = entity.ScaleOffset,
+        UpdatedAt = ParseUpdatedAt(entity.UpdatedAt),
+        IsDeleted = entity.IsDeleted
     };
 
     /// <summary>领域模型 → EF 实体</summary>
@@ -87,8 +95,27 @@ public static class DomainMapper
         ScanIntervalMs = domain.ScanIntervalMs,
         Deadband = domain.Deadband,
         ScaleFactor = domain.ScaleFactor,
-        ScaleOffset = domain.ScaleOffset
+        ScaleOffset = domain.ScaleOffset,
+        UpdatedAt = FormatUpdatedAt(domain.UpdatedAt),
+        IsDeleted = domain.IsDeleted
     };
+
+    /// <summary>
+    /// 解析存储的 UpdatedAt 字符串（O 格式 UTC）：空串/非法回退 <see cref="DateTime.MinValue"/>（最旧），
+    /// 保证旧数据首次同步时会被任意新版本覆盖。
+    /// </summary>
+    internal static DateTime ParseUpdatedAt(string? value)
+        => string.IsNullOrEmpty(value)
+            ? DateTime.MinValue
+            : DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+                ? parsed.ToUniversalTime()
+                : DateTime.MinValue;
+
+    /// <summary>
+    /// 序列化 UpdatedAt 为 O 格式 UTC 字符串；<see cref="DateTime.MinValue"/> 存空串（最旧，兼容旧数据语义）。
+    /// </summary>
+    internal static string FormatUpdatedAt(DateTime value)
+        => value == DateTime.MinValue ? "" : value.ToUniversalTime().ToString("O");
 
     /// <summary>
     /// 枚举容错解析（ADR-018 P3-4）：未知/空字符串回退默认值，不抛异常。

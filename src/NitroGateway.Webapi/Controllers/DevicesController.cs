@@ -41,6 +41,17 @@ public class DevicesController : ControllerBase
         return r.IsSuccess ? Ok(ApiResponse<List<DeviceDto>>.Ok(r.Value!.Select(Map).ToList())) : NotFound(ApiResponse<List<DeviceDto>>.Fail("GetAll", r.Error!.Message));
     }
 
+    /// <summary>
+    /// 只读快照导出（ADR-033 阶段 2）：返回 devices+points 全量，供现场「从中心导入」使用。
+    /// 与 GET /api/devices 同源（均含点位内联），JWT/RBAC 由类级 [Authorize] 覆盖；只读，不区分角色可写性。
+    /// </summary>
+    [HttpGet("export")]
+    public async Task<ActionResult<ApiResponse<List<DeviceDto>>>> Export()
+    {
+        var r = await _devices.GetAllAsync();
+        return r.IsSuccess ? Ok(ApiResponse<List<DeviceDto>>.Ok(r.Value!.Select(Map).ToList())) : NotFound(ApiResponse<List<DeviceDto>>.Fail("Export", r.Error!.Message));
+    }
+
     [HttpGet("{id}")]
     public async Task<ActionResult<ApiResponse<DeviceDto>>> Get(Guid id)
     {
@@ -72,7 +83,9 @@ public class DevicesController : ControllerBase
     [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<object>>> Delete(Guid id)
     {
-        var r = await _devices.UnregisterAsync(id);
+        // ADR-033 阶段 3/4：中心删除=权威删除（tombstone 软删），同步下发驱动现场删除；
+        // 现场上报不能复活（同步接收端拒绝 tombstone 设备的 upsert）
+        var r = await _devices.SoftDeleteAsync(id);
         return r.IsSuccess ? Ok(ApiResponse<object>.Ok(new { })) : BadRequest(ApiResponse<object>.Fail("Delete", r.Error!.Message));
     }
 
@@ -198,9 +211,11 @@ public class DevicesController : ControllerBase
         Id = d.Id.ToString(), Name = d.Name, Description = d.Description,
         Protocol = new ProtocolDto { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect },
         Connection = new ConnectionDto { Endpoint = d.Connection.Endpoint, ConnectTimeoutMs = d.Connection.ConnectTimeoutMs, RequestTimeoutMs = d.Connection.RequestTimeoutMs, RetryCount = d.Connection.RetryCount, RetryIntervalMs = d.Connection.RetryIntervalMs, Parameters = d.Connection.Parameters },
-        Status = d.Status.ToString(), Points = d.Points.Select(MapPoint).ToList()
+        Status = d.Status.ToString(), Points = d.Points.Select(MapPoint).ToList(),
+        UpdatedAt = d.UpdatedAt == default ? "" : d.UpdatedAt.ToUniversalTime().ToString("O"),
+        IsDeleted = d.IsDeleted
     };
-    static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset };
+    static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset, UpdatedAt = p.UpdatedAt == default ? "" : p.UpdatedAt.ToUniversalTime().ToString("O"), IsDeleted = p.IsDeleted };
     // ADR-022 P2-4：创建路径一律服务端生成新 ID，忽略客户端传入的 Id（仓储 SaveAsync 为 upsert，防 POST 覆盖既有设备）
     static Device ToDomain(DeviceDto d) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
 

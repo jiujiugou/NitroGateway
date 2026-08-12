@@ -19,9 +19,9 @@ public class AlarmsController : ControllerBase
 
     /// <summary>获取所有活跃告警</summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> GetActive()
+    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> GetActive([FromQuery] string? siteId = null)
     {
-        var r = await _alarms.GetAllActiveAsync();
+        var r = await _alarms.GetAllActiveAsync(siteId);
         return r.IsSuccess
             ? Ok(ApiResponse<List<AlarmDto>>.Ok(r.Value!.Select(Map).ToList()))
             : BadRequest(ApiResponse<List<AlarmDto>>.Fail("Alarms", r.Error!.Message));
@@ -29,9 +29,9 @@ public class AlarmsController : ControllerBase
 
     /// <summary>获取指定设备的活跃告警</summary>
     [HttpGet("device/{deviceId}")]
-    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> GetByDevice(Guid deviceId)
+    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> GetByDevice(Guid deviceId, [FromQuery] string? siteId = null)
     {
-        var r = await _alarms.GetActiveByDeviceAsync(deviceId);
+        var r = await _alarms.GetActiveByDeviceAsync(deviceId, siteId);
         return r.IsSuccess
             ? Ok(ApiResponse<List<AlarmDto>>.Ok(r.Value!.Select(Map).ToList()))
             : BadRequest(ApiResponse<List<AlarmDto>>.Fail("Alarms", r.Error!.Message));
@@ -50,11 +50,11 @@ public class AlarmsController : ControllerBase
 
     /// <summary>查询历史告警</summary>
     [HttpGet("history")]
-    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> History([FromQuery] DateTime from, [FromQuery] DateTime to, [FromQuery] int limit = 1000)
+    public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> History([FromQuery] DateTime from, [FromQuery] DateTime to, [FromQuery] string? siteId = null, [FromQuery] int limit = 1000)
     {
         // ADR-022 P2-2：limit 夹紧 1..1000，仓储层 Take 限制结果集，防大窗口全量内存
         var safeLimit = Math.Clamp(limit, 1, 1000);
-        var r = await _alarms.QueryAsync(from, to, safeLimit);
+        var r = await _alarms.QueryAsync(from, to, siteId, safeLimit);
         return r.IsSuccess
             ? Ok(ApiResponse<List<AlarmDto>>.Ok(r.Value!.Select(Map).ToList()))
             : BadRequest(ApiResponse<List<AlarmDto>>.Fail("History", r.Error!.Message));

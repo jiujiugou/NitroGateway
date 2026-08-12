@@ -59,7 +59,9 @@ public static class CollectionServiceCollectionExtensions
             sp.GetRequiredService<SinkDispatcher>(),
             sp.GetRequiredService<ILogger<DataDispatcher>>(),
             sp.GetService<NitroGateway.Storage.Disk.IDiskStatus>(),
-            forwardChannels));
+            forwardChannels,
+            // ADR-035 第 1 步：站点标识随负载上行（Site:Id，缺省 default）
+            NitroGateway.Shared.SiteOptions.Resolve(configuration["Site:Id"])));
         services.AddSingleton<MeasurementWriteHost>();
         services.AddHostedService(sp => sp.GetRequiredService<MeasurementWriteHost>());
         services.AddSingleton<SinkDispatcher>();

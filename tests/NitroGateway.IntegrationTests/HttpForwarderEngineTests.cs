@@ -76,6 +76,8 @@ public class HttpForwarderEngineTests
         {
             await WaitForAsync(() => http.Uploaded.Count > 0, TimeSpan.FromSeconds(5));
             Assert.Equal("/api/measurements/batch", http.Uploaded[0].Path);
+            // 上传与提交在同一轮内先后完成，断言前等待提交落地，避免与引擎线程的调度竞态
+            await WaitForAsync(() => buffer.Committed.Contains(batch.Id), TimeSpan.FromSeconds(5));
             Assert.Contains(buffer.Committed, id => id == batch.Id);
         }
         finally

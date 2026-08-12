@@ -36,6 +36,11 @@ public sealed class SqliteIngestStore : IIngestStore
     /// </remarks>
     public async Task<OperationResult<IngestWriteResult>> WriteMeasurementsAsync(
         IReadOnlyList<MeasurementRecord> records, CancellationToken ct = default)
+        => await WriteMeasurementsAsync(records, "", ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult<IngestWriteResult>> WriteMeasurementsAsync(
+        IReadOnlyList<MeasurementRecord> records, string siteId, CancellationToken ct = default)
     {
         if (records.Count == 0)
             return OperationResult<IngestWriteResult>.Success(new IngestWriteResult(0, 0));
@@ -49,8 +54,8 @@ public sealed class SqliteIngestStore : IIngestStore
             var inserted = await conn.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT OR IGNORE INTO measurements
-                    (id, device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg)
-                VALUES (@id, @did, @pid, @name, @raw, @val, @type, @ts, @qual, @err)
+                    (id, device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg, site_id)
+                VALUES (@id, @did, @pid, @name, @raw, @val, @type, @ts, @qual, @err, @site)
                 """,
                 records.Select(r => new
                 {
@@ -64,7 +69,8 @@ public sealed class SqliteIngestStore : IIngestStore
                     type = r.DataType.ToString(),
                     ts = r.Timestamp.ToUniversalTime().ToString("O"),
                     qual = r.Quality.ToString(),
-                    err = (object?)DBNull.Value
+                    err = (object?)DBNull.Value,
+                    site = siteId
                 }),
                 cancellationToken: ct));
 
@@ -84,6 +90,10 @@ public sealed class SqliteIngestStore : IIngestStore
     /// first_exceeded_at/acknowledged_at/resolved_at 不在上行契约内，保持 NULL。
     /// </remarks>
     public async Task<OperationResult> UpsertAlarmAsync(IngestAlarmMessage alarm, CancellationToken ct = default)
+        => await UpsertAlarmAsync(alarm, "", ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult> UpsertAlarmAsync(IngestAlarmMessage alarm, string siteId, CancellationToken ct = default)
     {
         try
         {
@@ -93,15 +103,16 @@ public sealed class SqliteIngestStore : IIngestStore
 
             await conn.ExecuteAsync(new CommandDefinition(
                 """
-                INSERT INTO alarms (id, rule_id, device_id, point_id, trigger_value, threshold, severity, message, state, occurred_at)
-                VALUES (@id, @ruleId, @deviceId, @pointId, @triggerValue, @threshold, @severity, @message, @state, @occurredAt)
+                INSERT INTO alarms (id, rule_id, device_id, point_id, trigger_value, threshold, severity, message, state, occurred_at, site_id)
+                VALUES (@id, @ruleId, @deviceId, @pointId, @triggerValue, @threshold, @severity, @message, @state, @occurredAt, @site)
                 ON CONFLICT(id) DO UPDATE SET
                     state = excluded.state,
                     trigger_value = excluded.trigger_value,
                     threshold = excluded.threshold,
                     severity = excluded.severity,
                     message = excluded.message,
-                    occurred_at = excluded.occurred_at
+                    occurred_at = excluded.occurred_at,
+                    site_id = excluded.site_id
                 """,
                 new
                 {
@@ -114,7 +125,8 @@ public sealed class SqliteIngestStore : IIngestStore
                     severity = alarm.Severity,
                     message = alarm.Message,
                     state = alarm.State,
-                    occurredAt = alarm.OccurredAt.ToUniversalTime().ToString("O")
+                    occurredAt = alarm.OccurredAt.ToUniversalTime().ToString("O"),
+                    site = siteId
                 },
                 cancellationToken: ct));
 

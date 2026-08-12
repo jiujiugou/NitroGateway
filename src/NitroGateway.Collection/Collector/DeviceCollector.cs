@@ -94,7 +94,7 @@ internal sealed class DeviceCollector : IDeviceCollector
             var readResult = await _reader.ReadDeviceAsync(device, ct);
             if (readResult.IsFailure)
             {
-                _reporter.Report(device.Id, device.Name, 0, 1, readResult.Error!.Message);
+                _reporter.Report(device.Id, device.Name, false, readResult.Error!.Message);
                 circuitBreaker.RecordFailure();
                 probeReleased = true;
                 NitroMetrics.CollectionTotal.WithLabels(device.Id.ToString(), "failure").Inc();
@@ -127,16 +127,15 @@ internal sealed class DeviceCollector : IDeviceCollector
 
             // ── 4. 健康上报 ──
             var goodCount = snapshots.Count(s => s.Quality == QualityCode.Good);
-            var failCount = snapshots.Count - goodCount;
 
             if (snapshots.Count > 0)
                 _logger.LogDebug("采集完成 {Device}: {Good}/{Total} OK, 值={Values}",
                     device.Name, goodCount, snapshots.Count,
                     string.Join(", ", snapshots.Select(s => $"{s.Value ?? s.ErrorMessage}")));
 
-            // ADR-016 P3-3：失败明细透传给 HealthMonitor（LastError 不再恒为"采集失败"占位）
+            // ADR-016 P3-3 + ADR-031：读取成功（含点位质量差）只上报成功；firstBad 明细仅作诊断信息透传
             var firstBad = snapshots.FirstOrDefault(s => s.Quality != QualityCode.Good);
-            _reporter.Report(device.Id, device.Name, goodCount, failCount, firstBad?.ErrorMessage);
+            _reporter.Report(device.Id, device.Name, true, firstBad?.ErrorMessage);
 
             // ── 5. 熔断恢复：读成功则上报，即使部分点位质量差也不影响探测判定 ──
             circuitBreaker.RecordSuccess();

@@ -41,7 +41,7 @@ services:
       - mqtt
     restart: unless-stopped
 
-  # ── 中心 API + 展示后端（读中心库 center.db；中心库无设备配置，采集引擎空转无害）──
+  # ── 中心 API + 展示后端（读中心库 center.db；Deployment:Mode=Center 不跑采集/转发，中心库唯一写点是 ingest）──
   gateway:
     build:
       context: .
@@ -54,12 +54,11 @@ services:
     environment:
       - DOTNET_ENVIRONMENT=Production
       - Persistence__ConnectionString=Data Source=/app/data/center.db
+      # ADR-035 第 0 步：平台中心形态——不注册采集/转发/MQTT 发布，避免中心重复采集/双写 center.db
+      - Deployment__Mode=Center
       # ADR-022 P1-5：JWT 密钥必填，未设置直接拒绝启动（与单现场形态一致）
       - Security__JwtSecretKey=${JWT_SECRET:?JWT_SECRET 环境变量必须设置（生产强密钥，禁止使用仓库内占位符）}
-      - MQTT__Host=mqtt
-      - MQTT__Port=1883
     depends_on:
-      - mqtt
       - ingest
     restart: unless-stopped
 

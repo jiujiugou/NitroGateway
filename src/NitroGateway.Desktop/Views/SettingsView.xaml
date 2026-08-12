@@ -12,6 +12,20 @@
                 </StackPanel>
             </GroupBox>
 
+            <GroupBox Header="中心配置同步（ADR-033 阶段 2：手动导入）" Padding="12" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="中心地址：" Margin="0,3" />
+                    <TextBox Text="{Binding CenterUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,3" Padding="4" />
+                    <TextBlock Text="中心 Token（JWT）：" Margin="0,3" />
+                    <TextBox Text="{Binding CenterToken, UpdateSourceTrigger=PropertyChanged}" Margin="0,3" Padding="4" />
+                    <Button Content="从中心导入" Command="{Binding ImportFromCenterCommand}"
+                            Margin="0,8,0,4" Padding="14,5" HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding ImportStatusText}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="导入将以中心配置重置本地设备/点位（覆盖前需确认）。地址与 Token 仅保存在本机 %LocalAppData%。"
+                               Foreground="#888" TextWrapping="Wrap" Margin="0,6,0,0" />
+                </StackPanel>
+            </GroupBox>
+
             <GroupBox Header="本地存储与采集" Padding="12" Margin="0,0,0,12">
                 <StackPanel>
                     <TextBlock Margin="0,3" TextWrapping="Wrap"><Run Text="SQLite 路径：" /><Run Text="{Binding DatabasePath}" /></TextBlock>

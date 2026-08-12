@@ -27,10 +27,8 @@ public sealed class PointsViewModelTests : IDisposable
     [Fact]
     public async Task RefreshAsync_loads_points()
     {
-        var manager = new StubPointManager
-        {
-            Points = { TestDevices.Point("温度"), TestDevices.Point("压力") }
-        };
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, TestDevices.Point("温度"), TestDevices.Point("压力"));
         var vm = CreateVm(manager, new StubDeviceDialogService());
 
         await vm.RefreshCommand.ExecuteAsync(null);
@@ -59,19 +57,57 @@ public sealed class PointsViewModelTests : IDisposable
     {
         var manager = new StubPointManager();
         var dialogs = new StubDeviceDialogService { EditPointResult = false };
-        var vm = CreateVm(manager, dialogs);
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(manager, dialogs, outbox);
 
         await vm.AddCommand.ExecuteAsync(null);
 
         Assert.Empty(manager.Added);
         Assert.Equal(1, dialogs.EditPointCalls);
+        Assert.Empty(outbox.Rows);
+    }
+
+    [Fact]
+    public async Task AddPoint_records_outbox_row()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService { EditPointFillName = "温度" };
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(manager, dialogs, outbox);
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(outbox.Rows);
+        Assert.Equal(ConfigSyncOutboxKind.Point, row.Kind);
+        Assert.Equal(_deviceId, row.DeviceId);
+        Assert.NotNull(row.PointId);
+    }
+
+    [Fact]
+    public async Task EditPoint_records_outbox_row()
+    {
+        var point = TestDevices.Point("旧点位");
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, point);
+        var dialogs = new StubDeviceDialogService { EditPointFillName = "新点位" };
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(manager, dialogs, outbox);
+        await vm.RefreshCommand.ExecuteAsync(null);
+        vm.SelectedPoint = vm.Items[0];
+
+        await vm.EditCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(outbox.Rows);
+        Assert.Equal(ConfigSyncOutboxKind.Point, row.Kind);
+        Assert.Equal(point.Id, row.PointId);
     }
 
     [Fact]
     public async Task EditPoint_updates_selected_point()
     {
         var point = TestDevices.Point("旧点位");
-        var manager = new StubPointManager { Points = { point } };
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, point);
         var dialogs = new StubDeviceDialogService { EditPointFillName = "新点位" };
         var vm = CreateVm(manager, dialogs);
         await vm.RefreshCommand.ExecuteAsync(null);
@@ -89,7 +125,8 @@ public sealed class PointsViewModelTests : IDisposable
     public async Task DeletePoint_confirm_removes()
     {
         var point = TestDevices.Point("要删的点位");
-        var manager = new StubPointManager { Points = { point } };
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, point);
         var dialogs = new StubDeviceDialogService();
         var vm = CreateVm(manager, dialogs);
         await vm.RefreshCommand.ExecuteAsync(null);
@@ -106,7 +143,8 @@ public sealed class PointsViewModelTests : IDisposable
     public async Task DeletePoint_cancel_does_not_remove()
     {
         var point = TestDevices.Point("保留");
-        var manager = new StubPointManager { Points = { point } };
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, point);
         var dialogs = new StubDeviceDialogService { ConfirmResult = false };
         var vm = CreateVm(manager, dialogs);
         await vm.RefreshCommand.ExecuteAsync(null);
@@ -118,9 +156,30 @@ public sealed class PointsViewModelTests : IDisposable
         Assert.Single(vm.Items);
     }
 
+    [Fact]
+    public async Task DeletePoint_records_tombstone_outbox_row()
+    {
+        var point = TestDevices.Point("要删的点位");
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, point);
+        var dialogs = new StubDeviceDialogService();
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(manager, dialogs, outbox);
+        await vm.RefreshCommand.ExecuteAsync(null);
+        vm.SelectedPoint = vm.Items[0];
+
+        await vm.DeleteCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(outbox.Rows);
+        Assert.Equal(ConfigSyncOutboxKind.PointDelete, row.Kind);
+        Assert.Equal(point.Id, row.PointId);
+    }
+
     public void Dispose() => _provider?.Dispose();
 
-    private PointsViewModel CreateVm(StubPointManager manager, StubDeviceDialogService dialogs)
+    private PointsViewModel CreateVm(
+        StubPointManager manager, StubDeviceDialogService dialogs,
+        StubConfigSyncOutboxStore? outbox = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IPointManager>(_ => manager);
@@ -128,6 +187,7 @@ public sealed class PointsViewModelTests : IDisposable
         return new PointsViewModel(
             _deviceId, "车间 PLC",
             _provider.GetRequiredService<IServiceScopeFactory>(), dialogs,
+            outbox ?? new StubConfigSyncOutboxStore(),
             NullLogger<PointsViewModel>.Instance);
     }
 }

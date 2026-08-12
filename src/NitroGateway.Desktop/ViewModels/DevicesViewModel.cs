@@ -8,6 +8,7 @@ using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Services;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Shared;
 
 namespace NitroGateway.Desktop.ViewModels;
 
@@ -23,6 +24,7 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     private readonly EventBridge _bridge;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDeviceDialogService _dialogs;
+    private readonly IConfigSyncOutboxStore _outbox;
     private readonly ILogger<DevicesViewModel> _logger;
     private readonly DispatcherTimer _timer;
 
@@ -45,7 +47,8 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         EventBridge bridge,
         ILogger<DevicesViewModel> logger,
         IServiceScopeFactory scopeFactory,
-        IDeviceDialogService dialogs)
+        IDeviceDialogService dialogs,
+        IConfigSyncOutboxStore outbox)
     {
         _cache = cache;
         _health = health;
@@ -53,6 +56,7 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         _bridge = bridge;
         _scopeFactory = scopeFactory;
         _dialogs = dialogs;
+        _outbox = outbox;
         _logger = logger;
 
         _bridge.FrameReady += OnFrame;
@@ -80,6 +84,9 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
             StatusText = $"保存设备失败：{result.Error!.Message}";
             return;
         }
+
+        // ADR-033 阶段 4：现场改动入 outbox，同步服务联网后上报中心
+        await RecordOutboxAsync(() => _outbox.RecordDeviceAsync(result.Value!));
 
         StatusText = $"设备「{editor.Name}」已保存";
         await RefreshAsync();
@@ -113,6 +120,9 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // ADR-033 阶段 4：现场改动入 outbox（按 Id upsert，覆盖既有设备行）
+        await RecordOutboxAsync(() => _outbox.RecordDeviceAsync(result.Value!));
+
         StatusText = $"设备「{editor.Name}」已更新";
         await RefreshAsync();
     }
@@ -136,6 +146,9 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
             StatusText = $"删除设备失败：{result.Error!.Message}";
             return;
         }
+
+        // ADR-033 阶段 4：删除发 tombstone 上报（设备删除行覆盖既有 upsert 行）
+        await RecordOutboxAsync(() => _outbox.RecordDeviceDeleteAsync(selected.Id));
 
         StatusText = $"设备「{selected.Name}」已删除";
         await RefreshAsync();
@@ -222,6 +235,14 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     {
         _bridge.FrameReady -= OnFrame;
         _timer.Stop();
+    }
+
+    /// <summary>outbox 写入失败不阻断 UI 操作（采集/本地库照常），仅记调试日志。</summary>
+    private async Task RecordOutboxAsync(Func<Task<OperationResult>> record)
+    {
+        var result = await record();
+        if (result.IsFailure)
+            _logger.LogDebug("配置同步 outbox 记录失败：{Error}", result.Error!.Message);
     }
 }
 

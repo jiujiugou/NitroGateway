@@ -25,6 +25,10 @@ public sealed class SqlitePointRepository : IPointRepository
     {
         try
         {
+            // ADR-033 阶段 3/4：常规保存自动盖章（同步合并路径显式带时间戳，不走此处）
+            if (point.UpdatedAt == default)
+                point.UpdatedAt = DateTime.UtcNow;
+
             var existing = await _db.Points.FindAsync([point.Id], ct);
             if (existing is null)
             {
@@ -65,6 +69,10 @@ public sealed class SqlitePointRepository : IPointRepository
 
             foreach (var point in points)
             {
+                // ADR-033 阶段 3/4：常规批量保存自动盖章（同步合并路径显式带时间戳，不走此处）
+                if (point.UpdatedAt == default)
+                    point.UpdatedAt = DateTime.UtcNow;
+
                 var entity = DomainMapper.ToEntity(point, deviceId);
                 if (existing.TryGetValue(point.Id, out var current))
                     _db.Entry(current).CurrentValues.SetValues(entity);

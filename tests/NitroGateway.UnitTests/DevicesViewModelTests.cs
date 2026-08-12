@@ -59,12 +59,14 @@ public sealed class DevicesViewModelTests : IDisposable
         cache.EnqueueSuccess();
         var manager = new StubDeviceManager();
         var dialogs = new StubDeviceDialogService { EditDeviceResult = false };
-        var vm = CreateVm(cache, manager, dialogs);
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(cache, manager, dialogs, outbox);
 
         await vm.AddDeviceCommand.ExecuteAsync(null);
 
         Assert.Empty(manager.Registered);
         Assert.Equal(1, dialogs.EditDeviceCalls);
+        Assert.Empty(outbox.Rows);
     }
 
     [Fact]
@@ -80,6 +82,46 @@ public sealed class DevicesViewModelTests : IDisposable
 
         Assert.Empty(manager.Registered);
         Assert.Contains("保存设备失败", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task AddDevice_records_outbox_row()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var manager = new StubDeviceManager();
+        var dialogs = new StubDeviceDialogService { EditDeviceFillName = "新设备" };
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(cache, manager, dialogs, outbox);
+
+        cache.EnqueueSuccess(TestDevices.Device("新设备"));
+        await vm.AddDeviceCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(outbox.Rows);
+        Assert.Equal(ConfigSyncOutboxKind.Device, row.Kind);
+        // 负载引用实际注册的设备（Id 由 ViewModel 生成，非测试预置）
+        Assert.Equal(Assert.Single(manager.Registered).Id, row.DeviceId);
+        Assert.Null(row.PointId);
+    }
+
+    [Fact]
+    public async Task EditDevice_records_outbox_row_replacing_previous()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var existing = TestDevices.Device("旧名称");
+        var manager = new StubDeviceManager { GetResult = existing };
+        var dialogs = new StubDeviceDialogService { EditDeviceFillName = "新名称" };
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(cache, manager, dialogs, outbox);
+        vm.SelectedDevice = new DeviceItem { Id = existing.Id, Name = "旧名称", Protocol = "Modbus" };
+        cache.EnqueueSuccess(existing);
+
+        await vm.EditDeviceCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(outbox.Rows);
+        Assert.Equal(ConfigSyncOutboxKind.Device, row.Kind);
+        Assert.Equal(existing.Id, row.DeviceId);
     }
 
     [Fact]
@@ -150,6 +192,26 @@ public sealed class DevicesViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteDevice_records_tombstone_outbox_row()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var manager = new StubDeviceManager();
+        var dialogs = new StubDeviceDialogService();
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(cache, manager, dialogs, outbox);
+        var deviceId = Guid.NewGuid();
+        vm.SelectedDevice = new DeviceItem { Id = deviceId, Name = "要删的设备", Protocol = "Modbus" };
+
+        cache.EnqueueSuccess();
+        await vm.DeleteDeviceCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(outbox.Rows);
+        Assert.Equal(ConfigSyncOutboxKind.DeviceDelete, row.Kind);
+        Assert.Equal(deviceId, row.DeviceId);
+    }
+
+    [Fact]
     public void ManagePoints_opens_dialog_with_device_id_and_name()
     {
         var cache = new StagedSnapshotCache();
@@ -165,7 +227,8 @@ public sealed class DevicesViewModelTests : IDisposable
     }
 
     private DevicesViewModel CreateVm(
-        IDeviceSnapshotCache cache, StubDeviceManager manager, StubDeviceDialogService dialogs)
+        IDeviceSnapshotCache cache, StubDeviceManager manager, StubDeviceDialogService dialogs,
+        StubConfigSyncOutboxStore? outbox = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IDeviceManager>(_ => manager);
@@ -174,6 +237,7 @@ public sealed class DevicesViewModelTests : IDisposable
         return new DevicesViewModel(
             cache, new FakeHealthMonitor(), new UiDispatcher(), _bridge,
             NullLogger<DevicesViewModel>.Instance,
-            provider.GetRequiredService<IServiceScopeFactory>(), dialogs);
+            provider.GetRequiredService<IServiceScopeFactory>(), dialogs,
+            outbox ?? new StubConfigSyncOutboxStore());
     }
 }

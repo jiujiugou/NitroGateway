@@ -7,6 +7,13 @@ namespace NitroGateway.Domain.Measurements;
 public sealed record BatchMeasurements
 {
     /// <summary>
+    /// 站点标识（ADR-035 第 1 步）：随负载上行，HTTP 通道等无 topic 场景也能区分站点。
+    /// MQTT 通道同时以 topic 第三层承载（<c>nitrogateway/{siteId}/{deviceId}/measurements</c>），
+    /// 中心 Ingest 以 topic 为准、负载字段作为冗余校验。
+    /// </summary>
+    public string SiteId { get; init; } = "";
+
+    /// <summary>
     /// 载荷版本（ADR-025 P1）。当前版本为 1。
     /// 序列化输出顶层字段 <c>v</c>；旧版载荷无此字段，反序列化得 0，按 v1 兼容读取。
     /// </summary>

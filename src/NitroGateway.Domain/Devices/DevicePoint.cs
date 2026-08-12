@@ -30,6 +30,15 @@ public sealed class DevicePoint
     /// <summary>读写权限</summary>
     public PointAccess Access { get; set; } = PointAccess.ReadOnly;
 
+    /// <summary>
+    /// 配置最后修改时间（UTC，ADR-033 阶段 3/4 同步版本依据）。
+    /// 仓储保存时自动盖章（缺省值→当前时间）；同步合并时保留来源时间戳。
+    /// </summary>
+    public DateTime UpdatedAt { get; set; }
+
+    /// <summary>删除标记（tombstone，ADR-033 阶段 3/4）：中心侧点位删除=权威删除</summary>
+    public bool IsDeleted { get; set; }
+
     /// <summary>采集间隔（毫秒）。0 表示继承设备默认间隔</summary>
     public int ScanIntervalMs { get; set; }
 

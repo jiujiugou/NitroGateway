@@ -40,7 +40,9 @@ public class SqliteDeviceRepositoryTests
                     RequestTimeoutMs INTEGER NOT NULL DEFAULT 5000,
                     RetryCount INTEGER NOT NULL DEFAULT 3,
                     Status TEXT NOT NULL,
-                    ConnectionParams TEXT NULL
+                    ConnectionParams TEXT NULL,
+                    UpdatedAt TEXT NOT NULL DEFAULT '',
+                    IsDeleted INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE points (
                     Id TEXT PRIMARY KEY,
@@ -54,7 +56,9 @@ public class SqliteDeviceRepositoryTests
                     ScanIntervalMs INTEGER NOT NULL DEFAULT 0,
                     Deadband REAL NOT NULL DEFAULT 0,
                     ScaleFactor REAL NOT NULL DEFAULT 1.0,
-                    ScaleOffset REAL NOT NULL DEFAULT 0
+                    ScaleOffset REAL NOT NULL DEFAULT 0,
+                    UpdatedAt TEXT NOT NULL DEFAULT '',
+                    IsDeleted INTEGER NOT NULL DEFAULT 0
                 );
                 """;
             command.ExecuteNonQuery();

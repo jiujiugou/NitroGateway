@@ -17,6 +17,7 @@ using NitroGateway.Security.Auth;
 using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 using NitroGateway.Webapi;
+using NitroGateway.Webapi.Deployment;
 using NitroGateway.Webapi.HealthChecks;
 using NitroGateway.Webapi.Hubs;
 using Prometheus;
@@ -54,28 +55,43 @@ builder.Services.AddNitroSqlite(builder.Configuration);
 builder.Services.AddNitroDevice();
 builder.Services.AddNitroProtocol();
 builder.Services.AddNitroSignalR();
-builder.Services.AddNitroAlarm();
-// ADR-016 P1-1：Forwarder 必须先于 Collection 注册——HostedService 按注册序反向停止，
-// 这样关闭时先停采集（最后一轮入缓冲）再停转发（停机排空），MQTT 由 Singleton 兜底保持连接。
-// ADR-022 P3-7：Forwarder 轮询间隔配置化（与 Collection 一致），缺省 5000ms
-// ADR-011 P2：配置驱动注册（Forwarder:Channels 决定 MQTT/HTTP 引擎），缺省 mqtt 单通道
-builder.Services.AddNitroForwarder(builder.Configuration);
-builder.Services.AddNitroCollection(builder.Configuration);
-builder.Services.AddNitroMqtt(builder.Configuration);
+// ADR-033 阶段 3/4：配置同步接收（现场离线改动上报，UpdatedAt 合并 + tombstone 拒绝复活）
+builder.Services.AddScoped<NitroGateway.Webapi.Services.ConfigSyncService>();
+// ADR-035 第 0 步：按部署形态裁剪模块——Center（平台管理）不注册采集/转发/MQTT 发布，
+// 中心库数据写点唯一为 Ingest；Gateway（边缘网关，默认）保持原有全量行为。
+// 告警评估 + MQTT 通知（MqttAlarmNotifier 依赖 IMqttClient）属于边缘职责，Center 一并跳过；
+// 中心侧告警规则 CRUD / 告警查询由 AddNitroSqlite 的仓储支撑，不受影响。
+var deploymentMode = DeploymentModeParser.Parse(builder.Configuration);
+var isCenter = deploymentMode == DeploymentMode.Center;
+if (!isCenter)
+{
+    builder.Services.AddNitroAlarm();
+    // ADR-016 P1-1：Forwarder 必须先于 Collection 注册——HostedService 按注册序反向停止，
+    // 这样关闭时先停采集（最后一轮入缓冲）再停转发（停机排空），MQTT 由 Singleton 兜底保持连接。
+    // ADR-022 P3-7：Forwarder 轮询间隔配置化（与 Collection 一致），缺省 5000ms
+    // ADR-011 P2：配置驱动注册（Forwarder:Channels 决定 MQTT/HTTP 引擎），缺省 mqtt 单通道
+    builder.Services.AddNitroForwarder(builder.Configuration);
+    builder.Services.AddNitroCollection(builder.Configuration);
+    builder.Services.AddNitroMqtt(builder.Configuration);
+}
 
 builder.Services.AddNitroTelemetry();
 
 // ── 健康检查 ──
 var healthChecks = builder.Services.AddHealthChecks()
     .AddCheck("sqlite", new SqliteHealthCheck(dbConnectionString), tags: ["db", "ready"])
-    .AddCheck<MqttHealthCheck>("mqtt", tags: ["mqtt", "ready"])
     .AddCheck<DiskHealthCheck>("disk", tags: ["disk"]);
-// ADR-011 P4：HTTP 北向通道检查——仅 http/both 通道启用时注册（IHttpClient 只在此时存在）
-var forwarderChannels = builder.Configuration["Forwarder:Channels"] ?? "mqtt";
-if (forwarderChannels.Trim().Equals("http", StringComparison.OrdinalIgnoreCase) ||
-    forwarderChannels.Trim().Equals("both", StringComparison.OrdinalIgnoreCase))
+if (!isCenter)
 {
-    healthChecks.AddCheck<HttpHealthCheck>("http", tags: ["http", "ready"]);
+    // MQTT/HTTP 健康检查依赖转发链路（IMqttClient/IHttpClient），Center 模式未注册，跳过
+    healthChecks.AddCheck<MqttHealthCheck>("mqtt", tags: ["mqtt", "ready"]);
+    // ADR-011 P4：HTTP 北向通道检查——仅 http/both 通道启用时注册（IHttpClient 只在此时存在）
+    var forwarderChannels = builder.Configuration["Forwarder:Channels"] ?? "mqtt";
+    if (forwarderChannels.Trim().Equals("http", StringComparison.OrdinalIgnoreCase) ||
+        forwarderChannels.Trim().Equals("both", StringComparison.OrdinalIgnoreCase))
+    {
+        healthChecks.AddCheck<HttpHealthCheck>("http", tags: ["http", "ready"]);
+    }
 }
 
 builder.Services.AddSignalR();

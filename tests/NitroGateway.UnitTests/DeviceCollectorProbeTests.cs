@@ -93,6 +93,31 @@ public class DeviceCollectorProbeTests
 
     // ── Fakes ──
 
+    /// <summary>ADR-031：点位质量差（Uncertain）不影响设备健康——读取链路成功即上报成功</summary>
+    [Fact]
+    public async Task CollectDeviceAsync_PointQualityBad_StillReportsSuccess()
+    {
+        var reporter = new CapturingReporter();
+        var pipeline = new FixedPipeline([
+            new PointSnapshot
+            {
+                DeviceId = DeviceId,
+                DevicePointId = Guid.NewGuid(),
+                DataType = DataType.Float,
+                Quality = QualityCode.Uncertain,
+                ErrorMessage = "缩放失败：无法转换为数值"
+            }
+        ]);
+
+        await using var provider = BuildProvider(new SuccessReader(), pipeline, reporter);
+        using var scope = provider.CreateScope();
+        var collector = scope.ServiceProvider.GetRequiredService<IDeviceCollector>();
+
+        await collector.CollectDeviceAsync(Device, CancellationToken.None);
+
+        Assert.True(reporter.LastSucceeded, "点级质量差不判设备失败，读取链路成功即成功（ADR-031）");
+    }
+
     private sealed class ThrowingReader : IDeviceReader
     {
         public Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadDeviceAsync(
@@ -143,8 +168,12 @@ public class DeviceCollectorProbeTests
     private sealed class CapturingReporter : IHealthReporter
     {
         public string? LastErrorMessage { get; private set; }
-        public void Report(Guid deviceId, string? deviceName, int successCount, int failCount, string? errorMessage)
-            => LastErrorMessage = errorMessage;
+        public bool? LastSucceeded { get; private set; }
+        public void Report(Guid deviceId, string? deviceName, bool succeeded, string? errorMessage)
+        {
+            LastSucceeded = succeeded;
+            LastErrorMessage = errorMessage;
+        }
     }
 
     private sealed class EmptyDeviceManager : IDeviceManager
@@ -162,6 +191,12 @@ public class DeviceCollectorProbeTests
         public Task<OperationResult> UpdateStatusAsync(Guid deviceId, DeviceStatus status, CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task<OperationResult> SetMaintenanceAsync(Guid deviceId, bool maintenance, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default)
             => throw new NotSupportedException();
     }
 

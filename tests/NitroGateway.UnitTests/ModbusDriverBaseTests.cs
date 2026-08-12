@@ -69,4 +69,55 @@ public class ModbusDriverBaseTests
 
         public override void Dispose() { }
     }
+
+    /// <summary>ADR-031：空点位设备也要真实探测链路（寄存器 0），探测失败必须返回 Failure 并复位 Faulted，不再空成功</summary>
+    [Fact]
+    public async Task ReadBatchAsync_EmptyPoints_ProbeFails_ReturnsFailureAndFaulted()
+    {
+        var driver = new ThrowingPingDriver(NullLogger<ThrowingPingDriver>.Instance);
+
+        var r = await driver.ReadBatchAsync([]);
+
+        Assert.True(r.IsFailure);
+        Assert.Equal(DriverState.Faulted, driver.State);
+    }
+
+    /// <summary>ADR-031：空点位设备探测成功时仍返回空列表（连接可达但无数据可说）</summary>
+    [Fact]
+    public async Task ReadBatchAsync_EmptyPoints_ProbeOk_ReturnsEmptySuccess()
+    {
+        var driver = new OkProbeDriver(NullLogger<OkProbeDriver>.Instance);
+
+        var r = await driver.ReadBatchAsync([]);
+
+        Assert.True(r.IsSuccess, r.Error?.Message);
+        Assert.Empty(r.Value!);
+    }
+
+    /// <summary>探测读成功路径：ReadSingleTypedAsync 正常返回，验证空点位探测不误报</summary>
+    private sealed class OkProbeDriver : ModbusDriverBase
+    {
+        private readonly SemaphoreSlim _gate = new(1, 1);
+
+        public OkProbeDriver(ILogger logger) : base(logger) => State = DriverState.Connected;
+
+        protected override SemaphoreSlim ReadGate => _gate;
+
+        protected override Task<object[]> ReadBatchTypedAsync(string address, DataType type, int count)
+            => throw new NotSupportedException();
+
+        protected override Task<object> ReadSingleTypedAsync(DataType type, string address)
+            => Task.FromResult<object>((short)0);
+
+        protected override Task<OperationResult> WriteSingleValueAsync(DevicePoint point, string address, object value)
+            => throw new NotSupportedException();
+
+        public override Task<OperationResult> ConnectAsync(CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
+
+        public override Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
+
+        public override void Dispose() { }
+    }
 }

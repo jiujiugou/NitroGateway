@@ -32,6 +32,9 @@ public sealed class Forwarder : IForwarder
     /// <summary>全局节流器（Singleton）：AIMD 调整单次出队批量与批次间延迟</summary>
     private readonly ForwardingThrottle _throttle;
 
+    /// <summary>站点标识（ADR-035 第 1 步）：上行 topic 第三层 nitrogateway/{siteId}/{deviceId}/measurements</summary>
+    private readonly string _siteId;
+
     /// <summary>日志</summary>
     private readonly ILogger<Forwarder> _logger;
 
@@ -41,18 +44,21 @@ public sealed class Forwarder : IForwarder
     /// <param name="mqtt">MQTT 客户端：发布失败（非成功返回码）即视为该批转发失败</param>
     /// <param name="throttle">全局节流器（Singleton），跨调度周期保持 AIMD 状态</param>
     /// <param name="logger">日志</param>
+    /// <param name="siteId">站点标识；缺省/空白回退 <see cref="SiteOptions.DefaultSiteId"/>（兼容既有构造与单现场部署）</param>
     public Forwarder(
         IForwardBuffer buffer,
         IMessageSerializer serializer,
         IMqttClient mqtt,
         ForwardingThrottle throttle,
-        ILogger<Forwarder> logger)
+        ILogger<Forwarder> logger,
+        string? siteId = null)
     {
         _buffer = buffer;
         _serializer = serializer;
         _mqtt = mqtt;
         _throttle = throttle;
         _logger = logger;
+        _siteId = string.IsNullOrWhiteSpace(siteId) ? SiteOptions.DefaultSiteId : siteId.Trim();
     }
 
     /// <inheritdoc />
@@ -102,7 +108,8 @@ public sealed class Forwarder : IForwarder
             try
             {
                 var payload = _serializer.Serialize(batch);
-                var topic = $"nitrogateway/{batch.DeviceId}/measurements";
+                // ADR-035 第 1 步：上行 topic 增加站点层，中心 Ingest 按第三段解析 siteId 入库
+                var topic = $"nitrogateway/{_siteId}/{batch.DeviceId}/measurements";
                 var result = await _mqtt.PublishAsync(topic, payload, qos: 1, ct);
 
                 if (result.IsSuccess)

@@ -44,4 +44,7 @@ public sealed class AlarmEntity
 
     /// <summary>恢复时间（O 格式字符串）</summary>
     public string? ResolvedAt { get; set; }
+
+    /// <summary>站点标识（ADR-035 第 1 步）：Ingest 按上行 topic 第三层写入；空串=未标注站点</summary>
+    public string SiteId { get; set; } = "";
 }

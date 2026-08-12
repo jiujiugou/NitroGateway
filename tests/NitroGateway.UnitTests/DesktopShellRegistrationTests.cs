@@ -25,9 +25,10 @@ public sealed class DesktopShellRegistrationTests
         services.AddSingleton<IForwardBuffer>(new StubForwardBuffer());
         services.AddSingleton<UiDispatcher>();
         services.AddSingleton<MqttConnectionOptions>();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        var configuration = new ConfigurationBuilder().Build();
+        services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddNitroDesktopShell();
+        services.AddNitroDesktopShell(configuration);
 
         using var provider = services.BuildServiceProvider();
         var bridge = provider.GetRequiredService<EventBridge>();

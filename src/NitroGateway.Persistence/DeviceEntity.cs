@@ -40,6 +40,12 @@ public sealed class DeviceEntity
     /// <summary>协议连接参数，对应 DeviceConnection.Parameters 的 JSON 序列化（CamelCase），可空</summary>
     public string? ConnectionParams { get; set; }
 
+    /// <summary>配置最后修改时间（O 格式 UTC 字符串，ADR-033 阶段 3/4；空串=最旧）</summary>
+    public string UpdatedAt { get; set; } = "";
+
+    /// <summary>删除标记（tombstone，ADR-033 阶段 3/4；中心侧权威删除）</summary>
+    public bool IsDeleted { get; set; }
+
     /// <summary>
     /// 设备点位导航集合。与 points 表构成一对多关系，
     /// 删除设备时级联删除其全部点位（DeleteBehavior.Cascade）。

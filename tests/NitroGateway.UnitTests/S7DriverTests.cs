@@ -1,4 +1,4 @@
-﻿using HslCommunication.Profinet.Siemens;
+using HslCommunication.Profinet.Siemens;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
@@ -72,14 +72,14 @@ public class S7DriverTests
         Assert.Equal(DriverState.Faulted, driver.State);
     }
 
-    /// <summary>空点位列表直接成功，不视为错误（与 Modbus 一致）</summary>
+    /// <summary>ADR-031：空点位设备也要发探测读验证链路；客户端未连接时探测失败 → Failure + Faulted，不再空成功假在线</summary>
     [Fact]
-    public async Task ReadBatchAsync_EmptyPoints_ReturnsEmptySuccess()
+    public async Task ReadBatchAsync_EmptyPoints_ProbeFails_ReturnsFailureAndFaulted()
     {
         var driver = CreateDriver();
         var r = await driver.ReadBatchAsync([]);
-        Assert.True(r.IsSuccess);
-        Assert.Empty(r.Value!);
+        Assert.True(r.IsFailure, "空点位设备探测失败必须返回 Failure，供健康监控判离线");
+        Assert.Equal(DriverState.Faulted, driver.State);
     }
 
     /// <summary>ADR-019 P3-2：未连接时 Ping 返回 Failure 不抛异常（ping 地址可配置路径不依赖 DB1）</summary>

@@ -27,6 +27,10 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
     {
         try
         {
+            // ADR-033 阶段 3/4：常规保存自动盖章（同步合并路径显式带时间戳，不走此处）
+            if (device.UpdatedAt == default)
+                device.UpdatedAt = DateTime.UtcNow;
+
             var existing = await _db.Devices.FindAsync([device.Id], ct);
             if (existing is null)
             {

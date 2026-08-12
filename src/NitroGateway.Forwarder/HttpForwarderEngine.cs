@@ -163,9 +163,11 @@ public sealed class HttpForwarderEngine : BackgroundService
             }
         }
 
-        if (committed.Count > 0 && !stoppingToken.IsCancellationRequested)
+        if (committed.Count > 0)
         {
-            var commitResult = await _buffer.CommitAsync(committed, stoppingToken);
+            // 批次已上传成功，提交不因停机取消而跳过（与 DrainOnShutdownAsync 语义一致），
+            // 避免 BackgroundService.StopAsync 取消令牌与提交之间的竞态导致已成功批次滞留 InFlight。
+            var commitResult = await _buffer.CommitAsync(committed, CancellationToken.None);
             if (commitResult.IsFailure)
             {
                 _logger.LogError("HTTP 转发批次提交失败 {Count} 批: {Error}", committed.Count, commitResult.Error!.Message);

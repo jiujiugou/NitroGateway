@@ -8,6 +8,10 @@ public sealed class DeviceDto
     public ProtocolDto Protocol { get; init; } = new();
     public ConnectionDto Connection { get; init; } = new();
     public string Status { get; init; } = "";
+    /// <summary>配置最后修改时间（O 格式 UTC，ADR-033 阶段 3/4 同步版本依据）</summary>
+    public string UpdatedAt { get; init; } = "";
+    /// <summary>删除标记（tombstone，ADR-033 阶段 3/4；同步导出携带以驱动现场删除）</summary>
+    public bool IsDeleted { get; init; }
     public List<PointDto> Points { get; init; } = [];
 }
 
@@ -29,6 +33,10 @@ public sealed class PointDto
     public string? Description { get; init; } public string DataType { get; init; } = ""; public string Access { get; init; } = "";
     public bool Enabled { get; init; } public int ScanIntervalMs { get; init; }
     public double Deadband { get; init; } public double ScaleFactor { get; init; } public double ScaleOffset { get; init; }
+    /// <summary>配置最后修改时间（O 格式 UTC，ADR-033 阶段 3/4 同步版本依据）</summary>
+    public string UpdatedAt { get; init; } = "";
+    /// <summary>删除标记（tombstone，ADR-033 阶段 3/4）</summary>
+    public bool IsDeleted { get; init; }
 }
 
 public sealed class DeviceStatusSummaryDto { public string DeviceId { get; init; } = ""; public string DeviceName { get; init; } = ""; public string Status { get; init; } = ""; public string? LastError { get; init; } }

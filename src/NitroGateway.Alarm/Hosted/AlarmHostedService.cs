@@ -79,6 +79,8 @@ public sealed class AlarmHostedService : BackgroundService, IPointStoredSink
             var now = DateTime.UtcNow;
 
             // ADR-002 P2-3：按设备一次取全部启用规则，内存按点位过滤，避免每点一次 DB 往返
+            // ADR-032 P1-2：GetByDeviceAsync 由 CachedAlarmRuleRepository 内存缓存承载，
+            // 首轮加载后不再每事件直查 DB；规则增删改经写路径失效缓存，此处无需额外处理
             var rulesResult = await ruleRepo.GetByDeviceAsync(e.DeviceId, ct);
             if (rulesResult.IsFailure)
             {

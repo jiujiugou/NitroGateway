@@ -56,7 +56,8 @@ public class SqliteAlarmRepositoryTests
                     first_exceeded_at TEXT NULL,
                     occurred_at TEXT NOT NULL,
                     acknowledged_at TEXT NULL,
-                    resolved_at TEXT NULL
+                    resolved_at TEXT NULL,
+                    site_id TEXT NOT NULL DEFAULT ''
                 );
                 """;
             command.ExecuteNonQuery();

@@ -10,13 +10,16 @@ namespace NitroGateway.Desktop.Services;
 public sealed class DeviceDialogService : IDeviceDialogService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IConfigSyncOutboxStore _outbox;
     private readonly ILogger<PointsViewModel> _logger;
 
     public DeviceDialogService(
         IServiceScopeFactory scopeFactory,
+        IConfigSyncOutboxStore outbox,
         ILogger<PointsViewModel> logger)
     {
         _scopeFactory = scopeFactory;
+        _outbox = outbox;
         _logger = logger;
     }
 
@@ -42,7 +45,7 @@ public sealed class DeviceDialogService : IDeviceDialogService
     /// <inheritdoc />
     public void ShowPoints(Guid deviceId, string deviceName)
     {
-        var viewModel = new PointsViewModel(deviceId, deviceName, _scopeFactory, this, _logger);
+        var viewModel = new PointsViewModel(deviceId, deviceName, _scopeFactory, this, _outbox, _logger);
         var window = new PointsWindow(viewModel) { Owner = Application.Current?.MainWindow };
         window.ShowDialog();
         viewModel.Dispose();

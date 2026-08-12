@@ -15,6 +15,9 @@ internal sealed class StubDeviceManager : IDeviceManager
     public Device? GetResult { get; set; }
     public bool FailNextRegister { get; set; }
 
+    /// <summary>GetAllAsync 返回值（ADR-033 导入测试用）；缺省空列表</summary>
+    public IReadOnlyList<Device> LocalDevices { get; set; } = Array.Empty<Device>();
+
     public Task<OperationResult<Device>> RegisterAsync(Device device, CancellationToken ct = default)
     {
         if (FailNextRegister)
@@ -33,12 +36,20 @@ internal sealed class StubDeviceManager : IDeviceManager
     }
 
     public Task<OperationResult<Device>> GetAsync(Guid deviceId, CancellationToken ct = default) =>
-        Task.FromResult(OperationResult<Device>.Success(GetResult));
+        Task.FromResult(GetResult is null
+            ? OperationResult<Device>.Failure(OperationalError.General("设备不存在"))
+            : OperationResult<Device>.Success(GetResult));
 
-    public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default) => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(LocalDevices));
     public Task<OperationResult<IReadOnlyList<Device>>> GetByStatusAsync(DeviceStatus status, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<OperationResult> UpdateStatusAsync(Guid deviceId, DeviceStatus status, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<OperationResult> SetMaintenanceAsync(Guid deviceId, bool maintenance, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default) => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(LocalDevices));
+    public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default) =>
+        Task.FromResult(GetResult is null
+            ? OperationResult<Device>.Failure(OperationalError.General("设备不存在"))
+            : OperationResult<Device>.Success(GetResult));
+    public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default) { Unregistered.Add(deviceId); return Task.FromResult(OperationResult.Success()); }
 }
 
 /// <summary>ADR-029 测试替身：记录调用的点位管理器。</summary>
@@ -48,11 +59,24 @@ internal sealed class StubPointManager : IPointManager
     public List<(Guid DeviceId, DevicePoint Point)> Added { get; } = [];
     public List<(Guid DeviceId, DevicePoint Point)> Updated { get; } = [];
     public List<(Guid DeviceId, Guid PointId)> Removed { get; } = [];
+    public List<(Guid DeviceId, IReadOnlyList<DevicePoint> Points)> Imported { get; } = [];
+
+    private readonly Dictionary<Guid, Guid> _pointDevice = new();
+
+    /// <summary>测试直接预置设备点位（不记录调用）。</summary>
+    public void Seed(Guid deviceId, params DevicePoint[] points)
+    {
+        foreach (var point in points)
+        {
+            Points.Add(point);
+            _pointDevice[point.Id] = deviceId;
+        }
+    }
 
     public Task<OperationResult<DevicePoint>> AddAsync(Guid deviceId, DevicePoint point, CancellationToken ct = default)
     {
         Added.Add((deviceId, point));
-        Points.Add(point);
+        Seed(deviceId, point);
         return Task.FromResult(OperationResult<DevicePoint>.Success(point));
     }
 
@@ -69,13 +93,20 @@ internal sealed class StubPointManager : IPointManager
     {
         Removed.Add((deviceId, pointId));
         Points.RemoveAll(p => p.Id == pointId);
+        _pointDevice.Remove(pointId);
         return Task.FromResult(OperationResult.Success());
     }
 
     public Task<OperationResult<IReadOnlyList<DevicePoint>>> GetByDeviceAsync(Guid deviceId, CancellationToken ct = default) =>
-        Task.FromResult(OperationResult<IReadOnlyList<DevicePoint>>.Success(Points.ToArray()));
+        Task.FromResult(OperationResult<IReadOnlyList<DevicePoint>>.Success(
+            Points.Where(p => _pointDevice.TryGetValue(p.Id, out var owner) && owner == deviceId).ToArray()));
 
-    public Task<OperationResult<IReadOnlyList<DevicePoint>>> ImportAsync(Guid deviceId, IReadOnlyList<DevicePoint> points, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<OperationResult<IReadOnlyList<DevicePoint>>> ImportAsync(Guid deviceId, IReadOnlyList<DevicePoint> points, CancellationToken ct = default)
+    {
+        Imported.Add((deviceId, points));
+        Seed(deviceId, points.ToArray());
+        return Task.FromResult(OperationResult<IReadOnlyList<DevicePoint>>.Success(points));
+    }
     public Task<OperationResult<IReadOnlyList<PointValidationError>>> ValidateAsync(Guid deviceId, DevicePoint point, CancellationToken ct = default) => throw new NotSupportedException();
 }
 

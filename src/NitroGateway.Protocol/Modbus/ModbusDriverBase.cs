@@ -206,7 +206,20 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
             var pointList = points.ToList();
             if (pointList.Count == 0)
-                return Array.Empty<RawPointValue>();
+            {
+                // ADR-031：空点位设备也要发一次真实探测读（寄存器 0，与 PingAsync 一致）验证链路，
+                // 否则断开后 State 仍为 Connected 且无数据流量，设备永远假在线
+                try
+                {
+                    await ReadSingleTypedAsync(DataType.Int16, "0");
+                    return Array.Empty<RawPointValue>();
+                }
+                catch (Exception ex)
+                {
+                    State = DriverState.Faulted;
+                    return OperationalError.Protocol($"链路探测失败: {ex.Message}");
+                }
+            }
 
             // 1. 解析地址 + 寄存器数量
             var parsed = pointList.Select(p => new ParsedPoint(

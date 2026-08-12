@@ -174,7 +174,38 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         IEnumerable<DevicePoint> points, CancellationToken ct = default)
     {
         var pointList = points.ToList();
-        if (pointList.Count == 0) return Array.Empty<RawPointValue>();
+        if (pointList.Count == 0)
+        {
+            // ADR-031：空点位设备也要发一次真实探测读（PingAddress）验证链路，
+            // 否则断开后客户端残留且无数据流量，设备永远假在线
+            await _gate.WaitAsync(ct);
+            try
+            {
+                if (_client is null)
+                    return OperationalError.Unavailable("S7 未连接");
+                var address = _connection.Parameters.GetValueOrDefault("PingAddress")?.ToString() ?? "DB1.DBW0";
+                HslCommunication.OperateResult r = S7AddressParser.IsBitAddress(address)
+                    ? await _client.ReadBoolAsync(address)
+                    : await _client.ReadInt16Async(address);
+                if (r.IsSuccess)
+                    return Array.Empty<RawPointValue>();
+                State = DriverState.Faulted;
+                return OperationalError.Timeout($"链路探测失败: {r.Message}");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                State = DriverState.Faulted;
+                return OperationalError.Timeout($"链路探测失败: {ex.Message}");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
 
         var results = new List<RawPointValue>(pointList.Count);
         foreach (var p in pointList)

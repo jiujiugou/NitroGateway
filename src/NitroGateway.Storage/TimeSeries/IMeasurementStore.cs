@@ -44,12 +44,29 @@ public interface IMeasurementStore
         Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default);
 
     /// <summary>
+    /// 分页查询历史快照（按站点过滤，ADR-035 第 1 步）。
+    /// siteId 为空时不过滤（兼容未标注站点数据）；默认实现委托无站点重载，兼容既有实现（接口只增不删）。
+    /// </summary>
+    Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
+        Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, string? siteId,
+        CancellationToken ct = default)
+        => QueryPagedAsync(deviceId, pointId, from, to, limit, offset, ct);
+
+    /// <summary>
     /// 查询设备最新快照。pointId 为 null 时返回设备下每个点位的最新一条（每点一条）。
     /// ADR-002 P2-4：替代控制器"拉 1 小时全量再内存过滤"，用 SQL 直接取最新，避免大结果集。
     /// ADR-021 P3-3 契约：每点最多一条（同时间戳多行按写入序取最新，实现侧按 MAX(timestamp) 去重）。
     /// </summary>
     Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
         Guid deviceId, Guid? pointId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 查询设备最新快照（按站点过滤，ADR-035 第 1 步）。
+    /// siteId 为空时不过滤（兼容未标注站点数据）；默认实现委托无站点重载，兼容既有实现（接口只增不删）。
+    /// </summary>
+    Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
+        Guid deviceId, Guid? pointId, string? siteId, CancellationToken ct = default)
+        => QueryLatestAsync(deviceId, pointId, ct);
 
     /// <summary>删除指定时间之前的历史数据，用于存储空间管理</summary>
     Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default);

@@ -15,11 +15,11 @@ namespace NitroGateway.Ingest;
 /// </summary>
 public sealed class IngestService : BackgroundService
 {
-    /// <summary>遥测上行主题（ADR-025 契约：Forwarder.cs 现成 topic + BatchMeasurements JSON）</summary>
-    public const string MeasurementsTopicFilter = "nitrogateway/+/measurements";
+    /// <summary>遥测上行主题（ADR-035 第 1 步：nitrogateway/{siteId}/{deviceId}/measurements + BatchMeasurements JSON）</summary>
+    public const string MeasurementsTopicFilter = "nitrogateway/+/+/measurements";
 
-    /// <summary>告警上行主题（MqttAlarmNotifier 现成 topic，ADR-028 P2-1 契约对齐）</summary>
-    public const string AlarmsTopicFilter = "nitrogateway/+/alarms";
+    /// <summary>告警上行主题（ADR-035 第 1 步：nitrogateway/{siteId}/{deviceId}/alarms，ADR-028 P2-1 契约对齐）</summary>
+    public const string AlarmsTopicFilter = "nitrogateway/+/+/alarms";
 
     /// <summary>指标 kind 标签：遥测</summary>
     public const string KindMeasurements = "measurements";
@@ -117,13 +117,25 @@ public sealed class IngestService : BackgroundService
     /// <summary>按主题后缀路由到遥测/告警处理（测试经此方法驱动）</summary>
     internal Task ProcessMessageAsync(MqttMessage message, CancellationToken ct)
     {
+        // ADR-035 第 1 步：站点标识从 topic 第三层解析（旧版 3 段 topic 返回空串，按未标注站点入库）
+        var siteId = ParseSiteId(message.Topic);
         if (message.Topic.EndsWith("/measurements"))
-            return ProcessMeasurementsAsync(message, ct);
+            return ProcessMeasurementsAsync(message, siteId, ct);
         if (message.Topic.EndsWith("/alarms"))
-            return ProcessAlarmAsync(message, ct);
+            return ProcessAlarmAsync(message, siteId, ct);
 
         _logger.LogDebug("忽略未订阅主题消息: {Topic}", message.Topic);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 从上行 topic 解析站点标识：<c>nitrogateway/{siteId}/{deviceId}/…</c> 取第三段；
+    /// 旧版 <c>nitrogateway/{deviceId}/…</c> 三段结构返回空串（历史数据无站点维度）。
+    /// </summary>
+    internal static string ParseSiteId(string topic)
+    {
+        var segments = topic.Split('/');
+        return segments.Length >= 4 ? segments[1] : "";
     }
 
     // ═══════════ 遥测 ═══════════
@@ -132,7 +144,7 @@ public sealed class IngestService : BackgroundService
     /// 遥测消息处理：反序列化 → 批量 INSERT OR IGNORE → 指标/日志。
     /// 反序列化失败与空批次视为坏消息：丢弃 + failure 计数，不阻塞后续消息。
     /// </summary>
-    private async Task ProcessMeasurementsAsync(MqttMessage message, CancellationToken ct)
+    private async Task ProcessMeasurementsAsync(MqttMessage message, string siteId, CancellationToken ct)
     {
         BatchMeasurements? batch;
         try
@@ -165,7 +177,7 @@ public sealed class IngestService : BackgroundService
         NitroMetrics.IngestReceivedTotal.WithLabels(KindMeasurements).Inc();
 
         var result = await WithRetryAsync(
-            ct => _store.WriteMeasurementsAsync(batch.Records, ct), ct);
+            ct => _store.WriteMeasurementsAsync(batch.Records, siteId, ct), ct);
 
         if (result.IsFailure)
         {
@@ -189,7 +201,7 @@ public sealed class IngestService : BackgroundService
     /// 告警消息处理：反序列化 → UPSERT 中心 alarms（状态迁移覆盖，ADR-028 P2-1）。
     /// 坏消息（反序列化失败/空 ID）丢弃并计数。
     /// </summary>
-    private async Task ProcessAlarmAsync(MqttMessage message, CancellationToken ct)
+    private async Task ProcessAlarmAsync(MqttMessage message, string siteId, CancellationToken ct)
     {
         IngestAlarmMessage? alarm;
         try
@@ -212,7 +224,7 @@ public sealed class IngestService : BackgroundService
 
         NitroMetrics.IngestReceivedTotal.WithLabels(KindAlarms).Inc();
 
-        var result = await WithRetryAsync(ct => _store.UpsertAlarmAsync(alarm, ct), ct);
+        var result = await WithRetryAsync(ct => _store.UpsertAlarmAsync(alarm, siteId, ct), ct);
 
         if (result.IsFailure)
         {

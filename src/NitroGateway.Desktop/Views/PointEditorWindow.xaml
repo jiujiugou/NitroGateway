@@ -6,6 +6,11 @@
         Width="680" SizeToContent="Height" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Window.Resources>
+        <!-- 合并共享样式：无 Application 实例（单元测试冒烟）时也能解析 StaticResource（PrimaryButtonStyle 等） -->
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
         <ObjectDataProvider x:Key="DataTypeValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="dev:DataType" />
@@ -16,6 +21,7 @@
                 <x:Type TypeName="dev:PointAccess" />
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        </ResourceDictionary>
     </Window.Resources>
 
     <Grid Margin="16">
@@ -82,7 +88,7 @@
 
         <!-- 行 3：按钮 -->
         <StackPanel Grid.Row="3" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="保存" Width="90" Margin="0,0,12,0" IsDefault="True" Click="OnSave" />
+            <Button Content="保存" Width="90" Margin="0,0,12,0" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
             <Button Content="取消" Width="90" IsCancel="True" Click="OnCancel" />
         </StackPanel>
     </Grid>

@@ -175,28 +175,37 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
     /// </summary>
     public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
         Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default)
+        => await QueryPagedAsync(deviceId, pointId, from, to, limit, offset, null, ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
+        Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, string? siteId,
+        CancellationToken ct = default)
     {
         try
         {
             var safeLimit = Math.Clamp(limit, 1, 1000);
             var safeOffset = Math.Max(0, offset);
+            // ADR-035 第 1 步：siteId 非空时按站点过滤（中心库多站点场景）
+            var siteClause = string.IsNullOrEmpty(siteId) ? "" : " AND site_id = @site";
 
             await using var conn = new SqliteConnection(_connectionString);
             await conn.OpenAsync(ct);
             SqlitePragmas.Apply(conn);
 
             var sql = pointId.HasValue
-                ? @"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
-                    FROM measurements WHERE device_id = @did AND point_id = @pid AND timestamp BETWEEN @from AND @to
+                ? $@"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
+                    FROM measurements WHERE device_id = @did AND point_id = @pid AND timestamp BETWEEN @from AND @to{siteClause}
                     ORDER BY timestamp ASC LIMIT @limit OFFSET @offset"
-                : @"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
-                    FROM measurements WHERE device_id = @did AND timestamp BETWEEN @from AND @to
+                : $@"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
+                    FROM measurements WHERE device_id = @did AND timestamp BETWEEN @from AND @to{siteClause}
                     ORDER BY timestamp ASC LIMIT @limit OFFSET @offset";
 
             var rows = await conn.QueryAsync(sql, new
             {
                 did = deviceId.ToString(),
                 pid = pointId?.ToString(),
+                site = siteId,
                 from = from.ToUniversalTime().ToString("O"),
                 to = to.ToUniversalTime().ToString("O"),
                 limit = safeLimit,
@@ -229,29 +238,37 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
     /// </summary>
     public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
         Guid deviceId, Guid? pointId, CancellationToken ct = default)
+        => await QueryLatestAsync(deviceId, pointId, null, ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
+        Guid deviceId, Guid? pointId, string? siteId, CancellationToken ct = default)
     {
         try
         {
+            // ADR-035 第 1 步：siteId 非空时按站点过滤（中心库多站点场景）
+            var siteClause = string.IsNullOrEmpty(siteId) ? "" : " AND site_id = @site";
+
             await using var conn = new SqliteConnection(_connectionString);
             await conn.OpenAsync(ct);
             SqlitePragmas.Apply(conn);
 
             var sql = pointId.HasValue
-                ? @"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
-                    FROM measurements WHERE device_id = @did AND point_id = @pid
+                ? $@"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
+                    FROM measurements WHERE device_id = @did AND point_id = @pid{siteClause}
                     ORDER BY timestamp DESC LIMIT 1"
                 : // ADR-018 P3-2：ROW_NUMBER 按 point_id 分区取最新行，替代 MAX(timestamp) join——
                   // 原 join 在同点位两条记录 timestamp 相同时会返回多行，"每点最新一条"不成立
-                  @"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
+                  $@"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
                     FROM (
                         SELECT m.*, ROW_NUMBER() OVER (PARTITION BY point_id ORDER BY timestamp DESC) AS rn
                         FROM measurements m
-                        WHERE device_id = @did
+                        WHERE device_id = @did{siteClause}
                     ) ranked
                     WHERE ranked.rn = 1";
 
             var rows = await conn.QueryAsync(sql,
-                new { did = deviceId.ToString(), pid = pointId?.ToString() });
+                new { did = deviceId.ToString(), pid = pointId?.ToString(), site = siteId });
 
             return rows.Select(r => new PointSnapshot
             {

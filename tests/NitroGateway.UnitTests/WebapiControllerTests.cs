@@ -81,6 +81,28 @@ public class WebapiControllerTests
     }
 
     [Fact]
+    public async Task Devices_Export_ReturnsSnapshotWithDevicesAndPoints()
+    {
+        // ADR-033 阶段 2：导出端点返回 devices+points 全量，供现场「从中心导入」
+        var devices = new FakeDeviceManager();
+        var device = TestDevices.Device("1号车间 PLC");
+        device.AddPoint(TestDevices.Point("炉温"));
+        devices.AllDevices = new[] { device };
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+
+        var result = await ctrl.Export();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<List<DeviceDto>>>(ok.Value);
+        Assert.True(body.Success);
+        var exported = Assert.Single(body.Data!);
+        Assert.Equal(device.Id.ToString(), exported.Id);
+        Assert.Equal(device.Name, exported.Name);
+        Assert.Equal("Modbus", exported.Protocol.Name);
+        Assert.Equal(device.Connection.Endpoint, exported.Connection.Endpoint);
+        Assert.Single(exported.Points);
+    }
+    [Fact]
     public async Task Devices_UpdateStatus_InvalidEnum_ReturnsBadRequest()
     {
         var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
@@ -248,6 +270,9 @@ public sealed class FakeDeviceManager : IDeviceManager
 {
     public Device? LastRegistered { get; private set; }
 
+    /// <summary>GetAllAsync 返回值（ADR-033 导出测试用）；缺省空列表</summary>
+    public IReadOnlyList<Device> AllDevices { get; set; } = Array.Empty<Device>();
+
     public Task<OperationResult<Device>> RegisterAsync(Device device, CancellationToken ct = default)
     {
         LastRegistered = device;
@@ -261,7 +286,7 @@ public sealed class FakeDeviceManager : IDeviceManager
         => Task.FromResult(OperationResult<Device>.Failure(OperationalError.NotFound("设备不存在")));
 
     public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default)
-        => Task.FromResult<OperationResult<IReadOnlyList<Device>>>(Array.Empty<Device>());
+        => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(AllDevices));
 
     public Task<OperationResult<IReadOnlyList<Device>>> GetByStatusAsync(DeviceStatus status, CancellationToken ct = default)
         => Task.FromResult<OperationResult<IReadOnlyList<Device>>>(Array.Empty<Device>());
@@ -271,6 +296,20 @@ public sealed class FakeDeviceManager : IDeviceManager
 
     public Task<OperationResult> SetMaintenanceAsync(Guid deviceId, bool maintenance, CancellationToken ct = default)
         => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
+        => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(AllDevices.ToList()));
+    public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default)
+        => Task.FromResult(OperationResult<Device>.Success(AllDevices.FirstOrDefault(d => d.Id == deviceId)));
+    public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default)
+    {
+        var device = AllDevices.FirstOrDefault(d => d.Id == deviceId);
+        if (device is not null)
+        {
+            device.IsDeleted = true;
+            device.UpdatedAt = DateTime.UtcNow;
+        }
+        return Task.FromResult(OperationResult.Success());
+    }
 }
 
 public sealed class FakePointManager : IPointManager

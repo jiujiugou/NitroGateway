@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using NitroGateway.Desktop.Services;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Shared;
 
 namespace NitroGateway.Desktop.ViewModels;
 
@@ -18,6 +19,7 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     private readonly Guid _deviceId;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDeviceDialogService _dialogs;
+    private readonly IConfigSyncOutboxStore _outbox;
     private readonly ILogger<PointsViewModel> _logger;
 
     public ObservableCollection<PointItem> Items { get; } = [];
@@ -33,12 +35,14 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
         string deviceName,
         IServiceScopeFactory scopeFactory,
         IDeviceDialogService dialogs,
+        IConfigSyncOutboxStore outbox,
         ILogger<PointsViewModel> logger)
     {
         _deviceId = deviceId;
         DeviceName = deviceName;
         _scopeFactory = scopeFactory;
         _dialogs = dialogs;
+        _outbox = outbox;
         _logger = logger;
         _ = RefreshAsync();
     }
@@ -86,6 +90,8 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
             StatusText = $"添加点位失败：{result.Error!.Message}";
             return;
         }
+        // ADR-033 阶段 4：点位改动入 outbox，同步服务上报中心
+        await RecordOutboxAsync(() => _outbox.RecordPointAsync(_deviceId, result.Value!));
         StatusText = $"点位「{editor.Name}」已添加";
         await RefreshAsync();
     }
@@ -109,6 +115,8 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
             StatusText = $"更新点位失败：{result.Error!.Message}";
             return;
         }
+        // ADR-033 阶段 4：按点位 Id 记录（负载在上报时取本地最新状态）
+        await RecordOutboxAsync(() => _outbox.RecordPointAsync(_deviceId, editor.ToPoint()));
         StatusText = $"点位「{editor.Name}」已更新";
         await RefreshAsync();
     }
@@ -131,6 +139,8 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
             StatusText = $"删除点位失败：{result.Error!.Message}";
             return;
         }
+        // ADR-033 阶段 4：点位删除发 tombstone 上报
+        await RecordOutboxAsync(() => _outbox.RecordPointDeleteAsync(_deviceId, SelectedPoint.Id));
         StatusText = $"点位「{SelectedPoint.Name}」已删除";
         await RefreshAsync();
     }
@@ -138,6 +148,14 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         // 暂无可释放资源；保留接口便于窗口关闭时统一清理
+    }
+
+    /// <summary>outbox 写入失败不阻断 UI 操作（本地库照常），仅记调试日志。</summary>
+    private async Task RecordOutboxAsync(Func<Task<OperationResult>> record)
+    {
+        var result = await record();
+        if (result.IsFailure)
+            _logger.LogDebug("配置同步 outbox 记录失败：{Error}", result.Error!.Message);
     }
 }
 

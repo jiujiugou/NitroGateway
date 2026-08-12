@@ -50,9 +50,8 @@ public sealed class DeviceReader : IDeviceReader
 
         var points = device.Points.Where(p => p.Enabled).ToList();
 
-        // ADR-030 L2（用户决策）：空点位设备不跳过——仍从连接池取驱动并尝试连接/复用长连接，
-        // 连接失败经 ReliableProtocolDriver 重试机制上报失败，连续失败由健康监控判离线；
-        // 避免"无点位设备从不连接却显示在线"。驱动层对空点位列表返回空成功（Modbus/S7 均如此）。
+        // ADR-030 L2（用户决策）+ ADR-031：空点位设备不跳过——仍从连接池取驱动并尝试连接/复用长连接；
+        // 驱动层对空点位列表先发真实探测读（Modbus 寄存器 0 / S7 PingAddress）验证链路，成功才返回空列表，失败上报判离线
 
         try
         {

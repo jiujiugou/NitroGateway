@@ -65,16 +65,23 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
     /// <inheritdoc />
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> GetActiveByDeviceAsync(
         Guid deviceId, CancellationToken ct = default)
+        => await GetActiveByDeviceAsync(deviceId, null, ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> GetActiveByDeviceAsync(
+        Guid deviceId, string? siteId, CancellationToken ct = default)
     {
         try
         {
-            var rows = await _db.Alarms
+            // ADR-035 第 1 步：siteId 非空时按站点过滤（EF 表达式树不支持 is 模式，改为条件式 Where）
+            var query = _db.Alarms
                 .AsNoTracking()
                 .Where(a => a.DeviceId == deviceId.ToString() &&
                             (a.State == nameof(AlarmDomain.AlarmState.Active) ||
-                             a.State == nameof(AlarmDomain.AlarmState.Acknowledged)))
-                .OrderByDescending(a => a.OccurredAt)
-                .ToListAsync(ct);
+                             a.State == nameof(AlarmDomain.AlarmState.Acknowledged)));
+            if (!string.IsNullOrEmpty(siteId))
+                query = query.Where(a => a.SiteId == siteId);
+            var rows = await query.OrderByDescending(a => a.OccurredAt).ToListAsync(ct);
             return rows.Select(ToDomain).ToList();
         }
         catch (Exception ex)
@@ -86,15 +93,21 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
 
     /// <inheritdoc />
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> GetAllActiveAsync(CancellationToken ct = default)
+        => await GetAllActiveAsync(null, ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> GetAllActiveAsync(
+        string? siteId, CancellationToken ct = default)
     {
         try
         {
-            var rows = await _db.Alarms
+            var query = _db.Alarms
                 .AsNoTracking()
                 .Where(a => a.State == nameof(AlarmDomain.AlarmState.Active) ||
-                            a.State == nameof(AlarmDomain.AlarmState.Acknowledged))
-                .OrderByDescending(a => a.OccurredAt)
-                .ToListAsync(ct);
+                            a.State == nameof(AlarmDomain.AlarmState.Acknowledged));
+            if (!string.IsNullOrEmpty(siteId))
+                query = query.Where(a => a.SiteId == siteId);
+            var rows = await query.OrderByDescending(a => a.OccurredAt).ToListAsync(ct);
             return rows.Select(ToDomain).ToList();
         }
         catch (Exception ex)
@@ -107,6 +120,11 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
     /// <inheritdoc />
     public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> QueryAsync(
         DateTime from, DateTime to, int limit = 1000, CancellationToken ct = default)
+        => await QueryAsync(from, to, null, limit, ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<AlarmDomain.Alarm>>> QueryAsync(
+        DateTime from, DateTime to, string? siteId, int limit = 1000, CancellationToken ct = default)
     {
         try
         {
@@ -115,13 +133,13 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
             var fromStr = from.ToString("O");
             var toStr = to.ToString("O");
             // 时间以 O 格式字符串存储，字符串比较与时间顺序一致
-            var rows = await _db.Alarms
+            var query = _db.Alarms
                 .AsNoTracking()
                 .Where(a => string.Compare(a.OccurredAt, fromStr) >= 0 &&
-                            string.Compare(a.OccurredAt, toStr) <= 0)
-                .OrderByDescending(a => a.OccurredAt)
-                .Take(safeLimit)
-                .ToListAsync(ct);
+                            string.Compare(a.OccurredAt, toStr) <= 0);
+            if (!string.IsNullOrEmpty(siteId))
+                query = query.Where(a => a.SiteId == siteId);
+            var rows = await query.OrderByDescending(a => a.OccurredAt).Take(safeLimit).ToListAsync(ct);
             return rows.Select(ToDomain).ToList();
         }
         catch (Exception ex)

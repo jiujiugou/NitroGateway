@@ -144,6 +144,12 @@ public class DeviceCollectorMaintenanceTests
             => throw new NotSupportedException();
         public Task<OperationResult> SetMaintenanceAsync(Guid deviceId, bool maintenance, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class FakeDeviceReader : IDeviceReader
@@ -172,7 +178,7 @@ public class DeviceCollectorMaintenanceTests
 
     private sealed class FakeReporter : IHealthReporter
     {
-        public void Report(Guid deviceId, string? deviceName, int successCount, int failCount, string? errorMessage) { }
+        public void Report(Guid deviceId, string? deviceName, bool succeeded, string? errorMessage) { }
     }
 
     private sealed class FakeHealthMonitor : IDeviceHealthMonitor

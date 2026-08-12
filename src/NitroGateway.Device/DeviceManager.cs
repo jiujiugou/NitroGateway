@@ -67,8 +67,51 @@ public sealed class DeviceManager : IDeviceManager
         => await _repository.GetByIdAsync(deviceId, ct);
 
     // ADR-002 P2-2：走内存缓存，避免采集热路径每 1s 全量 EF Include(Points) 映射
-    public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default)
+    // ADR-033 阶段 3/4：过滤中心侧 tombstone（Web UI 与采集热路径只看到存活设备）
+    public async Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default)
+    {
+        var all = await _cache.GetAllAsync(ct);
+        if (all.IsFailure) return all.Error!;
+        return OperationResult<IReadOnlyList<Device>>.Success(
+            all.Value!.Where(d => !d.IsDeleted).ToList());
+    }
+
+    /// <inheritdoc />
+    /// <remarks>缓存内容为仓库全量（含 tombstone），同步导出需要完整视图（ADR-033 阶段 3/4）。</remarks>
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
         => _cache.GetAllAsync(ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default)
+        => await _repository.GetByIdAsync(deviceId, ct);
+
+    /// <inheritdoc />
+    public async Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default)
+    {
+        var existing = await _repository.GetByIdAsync(deviceId, ct);
+        if (existing.IsFailure)
+        {
+            // 同步路径按 ID 处理：设备不存在视为已删除，幂等成功
+            _logger.LogDebug("软删目标不存在（幂等成功）: {DeviceId}", deviceId);
+            return OperationResult.Success();
+        }
+
+        var device = existing.Value!;
+        if (device.IsDeleted)
+            return OperationResult.Success();
+
+        device.IsDeleted = true;
+        // ADR-033 阶段 3/4：中心时钟为权威——删除盖章取中心当前时间
+        device.UpdatedAt = DateTime.UtcNow;
+        var saved = await _repository.SaveAsync(device, ct);
+        if (saved.IsFailure) return saved.Error!;
+
+        _driverPool.Evict(deviceId);
+        _healthMonitor.Remove(deviceId);
+        _cache.Invalidate();
+        _logger.LogInformation("设备已软删（tombstone）: {DeviceName} [{DeviceId}]", device.Name, deviceId);
+        return OperationResult.Success();
+    }
 
     public async Task<OperationResult<IReadOnlyList<Device>>> GetByStatusAsync(
         DeviceStatus status, CancellationToken ct = default)

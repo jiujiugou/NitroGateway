@@ -61,7 +61,7 @@ public sealed class GatewayHost : IAsyncDisposable
         builder.Services.AddNitroMqtt(builder.Configuration);
 
         // ── 桌面壳（EventBridge / UiDispatcher / ViewModels）──
-        builder.Services.AddNitroDesktopShell();
+        builder.Services.AddNitroDesktopShell(builder.Configuration);
 
         return new GatewayHost(builder.Build());
     }

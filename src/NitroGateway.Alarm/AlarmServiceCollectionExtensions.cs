@@ -1,8 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using NitroGateway.Alarm.Evaluation;
 using NitroGateway.Alarm.Hosted;
 using NitroGateway.Alarm.Notification;
 using NitroGateway.Domain.Events;
+using NitroGateway.Shared;
+using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Alarm;
 
@@ -21,7 +24,11 @@ public static class AlarmServiceCollectionExtensions
         services.AddSingleton<AlarmEvaluator>();
 
         // 通知渠道（可按需增加）
-        services.AddSingleton<IAlarmNotifier, MqttAlarmNotifier>();
+        // ADR-035 第 1 步：站点标识注入告警通知器（Site:Id，缺省 default）
+        services.AddSingleton<IAlarmNotifier>(sp => new MqttAlarmNotifier(
+            sp.GetRequiredService<IMqttClient>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MqttAlarmNotifier>>(),
+            SiteOptions.Resolve(sp.GetRequiredService<IConfiguration>()["Site:Id"])));
 
         return services;
     }

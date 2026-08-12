@@ -72,7 +72,15 @@ public static class SqliteServiceCollectionExtensions
         services.AddHostedService(sp => (DiskGuardService)sp.GetRequiredService<IDiskStatus>());
 
         // 告警持久化（EF Core，Scoped 适配 DbContext；AlarmHostedService 每事件建 scope 解析）
-        services.AddScoped<IAlarmRuleRepository, SqliteAlarmRuleRepository>();
+        // ADR-032 P1-2：规则量小且只在进程内 API 变更——外层挂 CachedAlarmRuleRepository 内存缓存，
+        // 热路径规则读取从"每设备每秒一次 DB 查询"降为"首次加载 + 写成功后重载"；
+        // 写成功失效缓存保证立即一致，TTL（默认 30s）兜底进程外直改库/多实例场景。
+        // 内层按具体类型注册（AddScoped<SqliteAlarmRuleRepository>()），装饰器按类型解析，避免循环依赖。
+        services.AddScoped<SqliteAlarmRuleRepository>();
+        services.AddSingleton<AlarmRuleCache>();
+        services.AddScoped<IAlarmRuleRepository>(sp => new CachedAlarmRuleRepository(
+            sp.GetRequiredService<AlarmRuleCache>(),
+            sp.GetRequiredService<SqliteAlarmRuleRepository>()));
         services.AddScoped<IAlarmRepository, SqliteAlarmRepository>();
 
         return services;

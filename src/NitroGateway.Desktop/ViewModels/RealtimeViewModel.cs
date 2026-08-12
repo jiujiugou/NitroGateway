@@ -74,7 +74,21 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
             Stroke = new SolidColorPaint(SKColors.SteelBlue) { StrokeThickness = 1.5f }
         };
         Series = new ISeries[] { _series };
-        XAxes = new[] { new Axis { Labeler = value => new DateTime((long)value).ToString("HH:mm:ss"), TextSize = 11 } };
+        // 空曲线时 LiveCharts 会用 NaN 等占位值调 labeler，(long)NaN 为负数会令 new DateTime 抛 Ticks 越界，故先做范围保护
+        XAxes = new[]
+        {
+            new Axis
+            {
+                Labeler = value =>
+                {
+                    var ticks = (long)value;
+                    if (ticks < DateTime.MinValue.Ticks || ticks > DateTime.MaxValue.Ticks)
+                        return string.Empty;
+                    return new DateTime(ticks).ToString("HH:mm:ss");
+                },
+                TextSize = 11
+            }
+        };
         YAxes = new[] { new Axis { TextSize = 11 } };
 
         _bridge.FrameReady += OnFrame;

@@ -24,6 +24,18 @@ public sealed class Device
     /// <summary>当前通信状态</summary>
     public DeviceStatus Status { get; set; }
 
+    /// <summary>
+    /// 配置最后修改时间（UTC，ADR-033 阶段 3/4 同步版本依据）。
+    /// 仓储保存时自动盖章（缺省值→当前时间）；同步下发/合并时保留来源时间戳（中心时钟为准）。
+    /// </summary>
+    public DateTime UpdatedAt { get; set; }
+
+    /// <summary>
+    /// 删除标记（tombstone，ADR-033 阶段 3/4）：中心侧删除=权威删除（软删保行），
+    /// 同步导出携带以驱动现场删除；现场运行库硬删不保留该标记。
+    /// </summary>
+    public bool IsDeleted { get; set; }
+
     private readonly List<DevicePoint> _points = [];
 
     /// <summary>该设备下的所有点位（只读集合）</summary>

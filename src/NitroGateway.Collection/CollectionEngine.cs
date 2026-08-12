@@ -55,42 +55,50 @@ public sealed class CollectionEngine : BackgroundService
     {
         using var timer = new PeriodicTimer(_interval);
 
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                using var scope = _scopeFactory.CreateScope();
-                var collector = scope.ServiceProvider.GetRequiredService<IDeviceCollector>();
-                _roundCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                _currentRound = collector.CollectOnceAsync(_roundCts.Token);
-                if (_currentRound != null)
-                    await _currentRound;
-            }
-            catch (OperationCanceledException)
-            {
-                // 正常关闭：停止令牌已取消
-                break;
-            }
-            catch (Exception ex)
-            {
-                // 单轮异常不影响引擎存活：记录后延迟重试进入下一轮
-                _logger.LogError(ex, "采集轮次发生异常，5 秒后重试。");
                 try
                 {
-                    await Task.Delay(_errorRetryDelay, stoppingToken);
+                    using var scope = _scopeFactory.CreateScope();
+                    var collector = scope.ServiceProvider.GetRequiredService<IDeviceCollector>();
+                    _roundCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    _currentRound = collector.CollectOnceAsync(_roundCts.Token);
+                    if (_currentRound != null)
+                        await _currentRound;
                 }
                 catch (OperationCanceledException)
                 {
-                    // 重试等待期间收到停止信号
+                    // 正常关闭：停止令牌已取消
                     break;
                 }
+                catch (Exception ex)
+                {
+                    // 单轮异常不影响引擎存活：记录后延迟重试进入下一轮
+                    _logger.LogError(ex, "采集轮次发生异常，5 秒后重试。");
+                    try
+                    {
+                        await Task.Delay(_errorRetryDelay, stoppingToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // 重试等待期间收到停止信号
+                        break;
+                    }
+                }
+                finally
+                {
+                    _roundCts?.Dispose();
+                    _roundCts = null;
+                    _currentRound = null;
+                }
             }
-            finally
-            {
-                _roundCts?.Dispose();
-                _roundCts = null;
-                _currentRound = null;
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // 正常关闭：PeriodicTimer 等待被停止令牌中断，显式吞掉 ODE，
+            // 避免逃逸到 Host.TryExecuteBackgroundServiceAsync（调试器显示 first-chance 异常）。
         }
 
         _logger.LogInformation("CollectionEngine Stopped.");

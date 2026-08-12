@@ -1,6 +1,14 @@
-﻿<Application x:Class="NitroGateway.Desktop.App"
+<Application x:Class="NitroGateway.Desktop.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- ADR-026：无 StartupUri——宿主启动完成后再创建 MainWindow -->
-    <Application.Resources />
+    <!-- 设计令牌与控件样式统一放在 Themes/Styles.xaml：App 与各视图合并引用，
+         使视图在无 Application 实例（如单元测试冒烟）时也能解析 StaticResource（ADR-035 阶段 0 收尾） -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
 </Application>

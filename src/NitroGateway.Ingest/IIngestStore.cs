@@ -20,9 +20,25 @@ public interface IIngestStore
         IReadOnlyList<MeasurementRecord> records, CancellationToken ct = default);
 
     /// <summary>
+    /// 批量写入遥测记录（INSERT OR IGNORE），并标注站点（ADR-035 第 1 步）。
+    /// 站点标识来自上行 topic 第三层；旧版 topic 解析为空串时按未标注站点写入。
+    /// 默认实现委托给无站点重载，兼容既有实现（接口只增不删）。
+    /// </summary>
+    Task<OperationResult<IngestWriteResult>> WriteMeasurementsAsync(
+        IReadOnlyList<MeasurementRecord> records, string siteId, CancellationToken ct = default)
+        => WriteMeasurementsAsync(records, ct);
+
+    /// <summary>
     /// 按告警 ID 幂等写入/更新告警（UPSERT，状态迁移可覆盖旧状态）。
     /// </summary>
     /// <param name="alarm">告警上行消息</param>
     /// <param name="ct">取消令牌</param>
     Task<OperationResult> UpsertAlarmAsync(IngestAlarmMessage alarm, CancellationToken ct = default);
+
+    /// <summary>
+    /// 按告警 ID 幂等写入/更新告警（UPSERT），并标注站点（ADR-035 第 1 步）。
+    /// 默认实现委托给无站点重载，兼容既有实现（接口只增不删）。
+    /// </summary>
+    Task<OperationResult> UpsertAlarmAsync(IngestAlarmMessage alarm, string siteId, CancellationToken ct = default)
+        => UpsertAlarmAsync(alarm, ct);
 }

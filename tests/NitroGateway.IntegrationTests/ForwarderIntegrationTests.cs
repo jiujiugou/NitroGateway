@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Forwarder;
@@ -20,6 +21,7 @@ public class ForwarderIntegrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton<IForwardBuffer>(buffer);
         services.AddSingleton<IMqttClient>(mqtt);
         services.AddNitroForwarder(1000);

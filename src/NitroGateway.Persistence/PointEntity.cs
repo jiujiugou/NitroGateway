@@ -43,6 +43,12 @@ public sealed class PointEntity
     /// <summary>工程量缩放偏移，默认 0</summary>
     public double ScaleOffset { get; set; }
 
+    /// <summary>配置最后修改时间（O 格式 UTC 字符串，ADR-033 阶段 3/4；空串=最旧）</summary>
+    public string UpdatedAt { get; set; } = "";
+
+    /// <summary>删除标记（tombstone，ADR-033 阶段 3/4；中心侧权威删除）</summary>
+    public bool IsDeleted { get; set; }
+
     /// <summary>所属设备导航属性（对应 <see cref=\DeviceEntity.Points\/>）</summary>
     public DeviceEntity Device { get; set; } = null!;
 }

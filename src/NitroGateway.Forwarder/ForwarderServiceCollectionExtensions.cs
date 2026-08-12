@@ -65,7 +65,15 @@ public static class ForwarderServiceCollectionExtensions
         services.AddSingleton<ForwardingThrottle>();
 
         services.AddSingleton<IMessageSerializer, JsonMessageSerializer>();
-        services.AddSingleton<IForwarder, Forwarder>();
+        // ADR-035 第 1 步：站点标识注入转发器（Site:Id，缺省 default）
+        services.AddSingleton<IForwarder>(sp => new Forwarder(
+            sp.GetRequiredService<IForwardBuffer>(),
+            sp.GetRequiredService<IMessageSerializer>(),
+            sp.GetRequiredService<NitroGateway.Transport.MQTT.IMqttClient>(),
+            sp.GetRequiredService<ForwardingThrottle>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Forwarder>>(),
+            NitroGateway.Shared.SiteOptions.Resolve(
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["Site:Id"])));
 
         if (channels.Contains(IForwardBuffer.MqttChannel))
         {

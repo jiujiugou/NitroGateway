@@ -40,6 +40,8 @@ public sealed class NitroGatewayDbContext : DbContext
             d.Property(x => x.ProtocolDialect).HasMaxLength(100);
             d.Property(x => x.Endpoint).IsRequired().HasMaxLength(500);
             d.Property(x => x.Status).IsRequired().HasMaxLength(50);
+            d.Property(x => x.UpdatedAt);
+            d.Property(x => x.IsDeleted);
             d.HasMany(x => x.Points)
              .WithOne(p => p.Device)
              .HasForeignKey(p => p.DeviceId)
@@ -54,6 +56,8 @@ public sealed class NitroGatewayDbContext : DbContext
             p.Property(x => x.Address).IsRequired().HasMaxLength(200);
             p.Property(x => x.DataType).IsRequired().HasMaxLength(50);
             p.Property(x => x.Access).IsRequired().HasMaxLength(50);
+            p.Property(x => x.UpdatedAt);
+            p.Property(x => x.IsDeleted);
             p.HasIndex(x => x.DeviceId);
         });
 
@@ -75,6 +79,7 @@ public sealed class NitroGatewayDbContext : DbContext
             a.Property(x => x.OccurredAt).HasColumnName("occurred_at").IsRequired();
             a.Property(x => x.AcknowledgedAt).HasColumnName("acknowledged_at");
             a.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+            a.Property(x => x.SiteId).HasColumnName("site_id");
         });
 
         model.Entity<AlarmRuleEntity>(r =>
