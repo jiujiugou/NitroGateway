@@ -1,20 +1,22 @@
-<template>
+﻿<template>
   <h2 class="page-title">实时监控</h2>
-
   <div class="topbar">
+    <!-- ADR-035 第 1 步：按站点过滤实时数据（空 = 全部站点） -->
+    <SiteFilter v-model="siteId" />
+    <span class="topbar-sep"></span>
     <span style="font-size:12px">
       <span :class="['status-dot', connected ? 'online' : 'offline']"></span>
       {{ connected ? '实时更新中' : '未连接' }}
     </span>
     <span style="margin-left:12px;color:var(--text-muted);font-size:12px">
-      {{ devices.length }} 台设备
+      {{ visibleDevices.length }} 台设备
     </span>
   </div>
 
   <!-- 空状态 -->
-  <div v-if="devices.length === 0" class="card" style="padding:60px;text-align:center;color:var(--text-muted)">
+  <div v-if="visibleDevices.length === 0" class="card" style="padding:60px;text-align:center;color:var(--text-muted)">
     <div style="font-size:48px;margin-bottom:16px">🔌</div>
-    <div>暂无设备，请先添加设备</div>
+    <div>暂无设备，或当前站点暂无数据</div>
     <div style="margin-top:8px">
       <el-button type="primary" @click="$router.push('/devices/new')">+ 添加设备</el-button>
     </div>
@@ -23,7 +25,7 @@
   <!-- 设备卡片 -->
   <div v-else class="cards-grid">
     <div
-      v-for="dev in devices"
+      v-for="dev in visibleDevices"
       :key="dev.id"
       class="device-card"
       :class="{ 'card-online': dev.status === 'Online', 'card-offline': dev.status !== 'Online' }"
@@ -65,27 +67,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { getDevices, getPoints } from '../../api/devices'
 import { getLatestBatch } from '../../api/measurements'
 import { createLiveConnection } from '../../api/signalr'
 import type { Device, DevicePoint, PointSnapshot } from '../../api/types'
 import StatusTag from '../../components/DeviceStatusTag.vue'
+import SiteFilter from '../../components/SiteFilter.vue'
 
 const devices = ref<Device[]>([])
 const pointMap = reactive<Record<string, DevicePoint[]>>({})
 const snapshots = reactive<Record<string, Record<string, { value: unknown; quality: string; timestamp: string }>>>({})
 const connected = ref(false)
+const siteId = ref('')
 let conn: any = null
 
-onMounted(async () => {
-  try { devices.value = await getDevices() } catch {}
+// ADR-035 第 1 步：选中具体站点时仅展示该站点有数据的设备（设备本身是共享配置，不归属站点）
+const visibleDevices = computed(() => {
+  if (!siteId.value) return devices.value
+  return devices.value.filter(d => snapshots[d.id] && Object.keys(snapshots[d.id]).length > 0)
+})
 
-  // 加载点位 + 数据库最新值（并行）
+// ADR-035 第 1 步：按当前站点重拉最新值；切换站点先清空旧快照，避免跨站点数据残留
+async function loadLatest() {
+  Object.keys(snapshots).forEach(k => delete snapshots[k])
   await Promise.all(devices.value.map(async dev => {
-    try { pointMap[dev.id] = await getPoints(dev.id) } catch { pointMap[dev.id] = [] }
     try {
-      const latest = await getLatestBatch(dev.id)
+      const latest = await getLatestBatch(dev.id, siteId.value)
       latest.forEach((s: PointSnapshot) => {
         if (!snapshots[dev.id]) snapshots[dev.id] = {}
         snapshots[dev.id][s.devicePointId] = {
@@ -96,9 +104,22 @@ onMounted(async () => {
       })
     } catch {}
   }))
+}
+
+onMounted(async () => {
+  try { devices.value = await getDevices() } catch {}
+
+  // 加载点位（并行）
+  await Promise.all(devices.value.map(async dev => {
+    try { pointMap[dev.id] = await getPoints(dev.id) } catch { pointMap[dev.id] = [] }
+  }))
+  await loadLatest()
 
   conn = createLiveConnection()
   conn.on('Measurement', (data: any[]) => {
+    // ADR-035 第 1 步：SignalR payload 无 site 字段，选中具体站点时忽略实时推送，
+    // 防止跨站点数据串台；切回「全部站点」恢复实时更新
+    if (siteId.value) return
     (Array.isArray(data) ? data : [data]).forEach((m: any) => {
       if (!snapshots[m.deviceId]) snapshots[m.deviceId] = {}
       snapshots[m.deviceId][m.devicePointId] = {
@@ -124,6 +145,8 @@ onMounted(async () => {
     })
   } catch (e) { console.warn('SignalR:', e) }
 })
+
+watch(siteId, () => { loadLatest() })
 
 onUnmounted(() => { conn?.stop() })
 
@@ -194,3 +217,7 @@ function fmtVal(v: unknown): string {
   padding:20px; text-align:center; color:var(--text-muted); font-size:12px;
 }
 </style>
+
+
+
+

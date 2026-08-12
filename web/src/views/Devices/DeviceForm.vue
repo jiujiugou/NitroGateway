@@ -4,6 +4,12 @@
     <el-form :model="f" label-position="top">
       <div class="form-row">
         <el-form-item label="设备名称"><el-input v-model="f.name" placeholder="例如：一号车间 PLC" /></el-form-item>
+        <el-form-item label="所属站点">
+          <!-- ADR-035 方案 A：设备归属站点（留空=暂不归属，无法下发到现场） -->
+          <el-select v-model="f.siteId" style="width:100%" clearable placeholder="未标注">
+            <el-option v-for="s in sites" :key="s" :label="s" :value="s" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="协议">
           <el-select v-model="f.protocol.name" style="width:100%" @change="onProtocolChange">
             <!-- ADR-007 P2-2：后端 ProtocolDriverFactory 仅注册 Modbus+S7；OPC UA 未接入，Mitsubishi 待 slnx 启用后再放回 -->
@@ -118,6 +124,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getDevice, createDevice, updateDevice, testConnection, getSerialPorts } from '../../api/devices'
+import { getSites } from '../../api/sites'
 
 const route = useRoute(); const router = useRouter()
 const isEdit = ref(!!route.params.id)
@@ -125,6 +132,7 @@ const saving = ref(false)
 const testing = ref(false)
 const testResult = ref<{ success: boolean; latencyMs: number; error?: string } | null>(null)
 const availablePorts = ref<string[]>([])
+const sites = ref<string[]>([])
 
 const baudRates = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
 const parities = ['None', 'Even', 'Odd', 'Mark', 'Space']
@@ -137,7 +145,7 @@ const dataFormats = [
 ]
 
 const f = ref({
-  name: '', description: '',
+  name: '', description: '', siteId: '',
   protocol: { name: 'Modbus', dialect: 'TCP' },
   connection: { endpoint: '127.0.0.1:502', connectTimeoutMs: 3000, requestTimeoutMs: 5000, retryCount: 3, retryIntervalMs: 1000, parameters: {} as Record<string, any> },
   status: 'Online'
@@ -231,6 +239,7 @@ function onDialectChange() {
 
 onMounted(async () => {
   try { availablePorts.value = await getSerialPorts() } catch { /* 忽略 */ }
+  try { sites.value = await getSites() } catch { /* 忽略 */ }
   if (isEdit.value) {
     const d = await getDevice(route.params.id as string)
     if (d) {

@@ -42,7 +42,8 @@ public class SqliteDeviceRepositoryTests
                     Status TEXT NOT NULL,
                     ConnectionParams TEXT NULL,
                     UpdatedAt TEXT NOT NULL DEFAULT '',
-                    IsDeleted INTEGER NOT NULL DEFAULT 0
+                    IsDeleted INTEGER NOT NULL DEFAULT 0,
+                    SiteId TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE points (
                     Id TEXT PRIMARY KEY,
@@ -149,3 +150,10 @@ public class SqliteDeviceRepositoryTests
         Assert.Equal(DeviceStatus.Unknown, result.Value!.Status);
     }
 }
+
+
+
+
+
+
+

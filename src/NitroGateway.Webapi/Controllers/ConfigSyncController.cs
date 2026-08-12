@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
@@ -30,9 +30,9 @@ public class ConfigSyncController : ControllerBase
     /// 现场按 UpdatedAt 双向合并：中心较新覆盖本地、中心 tombstone 驱动本地删除。
     /// </summary>
     [HttpGet("export")]
-    public async Task<ActionResult<ApiResponse<ConfigSyncExportDto>>> Export()
+    public async Task<ActionResult<ApiResponse<ConfigSyncExportDto>>> Export([FromQuery] string? siteId = null)
     {
-        var r = await _devices.GetAllIncludingDeletedAsync();
+        var r = await _devices.GetAllIncludingDeletedAsync(siteId);
         if (r.IsFailure)
             return BadRequest(ApiResponse<ConfigSyncExportDto>.Fail("Export", r.Error!.Message));
 
@@ -85,3 +85,4 @@ public class ConfigSyncController : ControllerBase
         }).ToList()
     };
 }
+

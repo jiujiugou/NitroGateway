@@ -1,8 +1,8 @@
 ﻿import client from './client'
 import type { ApiResponse, Device, DevicePoint } from './types'
 
-export async function getDevices(): Promise<Device[]> {
-  const { data } = await client.get<ApiResponse<Device[]>>('/devices')
+export async function getDevices(siteId?: string): Promise<Device[]> {
+  const { data } = await client.get<ApiResponse<Device[]>>('/devices', { params: { siteId } })
   return data.data ?? []
 }
 

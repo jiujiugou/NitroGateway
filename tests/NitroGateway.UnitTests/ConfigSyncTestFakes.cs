@@ -1,4 +1,4 @@
-using NitroGateway.Desktop.Services;
+﻿using NitroGateway.Desktop.Services;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 
@@ -27,14 +27,14 @@ internal sealed class StubSyncCenterClient : ICenterConfigClient
     public string LastSiteId { get; private set; } = "";
 
     public Task<OperationResult<IReadOnlyList<Device>>> FetchSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default)
+        string centerUrl, string token, string siteId, CancellationToken ct = default)
     {
         FetchSnapshotCalls++;
         return Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(Array.Empty<Device>()));
     }
 
     public Task<OperationResult<CenterSyncSnapshot>> FetchSyncSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default)
+        string centerUrl, string token, string siteId, CancellationToken ct = default)
     {
         FetchSyncSnapshotCalls++;
         return Task.FromResult(SnapshotResult ?? OperationResult<CenterSyncSnapshot>.Failure(
@@ -124,3 +124,4 @@ internal sealed class StubConfigSyncOutboxStore : IConfigSyncOutboxStore
             ? (true, deviceId, pointId)
             : (false, deviceId, null);
 }
+

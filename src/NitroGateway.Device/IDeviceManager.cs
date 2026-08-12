@@ -1,4 +1,4 @@
-using NitroGateway.Domain.Devices;
+﻿using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 
 namespace NitroGateway.DeviceManagement;
@@ -10,6 +10,18 @@ public interface IDeviceManager
     Task<OperationResult> UnregisterAsync(Guid deviceId, CancellationToken ct = default);
     Task<OperationResult<Device>> GetAsync(Guid deviceId, CancellationToken ct = default);
     Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// 按站点查询存活设备（ADR-035 方案 A：设备单一归属）。
+    /// siteId 为空时不过滤（Web 全部视图）；非空时仅返回该站点设备。
+    /// </summary>
+    Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(string? siteId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 按站点查询全部设备（含 tombstone，ADR-035 方案 A）。
+    /// 供配置同步导出按现场隔离下发；siteId 为空时不过滤（兼容旧调用）。
+    /// </summary>
+    Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(string? siteId, CancellationToken ct = default);
     Task<OperationResult<IReadOnlyList<Device>>> GetByStatusAsync(DeviceStatus status, CancellationToken ct = default);
 
     /// <summary>
@@ -36,3 +48,4 @@ public interface IDeviceManager
 
     Task<OperationResult> SetMaintenanceAsync(Guid deviceId, bool maintenance, CancellationToken ct = default);
 }
+

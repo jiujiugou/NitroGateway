@@ -22,15 +22,16 @@ public sealed class CenterConfigClientTests
         var pointId = Guid.NewGuid();
         var handler = new StubHttpMessageHandler(req =>
         {
-            Assert.EndsWith("/api/devices/export", req.RequestUri!.AbsoluteUri);
+            // ADR-035 方案 A：导出按站点过滤（URL 带 siteId）
+            Assert.Equal("/api/devices/export?siteId=site-a", req.RequestUri!.PathAndQuery);
             Assert.Equal(HttpMethod.Get, req.Method);
             Assert.Equal("Bearer tok123", req.Headers.Authorization!.ToString());
-            return Json("""{"success":true,"data":[{"id":"DEVICEID","name":"PLC-1","description":null,"protocol":{"name":"Modbus","dialect":"TCP"},"connection":{"endpoint":"192.168.1.10:502","connectTimeoutMs":3000,"requestTimeoutMs":5000,"retryCount":3,"retryIntervalMs":1000,"parameters":{"unitId":1}},"status":"Online","points":[{"id":"POINTID","name":"炉温","address":"40001","description":null,"dataType":"Float","access":"ReadOnly","enabled":true,"scanIntervalMs":1000,"deadband":0.0,"scaleFactor":1.0,"scaleOffset":0.0}]}],"error":null,"timestamp":"2026-08-12T00:00:00Z"}"""
+            return Json("""{"success":true,"data":[{"id":"DEVICEID","name":"PLC-1","description":null,"protocol":{"name":"Modbus","dialect":"TCP"},"connection":{"endpoint":"192.168.1.10:502","connectTimeoutMs":3000,"requestTimeoutMs":5000,"retryCount":3,"retryIntervalMs":1000,"parameters":{"unitId":1}},"status":"Online","siteId":"site-a","points":[{"id":"POINTID","name":"炉温","address":"40001","description":null,"dataType":"Float","access":"ReadOnly","enabled":true,"scanIntervalMs":1000,"deadband":0.0,"scaleFactor":1.0,"scaleOffset":0.0}]}],"error":null,"timestamp":"2026-08-12T00:00:00Z"}"""
                 .Replace("DEVICEID", deviceId.ToString()).Replace("POINTID", pointId.ToString()));
         });
         var client = new CenterConfigClient(handler);
 
-        var result = await client.FetchSnapshotAsync("http://center.example.com:5100/", " tok123 ");
+        var result = await client.FetchSnapshotAsync("http://center.example.com:5100/", " tok123 ", "site-a");
 
         Assert.True(result.IsSuccess, result.Error?.Message);
         var device = Assert.Single(result.Value!);
@@ -39,6 +40,8 @@ public sealed class CenterConfigClientTests
         Assert.Equal("Modbus", device.Protocol.Name);
         Assert.Equal("TCP", device.Protocol.Dialect);
         Assert.Equal("192.168.1.10:502", device.Connection.Endpoint);
+        // ADR-035 方案 A：设备站点归属随快照解析
+        Assert.Equal("site-a", device.SiteId);
         // Parameters 反序列化为 JsonElement（System.Text.Json 字典值），取整型比较
         Assert.Equal(1, ((JsonElement)device.Connection.Parameters["unitId"]).GetInt32());
         // ADR-029：状态不伪造，由 HealthMonitor 驱动
@@ -60,7 +63,7 @@ public sealed class CenterConfigClientTests
         });
         var client = new CenterConfigClient(handler);
 
-        var result = await client.FetchSnapshotAsync("http://center.example.com:5100", "bad-token");
+        var result = await client.FetchSnapshotAsync("http://center.example.com:5100", "bad-token", "site-a");
 
         Assert.True(result.IsFailure);
         Assert.Contains("鉴权失败", result.Error!.Message);
@@ -72,7 +75,7 @@ public sealed class CenterConfigClientTests
         var handler = new StubHttpMessageHandler(_ => throw new HttpRequestException("connection refused"));
         var client = new CenterConfigClient(handler);
 
-        var result = await client.FetchSnapshotAsync("http://center.example.com:5100", "");
+        var result = await client.FetchSnapshotAsync("http://center.example.com:5100", "", "site-a");
 
         Assert.True(result.IsFailure);
         Assert.Contains("无法连接中心", result.Error!.Message);
@@ -84,7 +87,7 @@ public sealed class CenterConfigClientTests
         var handler = new StubHttpMessageHandler(_ => Json("""{"success":false,"data":null,"error":{"code":"GetAll","message":"boom"}}"""));
         var client = new CenterConfigClient(handler);
 
-        var result = await client.FetchSnapshotAsync("http://center.example.com:5100", "");
+        var result = await client.FetchSnapshotAsync("http://center.example.com:5100", "", "site-a");
 
         Assert.True(result.IsFailure);
         Assert.Contains("响应格式不正确", result.Error!.Message);
@@ -95,7 +98,7 @@ public sealed class CenterConfigClientTests
     {
         var client = new CenterConfigClient(new StubHttpMessageHandler(_ => throw new InvalidOperationException()));
 
-        var result = await client.FetchSnapshotAsync("   ", "");
+        var result = await client.FetchSnapshotAsync("   ", "", "site-a");
 
         Assert.True(result.IsFailure);
         Assert.Contains("中心地址不能为空", result.Error!.Message);
@@ -110,7 +113,8 @@ public sealed class CenterConfigClientTests
         var serverTime = "2026-08-12T07:00:00.0000000Z";
         var handler = new StubHttpMessageHandler(req =>
         {
-            Assert.EndsWith("/api/configsync/export", req.RequestUri!.AbsoluteUri);
+            // ADR-035 方案 A：同步导出按站点过滤（URL 带 siteId）
+            Assert.Equal("/api/configsync/export?siteId=site-a", req.RequestUri!.PathAndQuery);
             Assert.Equal(HttpMethod.Get, req.Method);
             Assert.Equal("Bearer tok123", req.Headers.Authorization!.ToString());
             return Json($$"""
@@ -125,7 +129,7 @@ public sealed class CenterConfigClientTests
         });
         var client = new CenterConfigClient(handler);
 
-        var result = await client.FetchSyncSnapshotAsync("http://center.example.com:5100", " tok123 ");
+        var result = await client.FetchSyncSnapshotAsync("http://center.example.com:5100", " tok123 ", "site-a");
 
         Assert.True(result.IsSuccess, result.Error?.Message);
         Assert.Equal(ParseUtc(serverTime), result.Value!.ServerTime);
@@ -206,3 +210,4 @@ public sealed class CenterConfigClientTests
             => Task.FromResult(_responder(request));
     }
 }
+

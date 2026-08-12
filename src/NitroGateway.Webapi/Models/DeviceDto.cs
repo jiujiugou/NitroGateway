@@ -1,4 +1,4 @@
-namespace NitroGateway.Webapi.Models;
+﻿namespace NitroGateway.Webapi.Models;
 
 public sealed class DeviceDto
 {
@@ -8,6 +8,8 @@ public sealed class DeviceDto
     public ProtocolDto Protocol { get; init; } = new();
     public ConnectionDto Connection { get; init; } = new();
     public string Status { get; init; } = "";
+    /// <summary>设备所属站点（ADR-035 方案 A：单一归属；空串=未标注/旧数据）</summary>
+    public string SiteId { get; init; } = "";
     /// <summary>配置最后修改时间（O 格式 UTC，ADR-033 阶段 3/4 同步版本依据）</summary>
     public string UpdatedAt { get; init; } = "";
     /// <summary>删除标记（tombstone，ADR-033 阶段 3/4；同步导出携带以驱动现场删除）</summary>
@@ -40,3 +42,4 @@ public sealed class PointDto
 }
 
 public sealed class DeviceStatusSummaryDto { public string DeviceId { get; init; } = ""; public string DeviceName { get; init; } = ""; public string Status { get; init; } = ""; public string? LastError { get; init; } }
+

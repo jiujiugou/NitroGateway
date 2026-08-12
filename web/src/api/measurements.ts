@@ -1,12 +1,15 @@
-import client from './client'
+﻿import client from './client'
 import type { ApiResponse, PointSnapshot } from './types'
 
-export async function getHistory(deviceId: string, pointId: string, from: string, to: string): Promise<PointSnapshot[]> {
-  const { data } = await client.get<ApiResponse<PointSnapshot[]>>('/measurements/history', { params: { deviceId, pointId, from, to } })
+export async function getHistory(deviceId: string, pointId: string, from: string, to: string, siteId?: string): Promise<PointSnapshot[]> {
+  const { data } = await client.get<ApiResponse<PointSnapshot[]>>('/measurements/history', { params: { deviceId, pointId, from, to, siteId } })
   return data.data ?? []
 }
 
-export async function getLatestBatch(deviceId: string): Promise<PointSnapshot[]> {
-  const { data } = await client.get<ApiResponse<PointSnapshot[]>>('/measurements/latest-batch', { params: { deviceId } })
+export async function getLatestBatch(deviceId: string, siteId?: string): Promise<PointSnapshot[]> {
+  const { data } = await client.get<ApiResponse<PointSnapshot[]>>('/measurements/latest-batch', { params: { deviceId, siteId } })
   return data.data ?? []
 }
+
+
+

@@ -1,6 +1,10 @@
-<template>
+﻿<template>
   <div>
     <h2 class="page-title">告警管理</h2>
+    <div class="toolbar">
+      <!-- ADR-035 第 1 步：按站点过滤告警（空 = 全部站点） -->
+      <SiteFilter v-model="siteId" @update:model-value="load" />
+    </div>
     <div class="card">
       <el-table :data="alarms" size="small" empty-text="无活跃告警">
         <el-table-column label="等级" width="100">
@@ -33,10 +37,11 @@
 import { ref, onMounted } from 'vue'
 import client from '../../api/client'
 
-const alarms = ref<any[]>([])
+import SiteFilter from '../../components/SiteFilter.vue'
+const alarms = ref<any[]>([]); const siteId = ref('')
 
 async function load() {
-  try { const { data } = await client.get('/alarms'); alarms.value = data.data ?? [] } catch {}
+  try { const { data } = await client.get('/alarms', { params: { siteId: siteId.value } }); alarms.value = data.data ?? [] } catch {}
 }
 
 function sevTag(s: string) {
@@ -56,4 +61,9 @@ onMounted(load)
 <style scoped>
 .page-title { margin-bottom:20px; }
 .card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:20px; }
+.toolbar { display:flex; margin-bottom:12px; }
 </style>
+
+
+
+

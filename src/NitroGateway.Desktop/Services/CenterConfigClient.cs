@@ -25,7 +25,7 @@ public interface ICenterConfigClient
     /// 失败（网络不可达 / 非 2xx / 响应格式异常）返回 OperationResult 失败，不抛出。
     /// </summary>
     Task<OperationResult<IReadOnlyList<Device>>> FetchSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default);
+        string centerUrl, string token, string siteId, CancellationToken ct = default);
 
     /// <summary>
     /// 拉取中心同步快照（ADR-033 阶段 3）：GET /api/configsync/export，
@@ -33,7 +33,7 @@ public interface ICenterConfigClient
     /// 失败返回 OperationResult 失败，不抛出。
     /// </summary>
     Task<OperationResult<CenterSyncSnapshot>> FetchSyncSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default);
+        string centerUrl, string token, string siteId, CancellationToken ct = default);
 
     /// <summary>
     /// 上报现场离线改动（ADR-033 阶段 4）：POST /api/configsync/push。
@@ -64,14 +64,16 @@ public sealed class CenterConfigClient : ICenterConfigClient
     }
 
     public async Task<OperationResult<IReadOnlyList<Device>>> FetchSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default)
+        string centerUrl, string token, string siteId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(centerUrl))
             return OperationalError.Validation("中心地址不能为空");
 
         // 允许用户输入末尾斜杠；Token 空白时不带 Authorization（服务端仍会 401，报错信息指引更明确）
         var baseUrl = centerUrl.Trim().TrimEnd('/');
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/devices/export");
+        // ADR-035 方案 A：按站点过滤导出（现场只导入本站点设备）
+        var url = string.IsNullOrWhiteSpace(siteId) ? $"{baseUrl}/api/devices/export" : $"{baseUrl}/api/devices/export?siteId=" + Uri.EscapeDataString(siteId);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrWhiteSpace(token))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
 
@@ -106,13 +108,15 @@ public sealed class CenterConfigClient : ICenterConfigClient
 
     /// <inheritdoc />
     public async Task<OperationResult<CenterSyncSnapshot>> FetchSyncSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default)
+        string centerUrl, string token, string siteId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(centerUrl))
             return OperationalError.Validation("中心地址不能为空");
 
         var baseUrl = centerUrl.Trim().TrimEnd('/');
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/configsync/export");
+        // ADR-035 方案 A：按站点过滤下发（现场只同步本站点设备）
+        var url = string.IsNullOrWhiteSpace(siteId) ? $"{baseUrl}/api/configsync/export" : $"{baseUrl}/api/configsync/export?siteId=" + Uri.EscapeDataString(siteId);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrWhiteSpace(token))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
 
@@ -231,6 +235,8 @@ public sealed class CenterConfigClient : ICenterConfigClient
                 Parameters = d.Connection?.Parameters ?? []
             },
             Status = DeviceStatus.Unknown,
+            // ADR-035 方案 A：导入保留中心站点归属（本地设备行带 site，上报往返一致）
+            SiteId = d.SiteId ?? "",
             // ADR-033 阶段 3/4：手动导入保留中心时间戳，导入后本地与中心版本对齐（避免下次同步误判本地较旧）
             UpdatedAt = ParseTime(d.UpdatedAt),
             IsDeleted = d.IsDeleted
@@ -263,6 +269,7 @@ public sealed class CenterConfigClient : ICenterConfigClient
                 Parameters = d.Connection?.Parameters ?? []
             },
             Status = DeviceStatus.Unknown,
+            SiteId = d.SiteId ?? "",
             UpdatedAt = ParseTime(d.UpdatedAt),
             IsDeleted = d.IsDeleted
         };
@@ -323,6 +330,7 @@ public sealed class CenterConfigClient : ICenterConfigClient
             Parameters = device.Connection.Parameters
         },
         Status = device.Status.ToString(),
+        SiteId = device.SiteId ?? "",
         UpdatedAt = FormatTime(device.UpdatedAt),
         IsDeleted = device.IsDeleted,
         Points = device.Points.Select(p => new CenterPointDto
@@ -358,3 +366,8 @@ public sealed class CenterConfigClient : ICenterConfigClient
     private static string Truncate(string text)
         => text.Length <= 200 ? text : text[..200] + "…";
 }
+
+
+
+
+

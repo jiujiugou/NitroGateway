@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -38,6 +38,8 @@ public static class SqliteServiceCollectionExtensions
         services.AddScoped<IPointRepository, SqlitePointRepository>();
 
         services.AddSingleton<IMeasurementStore>(_ => new SqliteMeasurementStore(connectionString));
+        // ADR-035 第 1 步：站点目录（Web 按 site 过滤的数据源，Dapper 单例，与 MeasurementStore 同模式）
+        services.AddSingleton<ISiteCatalog>(_ => new SqliteSiteCatalog(connectionString));
         // ADR-018 P2-3：缓冲入队上限 + 死信保留天数均可配置，防止 MQTT 长期离线/坏消息无限累积
         services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardBuffer(
             connectionString,
@@ -86,3 +88,4 @@ public static class SqliteServiceCollectionExtensions
         return services;
     }
 }
+

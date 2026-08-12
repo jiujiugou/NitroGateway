@@ -1,4 +1,4 @@
-namespace NitroGateway.Domain.Devices;
+﻿namespace NitroGateway.Domain.Devices;
 
 /// <summary>
 /// 工业设备实体，代表网关接入的一台物理或逻辑设备。
@@ -23,6 +23,9 @@ public sealed class Device
 
     /// <summary>当前通信状态</summary>
     public DeviceStatus Status { get; set; }
+
+    /// <summary>设备所属站点（ADR-035 方案 A：单一归属；空串=未标注/旧数据）。中心导出/下发按此过滤。</summary>
+    public string SiteId { get; set; } = "";
 
     /// <summary>
     /// 配置最后修改时间（UTC，ADR-033 阶段 3/4 同步版本依据）。
@@ -55,3 +58,4 @@ public sealed class Device
         _points.RemoveAll(p => p.Id == pointId);
     }
 }
+

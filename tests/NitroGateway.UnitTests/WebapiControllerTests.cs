@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
 using NitroGateway.DeviceManagement;
@@ -10,6 +10,7 @@ using NitroGateway.Protocols;
 using NitroGateway.Protocols.Modbus;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
+using NitroGateway.Storage.TimeSeries;
 using NitroGateway.Webapi.Controllers;
 using NitroGateway.Webapi.Models;
 using Xunit;
@@ -101,6 +102,54 @@ public class WebapiControllerTests
         Assert.Equal("Modbus", exported.Protocol.Name);
         Assert.Equal(device.Connection.Endpoint, exported.Connection.Endpoint);
         Assert.Single(exported.Points);
+    }
+    [Fact]
+    public async Task Devices_Create_PreservesSiteId()
+    {
+        // ADR-035 方案 A：Web 建设备可指定站点归属，落库保留
+        var devices = new FakeDeviceManager();
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var dto = new DeviceDto
+        {
+            Name = "dev",
+            Protocol = new ProtocolDto { Name = "ModbusTcp" },
+            Connection = new ConnectionDto { Endpoint = "127.0.0.1:502" },
+            Status = "Online",
+            SiteId = "site-a"
+        };
+
+        var result = await ctrl.Create(dto);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal("site-a", devices.LastRegistered!.SiteId);
+    }
+
+
+    public async Task Sites_GetSites_ReturnsCatalogList()
+    {
+        // ADR-035 第 1 步 Web 维度：站点目录仅读接口，返回中心库去重后的 site 列表
+        var catalog = new FakeSiteCatalog(new[] { "site-a", "site-b" });
+        var ctrl = new SitesController(catalog);
+
+        var result = await ctrl.GetSites();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<List<string>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(new[] { "site-a", "site-b" }, body.Data);
+        Assert.Equal(1, catalog.CallCount);
+    }
+
+    [Fact]
+    public async Task Sites_GetSites_EmptyCatalog_ReturnsEmptyList()
+    {
+        var ctrl = new SitesController(new FakeSiteCatalog(Array.Empty<string>()));
+
+        var result = await ctrl.GetSites();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<List<string>>>(ok.Value);
+        Assert.Empty(body.Data);
     }
     [Fact]
     public async Task Devices_UpdateStatus_InvalidEnum_ReturnsBadRequest()
@@ -298,6 +347,10 @@ public sealed class FakeDeviceManager : IDeviceManager
         => Task.FromResult(OperationResult.Success());
     public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
         => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(AllDevices.ToList()));
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(string? siteId, CancellationToken ct = default)
+        => GetAllAsync(ct);
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(string? siteId, CancellationToken ct = default)
+        => GetAllIncludingDeletedAsync(ct);
     public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default)
         => Task.FromResult(OperationResult<Device>.Success(AllDevices.FirstOrDefault(d => d.Id == deviceId)));
     public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default)
@@ -369,6 +422,20 @@ public sealed class FakeSerialPorts : ISerialPortManager
     public IReadOnlyList<SerialPortInfo> GetStatus() => [];
 }
 
+public sealed class FakeSiteCatalog : ISiteCatalog
+{
+    private readonly IReadOnlyList<string> _sites;
+
+    public FakeSiteCatalog(IReadOnlyList<string> sites) => _sites = sites;
+
+    public int CallCount { get; private set; }
+
+    public Task<OperationResult<IReadOnlyList<string>>> GetSitesAsync(CancellationToken ct = default)
+    {
+        CallCount++;
+        return Task.FromResult(OperationResult<IReadOnlyList<string>>.Success(_sites));
+    }
+}
 public sealed class FakeForwardBuffer : IForwardBuffer
 {
     public int? LastDeadLetterMax { get; private set; }
@@ -466,3 +533,7 @@ public sealed class FakeProtocolDriver : IProtocolDriver
 
     public void Dispose() { }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Protocols;
@@ -36,7 +36,7 @@ public sealed class ConfigSyncService
         {
             results.Add(change.Deleted || change.Device is null
                 ? await ApplyDeviceTombstoneAsync(change, ct)
-                : await ApplyDeviceUpsertAsync(change, ct));
+                : await ApplyDeviceUpsertAsync(change, request.SiteId, ct));
         }
         return new ConfigSyncPushResultDto { Results = results };
     }
@@ -59,7 +59,7 @@ public sealed class ConfigSyncService
 
     /// <summary>设备 upsert：tombstone 拒绝 → 中心较新跳过 → 否则按点位级 UpdatedAt 合并落库。</summary>
     private async Task<ConfigSyncChangeResultDto> ApplyDeviceUpsertAsync(
-        ConfigSyncChangeDto change, CancellationToken ct)
+        ConfigSyncChangeDto change, string siteId, CancellationToken ct)
     {
         var dto = change.Device!;
         if (!Guid.TryParse(dto.Id, out var deviceId))
@@ -123,7 +123,7 @@ public sealed class ConfigSyncService
         }
 
         // 4) 落库：设备行保留现场时间戳（≥ 中心），点位批量 upsert
-        var device = ToDevice(dto);
+        var device = ToDevice(dto, siteId);
         var register = await _devices.RegisterAsync(device, ct);
         if (register.IsFailure)
             return Result(dto.Id, "rejected");
@@ -133,7 +133,7 @@ public sealed class ConfigSyncService
     }
 
     /// <summary>设备 DTO → 领域模型（同步路径：保留现场 UpdatedAt，不重新盖章）</summary>
-    private static Device ToDevice(DeviceDto d)
+    private static Device ToDevice(DeviceDto d, string? siteId)
     {
         var device = new Device
         {
@@ -144,7 +144,9 @@ public sealed class ConfigSyncService
             Connection = BuildConnection(d.Connection),
             Status = Enum.TryParse<DeviceStatus>(d.Status, out var status) ? status : DeviceStatus.Unknown,
             UpdatedAt = ParseTime(d.UpdatedAt),
-            IsDeleted = d.IsDeleted
+            IsDeleted = d.IsDeleted,
+            // ADR-035 方案 A：设备归属 = 上报方站点（现场即归属，中心 Web 修改站点由管理员负责）
+            SiteId = siteId ?? d.SiteId ?? ""
         };
         return device;
     }
@@ -190,3 +192,6 @@ public sealed class ConfigSyncService
     private static ConfigSyncChangeResultDto Result(string deviceId, string action)
         => new() { DeviceId = deviceId, Action = action };
 }
+
+
+

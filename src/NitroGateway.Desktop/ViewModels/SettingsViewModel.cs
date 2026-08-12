@@ -6,6 +6,7 @@ using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Hosting;
 using NitroGateway.Desktop.Services;
 using NitroGateway.Transport.MQTT;
+using NitroGateway.Shared;
 
 namespace NitroGateway.Desktop.ViewModels;
 
@@ -22,6 +23,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly ICenterSyncSettingsStore _settingsStore;
     private readonly IConfigSyncOutboxStore _outbox;
     private readonly IDeviceDialogService _dialogs;
+    private readonly IConfiguration _configuration;
 
     [ObservableProperty] private string _mqttBroker = "";
     [ObservableProperty] private string _mqttClientId = "";
@@ -68,6 +70,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _settingsStore = settingsStore;
         _outbox = outbox;
         _dialogs = dialogs;
+        _configuration = configuration;
 
         MqttBroker = $"{mqtt.Host}:{mqtt.Port}" + (mqtt.UseTls ? " (TLS)" : "");
         MqttClientId = mqtt.ClientId ?? "—";
@@ -103,7 +106,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         {
             _settingsStore.Save(new CenterSyncSettings { CenterUrl = centerUrl, CenterToken = token });
 
-            var snapshotResult = await _centerClient.FetchSnapshotAsync(centerUrl, token);
+            // ADR-035 方案 A：手动导入也按本站点过滤（中心导出只返回本站点设备）
+            var siteId = SiteOptions.Resolve(_configuration["Site:Id"]);
+            var snapshotResult = await _centerClient.FetchSnapshotAsync(centerUrl, token, siteId);
             if (snapshotResult.IsFailure)
             {
                 ImportStatusText = $"从中心导入失败：{snapshotResult.Error!.Message}";
@@ -172,3 +177,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     public void Dispose() => _bridge.FrameReady -= OnFrame;
 }
+
+
+

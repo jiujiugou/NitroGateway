@@ -45,6 +45,10 @@ internal sealed class StubDeviceManager : IDeviceManager
     public Task<OperationResult> UpdateStatusAsync(Guid deviceId, DeviceStatus status, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<OperationResult> SetMaintenanceAsync(Guid deviceId, bool maintenance, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default) => Task.FromResult(OperationResult<IReadOnlyList<Device>>.Success(LocalDevices));
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(string? siteId, CancellationToken ct = default)
+        => GetAllAsync(ct);
+    public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(string? siteId, CancellationToken ct = default)
+        => GetAllIncludingDeletedAsync(ct);
     public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default) =>
         Task.FromResult(GetResult is null
             ? OperationResult<Device>.Failure(OperationalError.General("设备不存在"))
@@ -161,3 +165,4 @@ internal sealed class StubHealthMonitor : IDeviceHealthMonitor
     public void Remove(Guid deviceId) { }
     public void AddListener(IDeviceHealthListener listener) { }
 }
+

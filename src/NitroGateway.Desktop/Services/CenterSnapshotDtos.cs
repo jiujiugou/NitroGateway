@@ -17,6 +17,8 @@ internal sealed class CenterDeviceDto
     public CenterProtocolDto? Protocol { get; set; }
     public CenterConnectionDto? Connection { get; set; }
     public string Status { get; set; } = "";
+    /// <summary>设备所属站点（ADR-035 方案 A：单一归属；空串=未标注）</summary>
+    public string SiteId { get; set; } = "";
     public List<CenterPointDto>? Points { get; set; }
 
     /// <summary>同步版本时间戳（O 格式 UTC；空串=最旧，ADR-033 阶段 3/4）</summary>
@@ -110,3 +112,4 @@ internal sealed class CenterSyncChangeResultData
     public string DeviceId { get; set; } = "";
     public string Action { get; set; } = "";
 }
+

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NitroGateway.Collection;
 using NitroGateway.DeviceManagement;
@@ -146,6 +146,10 @@ public class DeviceCollectorMaintenanceTests
             => throw new NotSupportedException();
         public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(string? siteId, CancellationToken ct = default)
+            => GetAllAsync(ct);
+        public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(string? siteId, CancellationToken ct = default)
+            => GetAllIncludingDeletedAsync(ct);
         public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default)
@@ -200,3 +204,4 @@ public class DeviceCollectorMaintenanceTests
         public void AddListener(IDeviceHealthListener listener) { }
     }
 }
+

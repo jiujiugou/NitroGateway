@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -81,7 +81,7 @@ public sealed class SiteConfigSyncService : BackgroundService
         var centerUrl = settings.CenterUrl.Trim();
         var token = settings.CenterToken.Trim();
 
-        var snapshotResult = await _client.FetchSyncSnapshotAsync(centerUrl, token, ct);
+        var snapshotResult = await _client.FetchSyncSnapshotAsync(centerUrl, token, _siteId, ct);
         if (snapshotResult.IsFailure)
         {
             _logger.LogDebug("配置同步跳过：拉取中心快照失败 {Error}", snapshotResult.Error!.Message);
@@ -266,3 +266,4 @@ public sealed class SiteConfigSyncService : BackgroundService
         _logger.LogDebug("配置同步：上报 {Count} 台设备变更完成", changes.Count);
     }
 }
+

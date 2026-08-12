@@ -1,6 +1,8 @@
-export interface Device {
+﻿export interface Device {
   id: string
   name: string
+  /// ADR-035 方案 A：设备所属站点（空 = 未标注/旧数据）
+  siteId?: string
   description?: string
   protocol: ProtocolIdentifier
   connection: DeviceConnection
@@ -77,3 +79,4 @@ export interface AlarmRule {
   messageTemplate?: string
   enabled: boolean
 }
+

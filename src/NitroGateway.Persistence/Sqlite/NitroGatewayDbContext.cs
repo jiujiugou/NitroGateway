@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 
 namespace NitroGateway.Persistence.Sqlite;
 
@@ -42,6 +42,7 @@ public sealed class NitroGatewayDbContext : DbContext
             d.Property(x => x.Status).IsRequired().HasMaxLength(50);
             d.Property(x => x.UpdatedAt);
             d.Property(x => x.IsDeleted);
+            d.Property(x => x.SiteId);
             d.HasMany(x => x.Points)
              .WithOne(p => p.Device)
              .HasForeignKey(p => p.DeviceId)
@@ -99,3 +100,5 @@ public sealed class NitroGatewayDbContext : DbContext
         });
     }
 }
+
+

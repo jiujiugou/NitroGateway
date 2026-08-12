@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
@@ -35,9 +35,9 @@ public class DevicesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<List<DeviceDto>>>> GetAll()
+    public async Task<ActionResult<ApiResponse<List<DeviceDto>>>> GetAll([FromQuery] string? siteId = null)
     {
-        var r = await _devices.GetAllAsync();
+        var r = await _devices.GetAllAsync(siteId);
         return r.IsSuccess ? Ok(ApiResponse<List<DeviceDto>>.Ok(r.Value!.Select(Map).ToList())) : NotFound(ApiResponse<List<DeviceDto>>.Fail("GetAll", r.Error!.Message));
     }
 
@@ -46,9 +46,9 @@ public class DevicesController : ControllerBase
     /// 与 GET /api/devices 同源（均含点位内联），JWT/RBAC 由类级 [Authorize] 覆盖；只读，不区分角色可写性。
     /// </summary>
     [HttpGet("export")]
-    public async Task<ActionResult<ApiResponse<List<DeviceDto>>>> Export()
+    public async Task<ActionResult<ApiResponse<List<DeviceDto>>>> Export([FromQuery] string? siteId = null)
     {
-        var r = await _devices.GetAllAsync();
+        var r = await _devices.GetAllAsync(siteId);
         return r.IsSuccess ? Ok(ApiResponse<List<DeviceDto>>.Ok(r.Value!.Select(Map).ToList())) : NotFound(ApiResponse<List<DeviceDto>>.Fail("Export", r.Error!.Message));
     }
 
@@ -74,7 +74,7 @@ public class DevicesController : ControllerBase
     {
         var existing = await _devices.GetAsync(id);
         if (existing.IsFailure) return NotFound(ApiResponse<DeviceDto>.Fail("NotFound", "设备不存在"));
-        var device = new Device { Id = id, Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown };
+        var device = new Device { Id = id, Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown, SiteId = d.SiteId ?? "" };
         var r = await _devices.RegisterAsync(device);
         return r.IsSuccess ? Ok(ApiResponse<DeviceDto>.Ok(Map(r.Value!))) : BadRequest(ApiResponse<DeviceDto>.Fail("Update", r.Error!.Message));
     }
@@ -211,15 +211,18 @@ public class DevicesController : ControllerBase
         Id = d.Id.ToString(), Name = d.Name, Description = d.Description,
         Protocol = new ProtocolDto { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect },
         Connection = new ConnectionDto { Endpoint = d.Connection.Endpoint, ConnectTimeoutMs = d.Connection.ConnectTimeoutMs, RequestTimeoutMs = d.Connection.RequestTimeoutMs, RetryCount = d.Connection.RetryCount, RetryIntervalMs = d.Connection.RetryIntervalMs, Parameters = d.Connection.Parameters },
-        Status = d.Status.ToString(), Points = d.Points.Select(MapPoint).ToList(),
+        Status = d.Status.ToString(), SiteId = d.SiteId ?? "", Points = d.Points.Select(MapPoint).ToList(),
         UpdatedAt = d.UpdatedAt == default ? "" : d.UpdatedAt.ToUniversalTime().ToString("O"),
         IsDeleted = d.IsDeleted
     };
     static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset, UpdatedAt = p.UpdatedAt == default ? "" : p.UpdatedAt.ToUniversalTime().ToString("O"), IsDeleted = p.IsDeleted };
     // ADR-022 P2-4：创建路径一律服务端生成新 ID，忽略客户端传入的 Id（仓储 SaveAsync 为 upsert，防 POST 覆盖既有设备）
-    static Device ToDomain(DeviceDto d) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
+    static Device ToDomain(DeviceDto d) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), SiteId = d.SiteId ?? "", Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
 
     private static DeviceConnection BuildConnection(ConnectionDto? c) => c is null
         ? new DeviceConnection { Endpoint = "" }
         : new DeviceConnection { Endpoint = c.Endpoint ?? "", ConnectTimeoutMs = c.ConnectTimeoutMs, RequestTimeoutMs = c.RequestTimeoutMs, RetryCount = c.RetryCount, RetryIntervalMs = c.RetryIntervalMs, Parameters = c.Parameters };
 }
+
+
+

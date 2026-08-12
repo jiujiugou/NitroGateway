@@ -1,4 +1,4 @@
-using NitroGateway.Domain.Devices;
+﻿using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 using NitroGateway.Webapi.Models;
 using NitroGateway.Webapi.Services;
@@ -128,6 +128,31 @@ public sealed class ConfigSyncServiceTests
         Assert.Equal("accepted", Assert.Single(result.Results!).Action);
     }
 
+    [Fact]
+    public async Task Push_records_device_site_ownership_from_requester()
+    {
+        // ADR-035 方案 A：设备归属 = 上报方站点（中心 upsert 时写入 SiteId）
+        var deviceId = Guid.NewGuid();
+        var service = CreateService();
+
+        var result = await service.ApplyAsync(new ConfigSyncPushRequest
+        {
+            SiteId = "site-a",
+            Changes =
+            [
+                new ConfigSyncChangeDto
+                {
+                    Device = DeviceDto(deviceId, "现场新增设备", updatedAt: DateTime.UtcNow.ToString("O")),
+                    Deleted = false
+                }
+            ]
+        });
+
+        Assert.Equal("accepted", Assert.Single(result.Results!).Action);
+        var saved = Assert.Single(_devices.Registered);
+        Assert.Equal(deviceId, saved.Id);
+        Assert.Equal("site-a", saved.SiteId);
+    }
     private ConfigSyncService CreateService() => new(_devices, _points);
 
     private static Device Device(Guid id, string name, DateTime? UpdatedAt = null, bool IsDeleted = false)
@@ -156,3 +181,4 @@ public sealed class ConfigSyncServiceTests
         UpdatedAt = updatedAt
     };
 }
+

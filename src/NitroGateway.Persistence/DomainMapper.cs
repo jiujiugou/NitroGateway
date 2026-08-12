@@ -41,7 +41,9 @@ public static class DomainMapper
         Status = ParseEnum<DeviceStatus>(entity.Status),
         // ADR-033 阶段 3/4：同步版本字段；空串（旧数据）等价 DateTime.MinValue（最旧）
         UpdatedAt = ParseUpdatedAt(entity.UpdatedAt),
-        IsDeleted = entity.IsDeleted
+        IsDeleted = entity.IsDeleted,
+        // ADR-035 方案 A：设备站点归属（空串=未标注）
+        SiteId = entity.SiteId ?? ""
     };
 
     /// <summary>领域模型 → EF 实体</summary>
@@ -59,7 +61,9 @@ public static class DomainMapper
         ConnectionParams = SerializeParams(domain.Connection.Parameters),
         Status = domain.Status.ToString(),
         UpdatedAt = FormatUpdatedAt(domain.UpdatedAt),
-        IsDeleted = domain.IsDeleted
+        IsDeleted = domain.IsDeleted,
+        // ADR-035 方案 A：设备站点归属
+        SiteId = domain.SiteId ?? ""
     };
 
     /// <summary>EF 实体 → 领域模型</summary>
@@ -143,3 +147,6 @@ public static class DomainMapper
         return JsonSerializer.Serialize(parameters, JsonOptions);
     }
 }
+
+
+

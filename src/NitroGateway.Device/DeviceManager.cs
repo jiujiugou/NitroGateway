@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Protocols;
 using NitroGateway.Shared;
@@ -78,6 +78,28 @@ public sealed class DeviceManager : IDeviceManager
 
     /// <inheritdoc />
     /// <remarks>缓存内容为仓库全量（含 tombstone），同步导出需要完整视图（ADR-033 阶段 3/4）。</remarks>
+    /// <inheritdoc />
+    /// <remarks>siteId 非空时按站点过滤（ADR-035 方案 A：设备单一归属，中心下发按现场隔离）。</remarks>
+    public async Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(
+        string? siteId, CancellationToken ct = default)
+    {
+        var all = await GetAllAsync(ct);
+        if (all.IsFailure) return all.Error!;
+        return OperationResult<IReadOnlyList<Device>>.Success(
+            string.IsNullOrEmpty(siteId) ? all.Value! : all.Value!.Where(d => d.SiteId == siteId).ToList());
+    }
+
+    /// <inheritdoc />
+    /// <remarks>siteId 非空时按站点过滤（含 tombstone，同步导出按现场隔离）。</remarks>
+    public async Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(
+        string? siteId, CancellationToken ct = default)
+    {
+        var all = await GetAllIncludingDeletedAsync(ct);
+        if (all.IsFailure) return all.Error!;
+        return OperationResult<IReadOnlyList<Device>>.Success(
+            string.IsNullOrEmpty(siteId) ? all.Value! : all.Value!.Where(d => d.SiteId == siteId).ToList());
+    }
+
     public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
         => _cache.GetAllAsync(ct);
 
@@ -147,3 +169,4 @@ public sealed class DeviceManager : IDeviceManager
         return await UpdateStatusAsync(deviceId, targetStatus, ct);
     }
 }
+

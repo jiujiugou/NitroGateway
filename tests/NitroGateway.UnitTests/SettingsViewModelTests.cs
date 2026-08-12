@@ -148,7 +148,7 @@ internal sealed class StubCenterConfigClient : ICenterConfigClient
     public string? LastToken { get; private set; }
 
     public Task<OperationResult<IReadOnlyList<Device>>> FetchSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default)
+        string centerUrl, string token, string siteId, CancellationToken ct = default)
     {
         Calls++;
         LastUrl = centerUrl;
@@ -157,7 +157,7 @@ internal sealed class StubCenterConfigClient : ICenterConfigClient
     }
 
     public Task<OperationResult<CenterSyncSnapshot>> FetchSyncSnapshotAsync(
-        string centerUrl, string token, CancellationToken ct = default)
+        string centerUrl, string token, string siteId, CancellationToken ct = default)
         => throw new NotSupportedException();
 
     public Task<OperationResult<IReadOnlyList<CenterSyncChangeResult>>> PushChangesAsync(
@@ -183,3 +183,4 @@ internal sealed class StubCenterConfigImporter : ICenterConfigImporter
         return Task.FromResult(NextResult);
     }
 }
+

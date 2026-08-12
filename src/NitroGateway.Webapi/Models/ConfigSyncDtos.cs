@@ -1,4 +1,4 @@
-namespace NitroGateway.Webapi.Models;
+﻿namespace NitroGateway.Webapi.Models;
 
 /// <summary>配置同步导出（ADR-033 阶段 3/4）：全量设备（含 tombstone）+ 中心服务器时间</summary>
 public sealed class ConfigSyncExportDto
@@ -13,7 +13,7 @@ public sealed class ConfigSyncExportDto
 /// <summary>配置同步上报请求（现场 → 中心）</summary>
 public sealed class ConfigSyncPushRequest
 {
-    /// <summary>上报现场站点标识（当前仅记录，v1 设备表不做站点隔离）</summary>
+    /// <summary>上报现场站点标识（ADR-035 方案 A：设备归属 = 上报方站点，中心 upsert 时写入 devices.SiteId）</summary>
     public string SiteId { get; set; } = "";
 
     /// <summary>变更列表：每台设备一条（upsert 或 tombstone）</summary>
@@ -54,3 +54,4 @@ public sealed class ConfigSyncChangeResultDto
     /// </summary>
     public string Action { get; set; } = "";
 }
+

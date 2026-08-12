@@ -1,4 +1,4 @@
-namespace NitroGateway.Persistence;
+﻿namespace NitroGateway.Persistence;
 
 /// <summary>
 /// 设备 EF 实体，映射 devices 表（PascalCase 列名，见 M003 迁移的历史命名说明）。
@@ -43,6 +43,9 @@ public sealed class DeviceEntity
     /// <summary>配置最后修改时间（O 格式 UTC 字符串，ADR-033 阶段 3/4；空串=最旧）</summary>
     public string UpdatedAt { get; set; } = "";
 
+    /// <summary>设备所属站点（ADR-035 方案 A：单一归属，中心下发按此过滤；空串=未标注/旧数据）</summary>
+    public string SiteId { get; set; } = "";
+
     /// <summary>删除标记（tombstone，ADR-033 阶段 3/4；中心侧权威删除）</summary>
     public bool IsDeleted { get; set; }
 
@@ -52,3 +55,5 @@ public sealed class DeviceEntity
     /// </summary>
     public ICollection<PointEntity> Points { get; set; } = [];
 }
+
+

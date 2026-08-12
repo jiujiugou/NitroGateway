@@ -194,6 +194,10 @@ public class DeviceCollectorProbeTests
             => throw new NotSupportedException();
         public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(string? siteId, CancellationToken ct = default)
+            => GetAllAsync(ct);
+        public Task<OperationResult<IReadOnlyList<Device>>> GetAllIncludingDeletedAsync(string? siteId, CancellationToken ct = default)
+            => GetAllIncludingDeletedAsync(ct);
         public Task<OperationResult<Device>> GetIncludingDeletedAsync(Guid deviceId, CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default)
@@ -213,3 +217,4 @@ public class DeviceCollectorProbeTests
         public void AddListener(IDeviceHealthListener listener) { }
     }
 }
+
