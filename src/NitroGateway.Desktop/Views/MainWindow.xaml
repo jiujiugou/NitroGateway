@@ -59,7 +59,11 @@
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="20,20,20,18">
                         <StackPanel Orientation="Horizontal">
-                            <Border Width="34" Height="34" CornerRadius="6" Background="{StaticResource PrimaryBrush}">
+                            <Border Width="34" Height="34" CornerRadius="6">
+                                <!-- ADR-037 S10：品牌块轻微渐变（令牌化画刷，低配机无阴影开销） -->
+                                <Border.Background>
+                                    <StaticResource ResourceKey="BrandGradientBrush" />
+                                </Border.Background>
                                 <TextBlock Text="NG" Foreground="White" FontWeight="Bold" FontSize="14"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
@@ -74,7 +78,11 @@
                              ItemContainerStyle="{StaticResource NavItemStyle}">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Title}" FontSize="13.5" />
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                               VerticalAlignment="Center" Margin="0,0,10,0" />
+                                    <TextBlock Text="{Binding Title}" FontSize="13.5" />
+                                </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -85,15 +93,15 @@
         </Grid>
 
         <!-- 状态栏（ADR-026 D9：MQTT 状态 + 缓冲水位现场可视） -->
-        <Border Grid.Row="1" Background="#2B3A4A" Padding="12,6">
+        <Border Grid.Row="1" Background="{StaticResource StatusBarBackground}" Padding="12,6">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="MQTT：" Foreground="#9FB3C8" />
+                <TextBlock Text="MQTT：" Foreground="{StaticResource StatusBarText}" />
                 <TextBlock Text="{Binding MqttStateText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
-                <TextBlock Text="缓冲积压：" Foreground="#9FB3C8" />
+                <TextBlock Text="缓冲积压：" Foreground="{StaticResource StatusBarText}" />
                 <TextBlock Text="{Binding BufferBacklogText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
-                <TextBlock Text="设备：" Foreground="#9FB3C8" />
+                <TextBlock Text="设备：" Foreground="{StaticResource StatusBarText}" />
                 <TextBlock Text="{Binding DeviceCountText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
-                <TextBlock Text="{Binding StatusText}" Foreground="#9FB3C8" />
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource StatusBarText}" />
             </StackPanel>
         </Border>
     </Grid>

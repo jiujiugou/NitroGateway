@@ -16,22 +16,64 @@
         </Grid.RowDefinitions>
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
             <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="0,0,12,0" />
-            <Button Content="刷新" Command="{Binding RefreshCommand}" Padding="12,4" Margin="0,0,8,0" />
+            <!-- ADR-037 S3：加载中禁用刷新并显示进度条，避免无反馈的防重入吞点击 -->
+            <Button Content="刷新" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsIdle}" Padding="12,4" Margin="0,0,8,0" />
             <Button Content="+ 新增设备" Command="{Binding AddDeviceCommand}" Padding="12,4" Margin="0,0,8,0" Style="{StaticResource PrimaryButtonStyle}" />
             <Button Content="编辑" Command="{Binding EditDeviceCommand}" Padding="12,4" Margin="0,0,8,0" />
             <Button Content="删除" Command="{Binding DeleteDeviceCommand}" Padding="12,4" Margin="0,0,8,0" />
             <Button Content="点位管理" Command="{Binding ManagePointsCommand}" Padding="12,4" />
+            <ProgressBar Width="90" Height="6" IsIndeterminate="True" VerticalAlignment="Center" Margin="8,0,0,0"
+                         Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
         </StackPanel>
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedDevice}" AutoGenerateColumns="False" IsReadOnly="True"
-                  AlternatingRowBackground="#F5F7FA" GridLinesVisibility="Horizontal" HeadersVisibility="Column">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="设备名称" Binding="{Binding Name}" Width="*" />
-                <DataGridTextColumn Header="协议" Binding="{Binding Protocol}" Width="130" />
-                <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="80" />
-                <DataGridTextColumn Header="上次采集" Binding="{Binding LastCollectionText}" Width="100" />
-                <DataGridTextColumn Header="点位" Binding="{Binding PointsCount}" Width="60" />
-                <DataGridTextColumn Header="错误" Binding="{Binding LastError}" Width="*" />
-            </DataGrid.Columns>
-        </DataGrid>
+        <Grid Grid.Row="1">
+            <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedDevice}" AutoGenerateColumns="False" IsReadOnly="True"
+                      GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="设备名称" Binding="{Binding Name}" Width="*" />
+                    <DataGridTextColumn Header="协议" Binding="{Binding Protocol}" Width="130" />
+                    <DataGridTextColumn Header="从站" Binding="{Binding UnitIdText}" Width="60" />
+                    <!-- ADR-037 S2：状态列按 Web 端 DeviceStatusTag 语义色上色（在线绿/离线红/异常橙/维护紫/未知灰） -->
+                    <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="80">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource StatusUnknownBrush}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Status}" Value="Online">
+                                        <Setter Property="Foreground" Value="{StaticResource StatusOnlineBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Status}" Value="Offline">
+                                        <Setter Property="Foreground" Value="{StaticResource StatusOfflineBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Status}" Value="Error">
+                                        <Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Status}" Value="Maintenance">
+                                        <Setter Property="Foreground" Value="{StaticResource StatusMaintenanceBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="上次采集" Binding="{Binding LastCollectionText}" Width="100" />
+                    <DataGridTextColumn Header="点位" Binding="{Binding PointsCount}" Width="60" />
+                    <DataGridTextColumn Header="错误" Binding="{Binding LastError}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <!-- ADR-037 S3：空态提示，有数据时折叠 -->
+            <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{StaticResource TextSecondary}" FontSize="13">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Items.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
     </Grid>
 </UserControl>

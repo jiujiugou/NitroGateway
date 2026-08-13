@@ -3,6 +3,7 @@ using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Services;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Domain.Events;
 using NitroGateway.Shared;
 using Xunit;
 
@@ -94,5 +95,36 @@ public sealed class RealtimeViewModelTests : IDisposable
 
         Assert.Equal(1, vm.ChartValues.Count);
         Assert.Equal(22.0, vm.ChartValues[0].Value);
+    }
+
+    [Fact]
+    public async Task Chart_keeps_at_most_two_hour_window_of_points()
+    {
+        // ADR-037 S9/S12：环形缓冲上限 = 7200（1s 采集 2 小时，与预载窗口一致），
+        // 溢出批量移除，帧追加不逐项搬移
+        var cache = new StagedSnapshotCache();
+        var device = TestDevices.Device("A", TestDevices.Point("P1"));
+        cache.EnqueueSuccess(device); // LoadDevicesAsync
+        cache.EnqueueSuccess(device); // LoadPointsAsync(A)
+        var vm = new RealtimeViewModel(cache, new StagedMeasurementStore(), new UiDispatcher(),
+            _bridge, NullLogger<RealtimeViewModel>.Instance);
+
+        vm.SelectedDevice = new DeviceOption(device.Id, device.Name);
+        await TestWait.UntilAsync(() => vm.Points.Count == 1);
+        vm.SelectedPoint = vm.Points[0];
+        var point = device.Points.First();
+
+        for (var i = 0; i < 7300; i++)
+        {
+            await ((IPointStoredSink)_bridge).OnStoredAsync(new PointStoredEvent
+            {
+                DeviceId = device.Id,
+                Snapshots = [TestDevices.Snapshot(device.Id, point.Id, i)]
+            });
+            _bridge.Flush();
+        }
+
+        Assert.Equal(7200, vm.ChartValues.Count);
+        Assert.Equal(7299d, vm.ChartValues[^1].Value);
     }
 }

@@ -31,6 +31,9 @@
         <router-link to="/deadletters" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📬</span><span>死信管理</span>
         </router-link>
+        <router-link to="/sites" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">🏭</span><span>站点管理</span>
+        </router-link>
         <router-link to="/system" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🖥️</span><span>系统状态</span>
         </router-link>

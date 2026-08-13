@@ -7,7 +7,7 @@ using NitroGateway.Webapi.Models;
 namespace NitroGateway.Webapi.Controllers;
 
 /// <summary>
-/// 站点目录 API（ADR-035 第 1 步 Web 维度）。
+/// 站点目录 API（ADR-035 第 1 步 Web 维度 + ADR-036 中心站点管理）。
 /// 返回中心库中实际出现过数据的 siteId 列表，供前端站点下拉；设备/点位是共享配置不归属站点。
 /// </summary>
 [ApiController, Route("api/[controller]")]
@@ -26,5 +26,33 @@ public class SitesController : ControllerBase
         return r.IsSuccess
             ? Ok(ApiResponse<List<string>>.Ok(r.Value!.ToList()))
             : BadRequest(ApiResponse<List<string>>.Fail("Sites", r.Error!.Message));
+    }
+
+    /// <summary>获取站点详情列表（ADR-036）：含显示名、来源指纹、首见/最近时间与冲突标记。</summary>
+    [HttpGet("info")]
+    public async Task<ActionResult<ApiResponse<List<SiteInfo>>>> GetSiteInfos()
+    {
+        var r = await _catalog.GetSiteInfosAsync();
+        return r.IsSuccess
+            ? Ok(ApiResponse<List<SiteInfo>>.Ok(r.Value!.ToList()))
+            : BadRequest(ApiResponse<List<SiteInfo>>.Fail("Sites", r.Error!.Message));
+    }
+
+    /// <summary>改名/绑定站点显示名（ADR-036）；Admin/Operator 可写。</summary>
+    [HttpPut("{siteId}/rename")]
+    [Authorize(Roles = Roles.AdminOperator)]
+    public async Task<ActionResult<ApiResponse<object>>> Rename(string siteId, [FromBody] RenameSiteRequest? req)
+    {
+        if (string.IsNullOrWhiteSpace(siteId))
+            return BadRequest(ApiResponse<object>.Fail("Rename", "siteId 不能为空"));
+
+        var name = req?.DisplayName?.Trim() ?? "";
+        if (name.Length > 100)
+            return BadRequest(ApiResponse<object>.Fail("Rename", "显示名不能超过 100 字符"));
+
+        var r = await _catalog.RenameSiteAsync(siteId, name);
+        return r.IsSuccess
+            ? Ok(ApiResponse<object>.Ok(new { }))
+            : BadRequest(ApiResponse<object>.Fail("Rename", r.Error!.Message));
     }
 }

@@ -341,7 +341,9 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             Topic = e.ApplicationMessage.Topic,
             Payload = payloadBytes,
             Qos = (int)e.ApplicationMessage.QualityOfServiceLevel,
-            ReceivedAt = DateTime.UtcNow
+            ReceivedAt = DateTime.UtcNow,
+            // ADR-036：携带发送方 ClientId（含机器名），供中心站点注册/冲突检测
+            ClientId = _clientId
         };
 
         if (!_channel.Writer.TryWrite(msg))

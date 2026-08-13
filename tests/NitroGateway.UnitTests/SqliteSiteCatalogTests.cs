@@ -27,6 +27,15 @@ public class SqliteSiteCatalogTests
             conn.Open();
             using var command = conn.CreateCommand();
             command.CommandText = """
+                CREATE TABLE sites (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL DEFAULT '',
+                    source_client_id TEXT NULL,
+                    last_seen_client_id TEXT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
+                );
                 CREATE TABLE measurements (
                     id TEXT PRIMARY KEY,
                     device_id TEXT NOT NULL,
@@ -124,12 +133,153 @@ public class SqliteSiteCatalogTests
         {
             conn.Open();
             using var command = conn.CreateCommand();
-            command.CommandText = "DROP TABLE alarms; DROP TABLE measurements;";
+            command.CommandText = "DROP TABLE alarms; DROP TABLE measurements; DROP TABLE sites;";
             command.ExecuteNonQuery();
         }
 
         var catalog = new SqliteSiteCatalog(db.ConnectionString);
         var r = await catalog.GetSitesAsync();
+
+        Assert.True(r.IsFailure);
+    }
+
+    [Fact]
+    public async Task RegisterSite_inserts_once_and_keeps_source_fingerprint()
+    {
+        using var db = new TempSiteDb();
+        var catalog = new SqliteSiteCatalog(db.ConnectionString);
+
+        var first = await catalog.RegisterSiteAsync("site-x", "NitroGateway-PC1-aaa", CancellationToken.None);
+        var second = await catalog.RegisterSiteAsync("site-x", "NitroGateway-PC2-bbb", CancellationToken.None);
+
+        Assert.True(first.IsSuccess);
+        Assert.True(second.IsSuccess);
+
+        // site_id 唯一索引兜底：同一站点只有一行，首见来源指纹保留，last_seen 更新
+        using (var conn = new SqliteConnection(db.ConnectionString))
+        {
+            conn.Open();
+            using var command = conn.CreateCommand();
+            command.CommandText = "SELECT source_client_id, last_seen_client_id FROM sites WHERE site_id = 'site-x'";
+            using var reader = command.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal("NitroGateway-PC1-aaa", reader.GetString(0));
+            Assert.Equal("NitroGateway-PC2-bbb", reader.GetString(1));
+            Assert.False(reader.Read());
+        }
+
+        var r = await catalog.GetSitesAsync();
+        Assert.True(r.IsSuccess);
+        Assert.Equal(new[] { "site-x" }, r.Value);
+    }
+
+    [Fact]
+    public async Task RegisterSite_empty_site_id_is_noop()
+    {
+        using var db = new TempSiteDb();
+        var catalog = new SqliteSiteCatalog(db.ConnectionString);
+
+        var r = await catalog.RegisterSiteAsync("", null, CancellationToken.None);
+
+        Assert.True(r.IsSuccess);
+        var sites = await catalog.GetSitesAsync();
+        Assert.True(sites.IsSuccess);
+        Assert.Empty(sites.Value);
+    }
+
+    [Fact]
+    public async Task GetSiteInfos_RegisteredAndHistorical_ReturnsConflictFlag()
+    {
+        using var db = new TempSiteDb();
+        var catalog = new SqliteSiteCatalog(db.ConnectionString);
+
+        // 同一站点被两台机器上报 → 冲突；另有一台只上报未注册站点
+        await catalog.RegisterSiteAsync("site-x", "PC-1-aaa", CancellationToken.None);
+        await catalog.RegisterSiteAsync("site-x", "PC-2-bbb", CancellationToken.None);
+        Insert(db.ConnectionString, "measurements", "site-y");
+
+        var r = await catalog.GetSiteInfosAsync();
+
+        Assert.True(r.IsSuccess);
+        var siteX = r.Value!.Single(s => s.SiteId == "site-x");
+        Assert.Equal("PC-1-aaa", siteX.SourceClientId);
+        Assert.Equal("PC-2-bbb", siteX.LastSeenClientId);
+        Assert.True(siteX.HasConflict);
+        Assert.NotNull(siteX.FirstSeenAt);
+        Assert.NotNull(siteX.LastSeenAt);
+
+        // 未注册（仅历史数据）站点：display_name 空、无指纹、无时间
+        var siteY = r.Value!.Single(s => s.SiteId == "site-y");
+        Assert.Equal("", siteY.DisplayName);
+        Assert.Null(siteY.SourceClientId);
+        Assert.Null(siteY.LastSeenClientId);
+        Assert.False(siteY.HasConflict);
+        Assert.Null(siteY.FirstSeenAt);
+
+        // 排序：site-x < site-y
+        Assert.Equal(new[] { "site-x", "site-y" }, r.Value!.Select(s => s.SiteId).ToArray());
+    }
+
+    [Fact]
+    public async Task GetSiteInfos_SameClient_NoConflict()
+    {
+        using var db = new TempSiteDb();
+        var catalog = new SqliteSiteCatalog(db.ConnectionString);
+
+        await catalog.RegisterSiteAsync("site-x", "PC-1-aaa", CancellationToken.None);
+        await catalog.RegisterSiteAsync("site-x", "PC-1-aaa", CancellationToken.None);
+
+        var r = await catalog.GetSiteInfosAsync();
+
+        Assert.True(r.IsSuccess);
+        var siteX = r.Value!.Single();
+        Assert.False(siteX.HasConflict);
+    }
+
+    [Fact]
+    public async Task RenameSite_CreatesUnregisteredSite_ThenUpdatesName()
+    {
+        using var db = new TempSiteDb();
+        var catalog = new SqliteSiteCatalog(db.ConnectionString);
+        Insert(db.ConnectionString, "alarms", "site-z");   // 仅历史数据，未注册
+
+        var created = await catalog.RenameSiteAsync("site-z", "测试站", CancellationToken.None);
+        Assert.True(created.IsSuccess);
+
+        // 未注册站点建档：display_name 写入，来源指纹为空
+        using (var conn = new SqliteConnection(db.ConnectionString))
+        {
+            conn.Open();
+            using var command = conn.CreateCommand();
+            command.CommandText = "SELECT display_name, source_client_id FROM sites WHERE site_id = 'site-z'";
+            using var reader = command.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal("测试站", reader.GetString(0));
+            Assert.True(reader.IsDBNull(1));
+        }
+
+        var renamed = await catalog.RenameSiteAsync("site-z", "新名字", CancellationToken.None);
+        Assert.True(renamed.IsSuccess);
+
+        using (var conn = new SqliteConnection(db.ConnectionString))
+        {
+            conn.Open();
+            using var command = conn.CreateCommand();
+            command.CommandText = "SELECT display_name, first_seen_at, last_seen_at FROM sites WHERE site_id = 'site-z'";
+            using var reader = command.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal("新名字", reader.GetString(0));
+            Assert.Equal(reader.GetString(1), reader.GetString(2));   // upsert 保留首见时间（新建行时间相等）
+        }
+    }
+
+    [Fact]
+    public async Task RenameSite_EmptySiteId_ReturnsFailure()
+    {
+        using var db = new TempSiteDb();
+        var catalog = new SqliteSiteCatalog(db.ConnectionString);
+
+        var r = await catalog.RenameSiteAsync("", "x", CancellationToken.None);
 
         Assert.True(r.IsFailure);
     }

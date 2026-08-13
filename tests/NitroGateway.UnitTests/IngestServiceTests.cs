@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,6 +8,7 @@ using NitroGateway.Forwarder;
 using NitroGateway.Ingest;
 using NitroGateway.Persistence;
 using NitroGateway.Shared;
+using NitroGateway.Storage.TimeSeries;
 using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 using Xunit;
@@ -204,10 +205,31 @@ public sealed class IngestServiceTests : IDisposable
         Assert.Equal(failuresBefore + 1, Metric(IngestService.KindMeasurements).Failures);
     }
 
+    [Fact]
+    public async Task ProcessMessage_registers_site_with_client_id()
+    {
+        var catalog = new FakeSiteCatalog([]);
+        var service = CreateService(catalog: catalog);
+        var batch = NewBatch(1, out var deviceId);
+        var msg = new MqttMessage
+        {
+            Topic = $"nitrogateway/site-abc123/{deviceId}/measurements",
+            Payload = new JsonMessageSerializer().Serialize(batch),
+            ClientId = "NitroGateway-PC01-abc12345"
+        };
+
+        await service.ProcessMessageAsync(msg, CancellationToken.None);
+
+        Assert.Equal(1, catalog.RegisterCalls);
+        Assert.Equal("site-abc123", catalog.LastSiteId);
+        Assert.Equal("NitroGateway-PC01-abc12345", catalog.LastClientId);
+    }
+
     // ═══════════ 工具 ═══════════
 
-    private IngestService CreateService(IIngestStore? store = null)
+    private IngestService CreateService(IIngestStore? store = null, ISiteCatalog? catalog = null)
         => new(_mqtt, store ?? new SqliteIngestStore(_connectionString),
+            catalog ?? new FakeSiteCatalog([]),
             NullLogger<IngestService>.Instance, retryBaseDelay: TimeSpan.Zero);
 
     /// <summary>指标快照（差值断言用）</summary>

@@ -32,29 +32,45 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <DataGrid Grid.Column="0" Margin="0,0,8,0" ItemsSource="{Binding Points}"
-                      AutoGenerateColumns="False" IsReadOnly="True" SelectedItem="{Binding SelectedPoint}"
-                      AlternatingRowBackground="#F5F7FA" GridLinesVisibility="Horizontal" HeadersVisibility="Column">
-                <DataGrid.RowStyle>
-                    <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsBad}" Value="True">
-                                <Setter Property="Background" Value="#FDE7E9" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </DataGrid.RowStyle>
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="点位" Binding="{Binding Name}" Width="*" />
-                    <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="100" />
-                    <DataGridTextColumn Header="类型" Binding="{Binding DataType}" Width="80" />
-                    <DataGridTextColumn Header="值" Binding="{Binding ValueText}" Width="*" />
-                    <DataGridTextColumn Header="质量" Binding="{Binding QualityText}" Width="70" />
-                    <DataGridTextColumn Header="时间" Binding="{Binding TimestampText}" Width="90" />
-                </DataGrid.Columns>
-            </DataGrid>
+            <Grid Grid.Column="0" Margin="0,0,8,0">
+                <DataGrid ItemsSource="{Binding Points}"
+                          AutoGenerateColumns="False" IsReadOnly="True" SelectedItem="{Binding SelectedPoint}"
+                          GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsBad}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource BadRowBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="点位" Binding="{Binding Name}" Width="*" />
+                        <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="100" />
+                        <DataGridTextColumn Header="类型" Binding="{Binding DataType}" Width="80" />
+                        <DataGridTextColumn Header="值" Binding="{Binding ValueText}" Width="*" />
+                        <DataGridTextColumn Header="质量" Binding="{Binding QualityText}" Width="70" />
+                        <DataGridTextColumn Header="时间" Binding="{Binding TimestampText}" Width="90" />
+                    </DataGrid.Columns>
+                </DataGrid>
+                <!-- ADR-037 S3：空态提示（未选设备/无点位时显示），有点位时折叠 -->
+                <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondary}" FontSize="13">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Points.Count}" Value="0">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
 
-            <Border Grid.Column="1" BorderBrush="#D9DEE4" BorderThickness="1" CornerRadius="4" Padding="8" Background="White">
+            <Border Grid.Column="1" BorderBrush="{StaticResource CurveCardBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8" Background="{StaticResource CardBackground}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />

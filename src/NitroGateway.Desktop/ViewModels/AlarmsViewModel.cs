@@ -27,8 +27,13 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<AlarmItem> Items { get; } = [];
 
-    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsIdle))]
+    private bool _isLoading;
     [ObservableProperty] private string _statusText = "";
+
+    /// <summary>加载完成标志（ADR-037 S3）：刷新中禁用刷新按钮，避免无反馈的防重入吞点击。</summary>
+    public bool IsIdle => !IsLoading;
 
     public AlarmsViewModel(
         IServiceScopeFactory scopeFactory,
@@ -78,21 +83,31 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
 
             _ui.Post(() =>
             {
-                Items.Clear();
-                foreach (var alarm in history.Value!
-                    .OrderByDescending(a => a.OccurredAt))
+                // ADR-037 S7：先 diff 再增删改——既有行按 Id 原位更新（保留行实例/滚动），
+                // 新告警按发生时间倒序插入顶部，消失的告警移除
+                var ordered = history.Value!.OrderByDescending(a => a.OccurredAt).ToList();
+                var incoming = ordered.ToDictionary(a => a.Id);
+
+                for (var i = Items.Count - 1; i >= 0; i--)
                 {
-                    Items.Add(new AlarmItem
+                    if (!incoming.TryGetValue(Items[i].Id, out var alarm))
                     {
-                        Id = alarm.Id,
-                        DeviceName = nameMap.GetValueOrDefault(alarm.DeviceId) ?? ShortId(alarm.DeviceId),
-                        Severity = alarm.Severity,
-                        State = activeIds.Contains(alarm.Id) ? AlarmState.Active : alarm.State,
-                        Message = alarm.Message,
-                        TriggerValue = alarm.TriggerValue,
-                        Threshold = alarm.Threshold,
-                        OccurredAt = alarm.OccurredAt
-                    });
+                        Items.RemoveAt(i);
+                        continue;
+                    }
+                    ApplyAlarm(Items[i], alarm, nameMap, activeIds);
+                }
+
+                foreach (var alarm in ordered)
+                {
+                    if (Items.Any(item => item.Id == alarm.Id))
+                        continue;
+                    var item = new AlarmItem { Id = alarm.Id };
+                    ApplyAlarm(item, alarm, nameMap, activeIds);
+                    var index = 0;
+                    while (index < Items.Count && Items[index].OccurredAt >= alarm.OccurredAt)
+                        index++;
+                    Items.Insert(index, item);
                 }
                 StatusText = $"最近 {HistoryHours} 小时共 {Items.Count} 条告警";
             });
@@ -118,20 +133,45 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
 
     private static string ShortId(Guid id) => id.ToString("N")[..8];
 
+    /// <summary>把告警域模型 + 活跃集合原位写入行模型（ADR-037 S7，属性可观察触发 UI 刷新）。</summary>
+    private static void ApplyAlarm(
+        AlarmItem item, NitroGateway.Alarm.Domain.Alarm alarm,
+        IReadOnlyDictionary<Guid, string> nameMap, IReadOnlySet<Guid> activeIds)
+    {
+        item.DeviceName = nameMap.GetValueOrDefault(alarm.DeviceId) ?? ShortId(alarm.DeviceId);
+        item.Severity = alarm.Severity;
+        item.State = activeIds.Contains(alarm.Id) ? AlarmState.Active : alarm.State;
+        item.Message = alarm.Message;
+        item.TriggerValue = alarm.TriggerValue;
+        item.Threshold = alarm.Threshold;
+        item.OccurredAt = alarm.OccurredAt;
+    }
+
     public void Dispose() => _timer.Stop();
 }
 
-/// <summary>告警列表行</summary>
-public sealed class AlarmItem
+/// <summary>告警列表行（ADR-037 S7：可观察对象，增量刷新时原位更新避免重建/滚动跳动）</summary>
+public sealed partial class AlarmItem : ObservableObject
 {
     public Guid Id { get; init; }
-    public required string DeviceName { get; init; }
-    public AlarmSeverity Severity { get; init; }
-    public AlarmState State { get; init; }
-    public required string Message { get; init; }
-    public double TriggerValue { get; init; }
-    public double Threshold { get; init; }
-    public DateTime OccurredAt { get; init; }
+
+    [ObservableProperty] private string _deviceName = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SeverityText))]
+    private AlarmSeverity _severity;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateText))]
+    private AlarmState _state;
+
+    [ObservableProperty] private string _message = "";
+    [ObservableProperty] private double _triggerValue;
+    [ObservableProperty] private double _threshold;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OccurredText))]
+    private DateTime _occurredAt;
 
     public string SeverityText => Severity.ToString();
     public string StateText => State switch

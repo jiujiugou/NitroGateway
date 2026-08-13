@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Services;
 using NitroGateway.Desktop.ViewModels;
@@ -125,7 +125,101 @@ public sealed class SettingsViewModelTests : IDisposable
         Assert.True(vm.ImportFromCenterCommand.CanExecute(null));
     }
 
-    private SettingsViewModel CreateVm(ICenterSyncSettingsStore store) => new(
+    [Fact]
+    public void Constructor_displays_effective_site_id()
+    {
+        var provider = new StubSiteIdProvider { Current = "site-abc123" };
+
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile), provider);
+
+        Assert.Equal("site-abc123", vm.SiteId);
+    }
+
+    [Fact]
+    public void SaveSiteId_persists_and_shows_status()
+    {
+        var provider = new StubSiteIdProvider();
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile), provider);
+
+        vm.SiteId = "plant-a";
+        vm.SaveSiteIdCommand.Execute(null);
+
+        Assert.Equal("plant-a", provider.LastSaved);
+        Assert.Contains("已保存", vm.SiteIdStatus);
+    }
+
+    [Fact]
+    public void SaveSiteId_invalid_shows_error_and_keeps_previous()
+    {
+        var provider = new StubSiteIdProvider { Current = "site-old" };
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile), provider);
+
+        vm.SiteId = "Bad/Site";
+        vm.SaveSiteIdCommand.Execute(null);
+
+        Assert.Contains("保存失败", vm.SiteIdStatus);
+        Assert.Equal("site-old", vm.SiteId);
+    }
+
+    [Fact]
+    public void RegenerateSiteId_updates_and_persists()
+    {
+        var provider = new StubSiteIdProvider();
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile), provider);
+
+        vm.RegenerateSiteIdCommand.Execute(null);
+
+        Assert.Equal("site-new123", vm.SiteId);
+        Assert.Equal(1, provider.RegenerateCalls);
+        Assert.Contains("已重新生成", vm.SiteIdStatus);
+    }
+
+    [Fact]
+    public void SaveLogDirectory_persists_and_shows_status()
+    {
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        var customDir = Path.Combine(Path.GetTempPath(), "nitrogateway-tests", $"custom-logs-{Guid.NewGuid():N}");
+        try
+        {
+            vm.LogDirectory = customDir;
+            vm.SaveLogDirectoryCommand.Execute(null);
+
+            Assert.Equal(customDir, new DesktopSettingsStore(_settingsFile).Load().LogDirectory);
+            Assert.Contains("已保存", vm.LogDirectoryStatus);
+            Assert.Contains("重启后生效", vm.LogDirectoryStatus);
+        }
+        finally
+        {
+            try { Directory.Delete(customDir, recursive: true); } catch { /* 清理失败可忽略 */ }
+        }
+    }
+
+    [Fact]
+    public void SaveLogDirectory_empty_clears_setting()
+    {
+        new DesktopSettingsStore(_settingsFile).Save(new DesktopSettings { LogDirectory = @"C:\custom\logs" });
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+
+        vm.LogDirectory = "";
+        vm.SaveLogDirectoryCommand.Execute(null);
+
+        Assert.Equal("", new DesktopSettingsStore(_settingsFile).Load().LogDirectory);
+        Assert.Contains("已清除", vm.LogDirectoryStatus);
+    }
+
+    [Fact]
+    public void SaveLogDirectory_relative_path_shows_error_and_does_not_persist()
+    {
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+
+        vm.LogDirectory = "logs2";
+        vm.SaveLogDirectoryCommand.Execute(null);
+
+        Assert.Contains("绝对路径", vm.LogDirectoryStatus);
+        Assert.Equal("", new DesktopSettingsStore(_settingsFile).Load().LogDirectory);
+    }
+
+    private SettingsViewModel CreateVm(ICenterSyncSettingsStore store, ISiteIdProvider? siteIdProvider = null) => new(
         new MqttConnectionOptions { Host = "localhost", Port = 1883 },
         new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(),
         _bridge,
@@ -134,7 +228,35 @@ public sealed class SettingsViewModelTests : IDisposable
         _importer,
         store,
         _outbox,
-        _dialogs);
+        _dialogs,
+        siteIdProvider ?? new StubSiteIdProvider(),
+        new DesktopSettingsStore(_settingsFile));
+
+    /// <summary>ADR-036 测试替身：站点标识提供者（记录调用，可编程校验失败）。</summary>
+    private sealed class StubSiteIdProvider : ISiteIdProvider
+    {
+        public string Current { get; set; } = "site-test";
+        public int SaveCalls { get; private set; }
+        public string? LastSaved { get; private set; }
+        public int RegenerateCalls { get; private set; }
+
+        public OperationResult Save(string siteId)
+        {
+            SaveCalls++;
+            LastSaved = siteId;
+            if (!SiteOptions.IsValidSiteId(siteId))
+                return OperationResult.Failure(OperationalError.Validation("站点标识不合法"));
+            Current = siteId;
+            return OperationResult.Success();
+        }
+
+        public string Regenerate()
+        {
+            RegenerateCalls++;
+            Current = "site-new123";
+            return Current;
+        }
+    }
 }
 
 /// <summary>ADR-033 测试替身：中心快照客户端（可编程结果 + 记录调用）。</summary>

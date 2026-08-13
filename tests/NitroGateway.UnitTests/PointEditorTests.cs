@@ -100,4 +100,50 @@ public sealed class PointEditorTests
         });
         Assert.Equal("250 ms", custom.ScanIntervalText);
     }
+
+    // ===== ADR-037 S4：字段级校验 =====
+
+    [Fact]
+    public void Validate_rejects_empty_name_and_address()
+    {
+        var editor = new PointEditor { Name = "", Address = " " };
+
+        Assert.False(editor.Validate());
+        Assert.True(editor.HasErrors);
+        Assert.Contains("名称", Assert.Single(editor.GetErrors(nameof(PointEditor.Name)).Cast<string>()));
+        Assert.Contains("地址", Assert.Single(editor.GetErrors(nameof(PointEditor.Address)).Cast<string>()));
+    }
+
+    [Fact]
+    public void Validate_rejects_negative_scan_interval_and_deadband()
+    {
+        var editor = new PointEditor { Name = "P", Address = "40001", ScanIntervalMs = -1, Deadband = -0.1 };
+
+        Assert.False(editor.Validate());
+        Assert.NotEmpty(editor.GetErrors(nameof(PointEditor.ScanIntervalMs)).Cast<string>());
+        Assert.NotEmpty(editor.GetErrors(nameof(PointEditor.Deadband)).Cast<string>());
+    }
+
+    [Fact]
+    public void Validate_rejects_nonfinite_scale_values()
+    {
+        var editor = new PointEditor { Name = "P", Address = "40001", ScaleFactor = double.NaN, ScaleOffset = double.PositiveInfinity };
+
+        Assert.False(editor.Validate());
+        Assert.NotEmpty(editor.GetErrors(nameof(PointEditor.ScaleFactor)).Cast<string>());
+        Assert.NotEmpty(editor.GetErrors(nameof(PointEditor.ScaleOffset)).Cast<string>());
+    }
+
+    [Fact]
+    public void Validate_errors_clear_when_field_fixed()
+    {
+        var editor = new PointEditor { Name = "", Address = "" };
+        Assert.False(editor.Validate());
+
+        editor.Name = "温度";
+        editor.Address = "40001";
+
+        Assert.True(editor.Validate());
+        Assert.False(editor.HasErrors);
+    }
 }

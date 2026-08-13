@@ -1,0 +1,26 @@
+﻿<Window x:Class="NitroGateway.Desktop.Views.StartupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NitroGateway 现场采集端" Width="380" SizeToContent="Height"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        WindowStartupLocation="CenterScreen" Topmost="True">
+    <!-- ADR-037 S8：启动反馈窗口——宿主启动（迁移+后台服务）期间可见，失败时窗口内提示而非仅 MessageBox -->
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    <Border BorderBrush="{StaticResource BorderLight}" BorderThickness="1" Padding="24">
+        <StackPanel>
+            <TextBlock Text="NitroGateway 现场采集端" FontWeight="Bold" FontSize="16" />
+            <TextBlock Text="正在启动采集服务（数据库迁移与后台服务初始化）…"
+                       Foreground="{StaticResource TextSecondary}" Margin="0,8,0,0" TextWrapping="Wrap" />
+            <ProgressBar x:Name="StartupProgress" IsIndeterminate="True" Height="4" Margin="0,12,0,8" />
+            <TextBlock x:Name="StatusText" Text="请稍候…" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+            <Button x:Name="CloseButton" Content="关闭" Visibility="Collapsed" Click="OnClose"
+                    HorizontalAlignment="Right" Margin="0,16,0,0" Padding="16,5" />
+        </StackPanel>
+    </Border>
+</Window>

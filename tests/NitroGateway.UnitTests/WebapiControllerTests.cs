@@ -152,6 +152,68 @@ public class WebapiControllerTests
         Assert.Empty(body.Data);
     }
     [Fact]
+    public async Task Sites_GetSiteInfos_ReturnsCatalogInfos()
+    {
+        // ADR-036 中心站点管理：详情列表含显示名/来源指纹/冲突标记
+        var catalog = new FakeSiteCatalog(Array.Empty<string>())
+        {
+            SiteInfos = new[]
+            {
+                new SiteInfo { SiteId = "site-a", DisplayName = "一号站", HasConflict = true },
+                new SiteInfo { SiteId = "site-b" }
+            }
+        };
+        var ctrl = new SitesController(catalog);
+
+        var result = await ctrl.GetSiteInfos();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<List<SiteInfo>>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal(2, body.Data!.Count);
+        Assert.Equal("一号站", body.Data[0].DisplayName);
+        Assert.True(body.Data[0].HasConflict);
+        Assert.Equal(1, catalog.InfoCalls);
+    }
+
+    [Fact]
+    public async Task Sites_Rename_Valid_ReturnsOkAndForwards()
+    {
+        var catalog = new FakeSiteCatalog(Array.Empty<string>());
+        var ctrl = new SitesController(catalog);
+
+        var result = await ctrl.Rename("site-a", new RenameSiteRequest { DisplayName = " 一号站 " });
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal("site-a", catalog.RenameSiteId);
+        Assert.Equal("一号站", catalog.RenameDisplayName);   // 前后空白被 Trim
+        Assert.Equal(1, catalog.RenameCalls);
+    }
+
+    [Fact]
+    public async Task Sites_Rename_EmptySiteId_ReturnsBadRequest()
+    {
+        var catalog = new FakeSiteCatalog(Array.Empty<string>());
+        var ctrl = new SitesController(catalog);
+
+        var result = await ctrl.Rename(" ", new RenameSiteRequest { DisplayName = "x" });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal(0, catalog.RenameCalls);
+    }
+
+    [Fact]
+    public async Task Sites_Rename_DisplayNameTooLong_ReturnsBadRequest()
+    {
+        var catalog = new FakeSiteCatalog(Array.Empty<string>());
+        var ctrl = new SitesController(catalog);
+
+        var result = await ctrl.Rename("site-a", new RenameSiteRequest { DisplayName = new string('x', 101) });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal(0, catalog.RenameCalls);
+    }
+    [Fact]
     public async Task Devices_UpdateStatus_InvalidEnum_ReturnsBadRequest()
     {
         var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
@@ -434,6 +496,40 @@ public sealed class FakeSiteCatalog : ISiteCatalog
     {
         CallCount++;
         return Task.FromResult(OperationResult<IReadOnlyList<string>>.Success(_sites));
+    }
+
+    /// <summary>注册调用记录（ADR-036）</summary>
+    public int RegisterCalls { get; private set; }
+    public string? LastSiteId { get; private set; }
+    public string? LastClientId { get; private set; }
+
+    public Task<OperationResult> RegisterSiteAsync(string siteId, string? sourceClientId, CancellationToken ct = default)
+    {
+        RegisterCalls++;
+        LastSiteId = siteId;
+        LastClientId = sourceClientId;
+        return Task.FromResult(OperationResult.Success());
+    }
+
+    /// <summary>站点详情（ADR-036）：可注入返回值，供控制器用例断言。</summary>
+    public IReadOnlyList<SiteInfo> SiteInfos { get; set; } = Array.Empty<SiteInfo>();
+    public int InfoCalls { get; private set; }
+    public int RenameCalls { get; private set; }
+    public string? RenameSiteId { get; private set; }
+    public string? RenameDisplayName { get; private set; }
+
+    public Task<OperationResult<IReadOnlyList<SiteInfo>>> GetSiteInfosAsync(CancellationToken ct = default)
+    {
+        InfoCalls++;
+        return Task.FromResult(OperationResult<IReadOnlyList<SiteInfo>>.Success(SiteInfos));
+    }
+
+    public Task<OperationResult> RenameSiteAsync(string siteId, string displayName, CancellationToken ct = default)
+    {
+        RenameCalls++;
+        RenameSiteId = siteId;
+        RenameDisplayName = displayName;
+        return Task.FromResult(OperationResult.Success());
     }
 }
 public sealed class FakeForwardBuffer : IForwardBuffer

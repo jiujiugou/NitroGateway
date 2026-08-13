@@ -39,7 +39,11 @@ public sealed partial class HistoryViewModel : ObservableObject
     [ObservableProperty] private DateTime? _fromDate = DateTime.Today.AddDays(-1);
     [ObservableProperty] private DateTime? _toDate = DateTime.Today;
 
-    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsIdle))]
+    [NotifyPropertyChangedFor(nameof(CanGoPrev))]
+    [NotifyPropertyChangedFor(nameof(CanGoNext))]
+    private bool _isLoading;
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanGoPrev))]
@@ -48,11 +52,14 @@ public sealed partial class HistoryViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanGoNext))]
     private bool _hasMore;
 
-    /// <summary>上一页可用：非首页。</summary>
-    public bool CanGoPrev => PageNumber > 1;
+    /// <summary>加载完成标志（ADR-037 S3）：查询中禁用查询/翻页按钮。</summary>
+    public bool IsIdle => !IsLoading;
 
-    /// <summary>下一页可用：当前页取满一页（可能还有更多）。</summary>
-    public bool CanGoNext => HasMore;
+    /// <summary>上一页可用：非首页且不在查询中。</summary>
+    public bool CanGoPrev => PageNumber > 1 && IsIdle;
+
+    /// <summary>下一页可用：当前页取满一页（可能还有更多）且不在查询中。</summary>
+    public bool CanGoNext => HasMore && IsIdle;
 
     public HistoryViewModel(
         IDeviceSnapshotCache cache,

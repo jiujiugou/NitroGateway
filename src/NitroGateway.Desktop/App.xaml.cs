@@ -37,6 +37,10 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         DispatcherUnhandledException += OnDispatcherUnhandledException;
 
+        // ADR-037 S8：先显示启动反馈窗口，宿主就绪后再切主窗口；
+        // 启动失败在启动窗内提示（迁移+服务启动可能数秒，避免白屏无反馈）
+        var splash = new StartupWindow();
+        splash.Show();
         try
         {
             _host = GatewayHost.Create(e.Args);
@@ -45,15 +49,15 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"启动失败：{ex.Message}", "NitroGateway 现场采集端",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-            Shutdown();
-            return;
+            _logger?.LogError(ex, "宿主启动失败");
+            splash.ShowError(ex.Message);
+            return; // 用户点「关闭」退出（ShutdownMode=OnLastWindowClose）
         }
 
         var mainWindow = new MainWindow(_host);
         MainWindow = mainWindow;
         mainWindow.Show();
+        splash.Close();
     }
 
     protected override void OnExit(ExitEventArgs e)

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Shared;
+using NitroGateway.Storage.TimeSeries;
 using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 
@@ -35,6 +36,7 @@ public sealed class IngestService : BackgroundService
 
     private readonly IMqttClient _mqtt;
     private readonly IIngestStore _store;
+    private readonly ISiteCatalog _siteCatalog;
     private readonly ILogger<IngestService> _logger;
     private readonly TimeSpan _retryBaseDelay;
 
@@ -43,11 +45,12 @@ public sealed class IngestService : BackgroundService
     /// <param name="store">中心入库实现</param>
     /// <param name="logger">日志</param>
     /// <param name="retryBaseDelay">写失败重试退避基数（测试注入零值加速）</param>
-    public IngestService(IMqttClient mqtt, IIngestStore store, ILogger<IngestService> logger,
+    public IngestService(IMqttClient mqtt, IIngestStore store, ISiteCatalog siteCatalog, ILogger<IngestService> logger,
         TimeSpan? retryBaseDelay = null)
     {
         _mqtt = mqtt;
         _store = store;
+        _siteCatalog = siteCatalog;
         _logger = logger;
         _retryBaseDelay = retryBaseDelay ?? TimeSpan.FromMilliseconds(500);
     }
@@ -115,17 +118,34 @@ public sealed class IngestService : BackgroundService
     }
 
     /// <summary>按主题后缀路由到遥测/告警处理（测试经此方法驱动）</summary>
-    internal Task ProcessMessageAsync(MqttMessage message, CancellationToken ct)
+    internal async Task ProcessMessageAsync(MqttMessage message, CancellationToken ct)
     {
         // ADR-035 第 1 步：站点标识从 topic 第三层解析（旧版 3 段 topic 返回空串，按未标注站点入库）
         var siteId = ParseSiteId(message.Topic);
         if (message.Topic.EndsWith("/measurements"))
-            return ProcessMeasurementsAsync(message, siteId, ct);
+        {
+            await RegisterSiteAsync(siteId, message.ClientId, ct);
+            await ProcessMeasurementsAsync(message, siteId, ct);
+            return;
+        }
         if (message.Topic.EndsWith("/alarms"))
-            return ProcessAlarmAsync(message, siteId, ct);
+        {
+            await RegisterSiteAsync(siteId, message.ClientId, ct);
+            await ProcessAlarmAsync(message, siteId, ct);
+            return;
+        }
 
         _logger.LogDebug("忽略未订阅主题消息: {Topic}", message.Topic);
-        return Task.CompletedTask;
+    }
+
+    /// <summary>站点注册（ADR-036）：首见写入 sites 表（唯一索引兜底）；失败不阻断数据入库。</summary>
+    private async Task RegisterSiteAsync(string siteId, string? clientId, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(siteId))
+            return; // 旧版 3 段 topic 无站点维度，走老路径不注册
+        var r = await _siteCatalog.RegisterSiteAsync(siteId, clientId, ct);
+        if (r.IsFailure)
+            _logger.LogDebug("站点注册失败（不阻断入库）: {SiteId} - {Error}", siteId, r.Error?.Message);
     }
 
     /// <summary>

@@ -43,6 +43,14 @@ public static class DesktopServiceCollectionExtensions
         // HttpClient 按 Singleton 注册并统一超时，避免每次导入新建连接资源。
         services.AddSingleton<HttpClient>(_ => new HttpClient { Timeout = TimeSpan.FromSeconds(15) });
         services.AddSingleton<ICenterSyncSettingsStore>(_ => new CenterSyncSettingsStore());
+
+        // 桌面端本地设置：日志目录（设置页可改，保存后重启生效；环境变量仍优先）
+        services.AddSingleton<IDesktopSettingsStore>(_ => new DesktopSettingsStore());
+
+        // ADR-036 站点标识：site.json 存储 + 提供者（设置页展示/编辑/重新生成）
+        services.AddSingleton<ISiteSettingsStore>(_ => new SiteSettingsStore());
+        services.AddSingleton<ISiteIdProvider>(sp => new SiteIdProvider(
+            sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ISiteSettingsStore>()));
         services.AddSingleton<ICenterConfigClient, CenterConfigClient>();
         services.AddSingleton<ICenterConfigImporter, CenterConfigImporter>();
 

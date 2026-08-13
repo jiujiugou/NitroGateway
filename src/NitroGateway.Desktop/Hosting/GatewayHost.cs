@@ -1,9 +1,10 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
+using NitroGateway.Desktop.Services;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Forwarder;
 using NitroGateway.Host;
@@ -41,7 +42,13 @@ public sealed class GatewayHost : IAsyncDisposable
         });
 
         // D4 配置与路径：SQLite/日志缺省落 %LocalAppData%\NitroGateway，环境变量可覆盖
-        DesktopPathConfig.Apply(builder.Configuration);
+        // 设置页自定义日志目录（desktop-settings.json）在 Apply 内生效，重启后写入新位置
+        DesktopPathConfig.Apply(builder.Configuration, settingsStore: new DesktopSettingsStore());
+
+        // ADR-036 站点标识：配置/环境变量 > 本地存储 > 自动生成并持久化；
+        // 解析结果写回配置，Forwarder/AlarmNotifier/ConfigSync/Settings 统一取用（缺省不再全叫 "default"）
+        var siteStore = new SiteSettingsStore();
+        builder.Configuration["Site:Id"] = SiteIdProvider.Resolve(builder.Configuration, siteStore);
 
         // Serilog 作为唯一日志输出（与 Webapi 一致：清宿主提供程序 + 读配置 + DI 服务）
         builder.Logging.ClearProviders();

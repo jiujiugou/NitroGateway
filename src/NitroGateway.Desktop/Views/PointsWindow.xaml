@@ -22,18 +22,34 @@
             <Button Content="编辑" Command="{Binding EditCommand}" Padding="12,4" Margin="0,0,8,0" />
             <Button Content="删除" Command="{Binding DeleteCommand}" Padding="12,4" />
         </StackPanel>
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedPoint}"
-                  AutoGenerateColumns="False" IsReadOnly="True" AlternatingRowBackground="#F5F7FA"
-                  GridLinesVisibility="Horizontal" HeadersVisibility="Column">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" />
-                <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="140" />
-                <DataGridTextColumn Header="类型" Binding="{Binding DataTypeText}" Width="80" />
-                <DataGridTextColumn Header="权限" Binding="{Binding AccessText}" Width="70" />
-                <DataGridTextColumn Header="缩放 × / +" Binding="{Binding ScaleText}" Width="110" />
-                <DataGridTextColumn Header="采集间隔" Binding="{Binding ScanIntervalText}" Width="80" />
-                <DataGridTextColumn Header="启用" Binding="{Binding EnabledText}" Width="60" />
-            </DataGrid.Columns>
-        </DataGrid>
+        <Grid Grid.Row="1">
+            <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedPoint}"
+                      AutoGenerateColumns="False" IsReadOnly="True"
+                      GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" />
+                    <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="140" />
+                    <DataGridTextColumn Header="类型" Binding="{Binding DataTypeText}" Width="80" />
+                    <DataGridTextColumn Header="权限" Binding="{Binding AccessText}" Width="70" />
+                    <DataGridTextColumn Header="缩放 × / +" Binding="{Binding ScaleText}" Width="110" />
+                    <DataGridTextColumn Header="采集间隔" Binding="{Binding ScanIntervalText}" Width="80" />
+                    <DataGridTextColumn Header="启用" Binding="{Binding EnabledText}" Width="60" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <!-- ADR-037 S3：空态提示，有点位时折叠 -->
+            <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{StaticResource TextSecondary}" FontSize="13">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Items.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
     </Grid>
 </Window>

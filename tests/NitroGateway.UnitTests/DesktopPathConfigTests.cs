@@ -2,6 +2,7 @@
 using System.IO;
 using Microsoft.Extensions.Configuration;
 using NitroGateway.Desktop.Hosting;
+using NitroGateway.Desktop.Services;
 
 namespace NitroGateway.UnitTests;
 
@@ -99,6 +100,55 @@ public sealed class DesktopPathConfigTests : IDisposable
         });
 
         DesktopPathConfig.Apply(config, _tempDir);
+
+        Assert.Equal("logs/placeholder.log", config["Serilog:WriteTo:0:Args:path"]);
+    }
+
+    [Fact]
+    public void Apply_uses_persisted_log_directory_when_env_not_set()
+    {
+        Environment.SetEnvironmentVariable("Serilog__WriteTo__0__Args__path", null);
+        Environment.SetEnvironmentVariable("Serilog__WriteTo__1__Args__path", null);
+        var config = new ConfigurationManager();
+        var store = new DesktopSettingsStore(Path.Combine(_tempDir, "desktop-settings.json"));
+        var customDir = Path.Combine(_tempDir, "custom-logs");
+        store.Save(new DesktopSettings { LogDirectory = customDir });
+
+        DesktopPathConfig.Apply(config, _tempDir, store);
+
+        Assert.Equal(Path.Combine(customDir, "nitrogateway-desktop-.log"),
+            config["Serilog:WriteTo:0:Args:path"]);
+    }
+
+    [Fact]
+    public void Apply_falls_back_to_default_when_persisted_log_directory_invalid()
+    {
+        Environment.SetEnvironmentVariable("Serilog__WriteTo__0__Args__path", null);
+        Environment.SetEnvironmentVariable("Serilog__WriteTo__1__Args__path", null);
+        var config = new ConfigurationManager();
+        var store = new DesktopSettingsStore(Path.Combine(_tempDir, "desktop-settings.json"));
+        store.Save(new DesktopSettings { LogDirectory = "relative\\logs" });
+
+        DesktopPathConfig.Apply(config, _tempDir, store);
+
+        Assert.Equal(Path.Combine(_tempDir, "logs", "nitrogateway-desktop-.log"),
+            config["Serilog:WriteTo:0:Args:path"]);
+    }
+
+    [Fact]
+    public void Apply_ignores_persisted_log_directory_when_env_set()
+    {
+        Environment.SetEnvironmentVariable("Serilog__WriteTo__0__Args__path", @"C:\custom\log-.log");
+        var config = new ConfigurationManager();
+        config.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Serilog:WriteTo:0:Name"] = "File",
+            ["Serilog:WriteTo:0:Args:path"] = "logs/placeholder.log"
+        });
+        var store = new DesktopSettingsStore(Path.Combine(_tempDir, "desktop-settings.json"));
+        store.Save(new DesktopSettings { LogDirectory = Path.Combine(_tempDir, "custom-logs") });
+
+        DesktopPathConfig.Apply(config, _tempDir, store);
 
         Assert.Equal("logs/placeholder.log", config["Serilog:WriteTo:0:Args:path"]);
     }

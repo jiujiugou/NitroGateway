@@ -14,4 +14,7 @@ public sealed record MqttMessage
 
     /// <summary>网关收到该消息的时间（UTC，ADR-020 P3-7 注释对齐实现：OnMessageReceivedAsync 使用 DateTime.UtcNow）</summary>
     public DateTime ReceivedAt { get; init; }
+
+    /// <summary>发送方 MQTT ClientId（ADR-036 站点来源指纹，含机器名；Ingest 注册站点时记录）</summary>
+    public string? ClientId { get; init; }
 }

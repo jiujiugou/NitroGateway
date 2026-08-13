@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Configuration;
@@ -24,15 +24,24 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly IConfigSyncOutboxStore _outbox;
     private readonly IDeviceDialogService _dialogs;
     private readonly IConfiguration _configuration;
+    private readonly ISiteIdProvider _siteIdProvider;
+    private readonly IDesktopSettingsStore _logSettingsStore;
 
     [ObservableProperty] private string _mqttBroker = "";
     [ObservableProperty] private string _mqttClientId = "";
     [ObservableProperty] private string _mqttStateText = "未连接";
-    [ObservableProperty] private string _bufferBacklogText = "—";
+    [ObservableProperty] private string _bufferBacklogText = "-";
     [ObservableProperty] private string _databasePath = "";
     [ObservableProperty] private string _logDirectory = "";
+    [ObservableProperty] private string _logDirectoryStatus = "";
     [ObservableProperty] private string _collectionInterval = "";
     [ObservableProperty] private string _forwarderInterval = "";
+
+    /// <summary>站点标识（ADR-036）：生效值展示，可编辑/重新生成；保存后重启生效</summary>
+    [ObservableProperty] private string _siteId = "";
+
+    /// <summary>站点标识保存/生成操作的状态提示</summary>
+    [ObservableProperty] private string _siteIdStatus = "";
 
     /// <summary>中心 Webapi 地址（持久化到 %LocalAppData%\NitroGateway\center-sync.json）</summary>
     [ObservableProperty]
@@ -61,7 +70,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         ICenterConfigImporter importer,
         ICenterSyncSettingsStore settingsStore,
         IConfigSyncOutboxStore outbox,
-        IDeviceDialogService dialogs)
+        IDeviceDialogService dialogs,
+        ISiteIdProvider siteIdProvider,
+        IDesktopSettingsStore logSettingsStore)
     {
         _bridge = bridge;
         _ui = ui;
@@ -70,6 +81,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _settingsStore = settingsStore;
         _outbox = outbox;
         _dialogs = dialogs;
+        _siteIdProvider = siteIdProvider;
+        _logSettingsStore = logSettingsStore;
         _configuration = configuration;
 
         MqttBroker = $"{mqtt.Host}:{mqtt.Port}" + (mqtt.UseTls ? " (TLS)" : "");
@@ -85,7 +98,63 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         CenterUrl = saved.CenterUrl;
         CenterToken = saved.CenterToken;
 
+        SiteId = siteIdProvider.Current;
+
         _bridge.FrameReady += OnFrame;
+    }
+
+    /// <summary>保存站点标识：校验后持久化；运行中采集/转发仍用旧值，重启后生效。</summary>
+    [RelayCommand]
+    private void SaveSiteId()
+    {
+        var result = _siteIdProvider.Save(SiteId);
+        SiteIdStatus = result.IsSuccess
+            ? $"已保存：{_siteIdProvider.Current}（重启后生效）"
+            : $"保存失败：{result.Error!.Message}";
+        SiteId = _siteIdProvider.Current;
+    }
+
+    /// <summary>重新生成站点标识（随机生成，概率唯一；中心 sites 唯一索引兜底）。</summary>
+    [RelayCommand]
+    private void RegenerateSiteId()
+    {
+        SiteId = _siteIdProvider.Regenerate();
+        SiteIdStatus = $"已重新生成：{SiteId}（重启后生效）";
+    }
+
+    /// <summary>
+    /// 保存自定义日志目录：校验绝对路径并预创建，持久化到 desktop-settings.json；
+    /// 重启后由 DesktopPathConfig.Apply 生效（环境变量仍优先）。空值恢复默认目录。
+    /// </summary>
+    [RelayCommand]
+    private void SaveLogDirectory()
+    {
+        var directory = LogDirectory?.Trim() ?? "";
+        if (directory.Length == 0)
+        {
+            _logSettingsStore.Save(new DesktopSettings { LogDirectory = "" });
+            LogDirectoryStatus = "已清除自定义日志目录，重启后恢复默认位置";
+            return;
+        }
+
+        if (!Path.IsPathRooted(directory))
+        {
+            LogDirectoryStatus = "保存失败：日志目录必须是绝对路径（如 D:\\logs）";
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+        }
+        catch (Exception ex)
+        {
+            LogDirectoryStatus = $"保存失败：无法创建目录（{ex.Message}）";
+            return;
+        }
+
+        _logSettingsStore.Save(new DesktopSettings { LogDirectory = directory });
+        LogDirectoryStatus = $"已保存：{directory}（重启后生效）";
     }
 
     private bool CanImport => !IsImporting && !string.IsNullOrWhiteSpace(CenterUrl);

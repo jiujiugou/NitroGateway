@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using Microsoft.Extensions.Configuration;
+using NitroGateway.Desktop.Services;
 
 namespace NitroGateway.Desktop.Hosting;
 
@@ -19,7 +20,9 @@ internal static class DesktopPathConfig
     /// </summary>
     /// <param name="configuration">宿主配置（ConfigurationManager，索引写入立即生效）</param>
     /// <param name="dataDirectory">数据目录；测试可注入临时目录，缺省用 <c>%LocalAppData%\NitroGateway</c></param>
-    public static void Apply(ConfigurationManager configuration, string? dataDirectory = null)
+    /// <param name="settingsStore">桌面端本地设置；设置页自定义日志目录在此生效（环境变量仍优先）</param>
+    public static void Apply(ConfigurationManager configuration, string? dataDirectory = null,
+        IDesktopSettingsStore? settingsStore = null)
     {
         var connectionString = configuration["Persistence:ConnectionString"];
         var logPathKey = FileSinkPathKey(configuration);
@@ -37,9 +40,34 @@ internal static class DesktopPathConfig
         if (string.IsNullOrWhiteSpace(connectionString))
             configuration["Persistence:ConnectionString"] = $"Data Source={Path.Combine(dataDir, "nitrogateway.db")}";
 
-        // appsettings 中的相对路径仅为占位；除非环境变量显式指定，日志一律落 LocalAppData\logs
+        // appsettings 中的相对路径仅为占位；日志目录优先级：环境变量 > 设置页自定义（desktop-settings.json）> LocalAppData\logs
         if (string.IsNullOrWhiteSpace(logPathEnv))
-            configuration[logPathKey] = Path.Combine(dataDir, "logs", "nitrogateway-desktop-.log");
+        {
+            var customLogDir = settingsStore?.Load().LogDirectory?.Trim();
+            configuration[logPathKey] =
+                !string.IsNullOrWhiteSpace(customLogDir) && TryPrepareLogDirectory(customLogDir)
+                    ? Path.Combine(customLogDir, "nitrogateway-desktop-.log")
+                    : Path.Combine(dataDir, "logs", "nitrogateway-desktop-.log");
+        }
+    }
+
+    /// <summary>
+    /// 校验并准备自定义日志目录：仅接受绝对路径且能创建；
+    /// 失败（相对路径/无权限/路径非法）时回退默认目录，避免损坏的本地设置阻断启动。
+    /// </summary>
+    private static bool TryPrepareLogDirectory(string path)
+    {
+        try
+        {
+            if (!Path.IsPathRooted(path))
+                return false;
+            Directory.CreateDirectory(path);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>

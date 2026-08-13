@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Services;
@@ -224,6 +224,124 @@ public sealed class DevicesViewModelTests : IDisposable
         vm.ManagePointsCommand.Execute(null);
 
         Assert.Equal((deviceId, "PLC-1"), Assert.Single(dialogs.ShowPointsCalls));
+    }
+
+    [Fact]
+    public async Task Refresh_shows_unit_id_from_parameters()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess(); // 构造时首次刷新
+        var device = TestDevices.Device("RTU-1");
+        device.Connection.Parameters["UnitId"] = 7;
+        cache.EnqueueSuccess(device);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var item = Assert.Single(vm.Items);
+        Assert.Equal(7, item.UnitId);
+        Assert.Equal("7", item.UnitIdText);
+    }
+
+    [Fact]
+    public async Task Refresh_unit_id_dash_when_parameter_missing()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess(); // 构造时首次刷新
+        cache.EnqueueSuccess(TestDevices.Device("S7-1"));
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("—", Assert.Single(vm.Items).UnitIdText);
+    }
+
+    // ===== ADR-037 S7：增量刷新保留行实例/选中/滚动 =====
+
+    [Fact]
+    public async Task Refresh_reuses_existing_row_instances_and_preserves_selection()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess(); // 构造时首次刷新
+        var device = TestDevices.Device("PLC-1");
+        cache.EnqueueSuccess(device);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var first = Assert.Single(vm.Items);
+        vm.SelectedDevice = first;
+
+        cache.EnqueueSuccess(device);
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Single(vm.Items);
+        Assert.Same(first, vm.Items[0]);
+        Assert.Same(first, vm.SelectedDevice);
+    }
+
+    [Fact]
+    public async Task Refresh_updates_existing_row_in_place()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var device = TestDevices.Device("PLC-1");
+        cache.EnqueueSuccess(device);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var first = vm.Items[0];
+        device.Name = "PLC-1-改";
+        device.AddPoint(TestDevices.Point("P1"));
+        cache.EnqueueSuccess(device);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Single(vm.Items);
+        Assert.Same(first, vm.Items[0]);
+        Assert.Equal("PLC-1-改", vm.Items[0].Name);
+        Assert.Equal(1, vm.Items[0].PointsCount);
+    }
+
+    [Fact]
+    public async Task Refresh_removes_missing_device_and_clears_selection()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var kept = TestDevices.Device("保留");
+        var removed = TestDevices.Device("删除");
+        cache.EnqueueSuccess(kept, removed);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var keptRow = vm.Items.Single(i => i.Id == kept.Id);
+        vm.SelectedDevice = vm.Items.Single(i => i.Id == removed.Id);
+
+        cache.EnqueueSuccess(kept);
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var survivor = Assert.Single(vm.Items);
+        Assert.Same(keptRow, survivor);
+        Assert.Null(vm.SelectedDevice);
+    }
+
+    [Fact]
+    public async Task Refresh_raises_device_count_changed()
+    {
+        // ADR-037 S11：MainViewModel 复用本事件展示设备数，不再重复查询目录
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var device = TestDevices.Device("PLC-1");
+        cache.EnqueueSuccess(device);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+        int? raised = null;
+        vm.DeviceCountChanged += (_, count) => raised = count;
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, raised);
     }
 
     private DevicesViewModel CreateVm(

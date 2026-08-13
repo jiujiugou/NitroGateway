@@ -16,34 +16,53 @@
         </Grid.RowDefinitions>
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
             <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="0,0,12,0" />
-            <Button Content="刷新" Command="{Binding RefreshCommand}" Padding="12,4" />
+            <!-- ADR-037 S3：加载中禁用刷新并显示进度条 -->
+            <Button Content="刷新" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsIdle}" Padding="12,4" />
+            <ProgressBar Width="90" Height="6" IsIndeterminate="True" VerticalAlignment="Center" Margin="8,0,0,0"
+                         Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
         </StackPanel>
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True"
-                  AlternatingRowBackground="#F5F7FA" GridLinesVisibility="Horizontal" HeadersVisibility="Column">
-            <DataGrid.RowStyle>
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding Severity}" Value="Emergency">
-                            <Setter Property="Background" Value="#F8D7DA" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding Severity}" Value="Critical">
-                            <Setter Property="Background" Value="#FDE2E4" />
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding Severity}" Value="Warning">
-                            <Setter Property="Background" Value="#FFF3CD" />
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </DataGrid.RowStyle>
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="发生时间" Binding="{Binding OccurredText}" Width="160" />
-                <DataGridTextColumn Header="严重性" Binding="{Binding SeverityText}" Width="90" />
-                <DataGridTextColumn Header="状态" Binding="{Binding StateText}" Width="80" />
-                <DataGridTextColumn Header="设备" Binding="{Binding DeviceName}" Width="*" />
-                <DataGridTextColumn Header="消息" Binding="{Binding Message}" Width="*" />
-                <DataGridTextColumn Header="触发值" Binding="{Binding TriggerValue, StringFormat=F2}" Width="90" />
-                <DataGridTextColumn Header="阈值" Binding="{Binding Threshold, StringFormat=F2}" Width="90" />
-            </DataGrid.Columns>
-        </DataGrid>
+        <Grid Grid.Row="1">
+            <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True"
+                      GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Severity}" Value="Emergency">
+                                <Setter Property="Background" Value="{StaticResource SeverityEmergencyBrush}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                                <Setter Property="Background" Value="{StaticResource SeverityCriticalBrush}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                <Setter Property="Background" Value="{StaticResource SeverityWarningBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="发生时间" Binding="{Binding OccurredText}" Width="160" />
+                    <DataGridTextColumn Header="严重性" Binding="{Binding SeverityText}" Width="90" />
+                    <DataGridTextColumn Header="状态" Binding="{Binding StateText}" Width="80" />
+                    <DataGridTextColumn Header="设备" Binding="{Binding DeviceName}" Width="*" />
+                    <DataGridTextColumn Header="消息" Binding="{Binding Message}" Width="*" />
+                    <DataGridTextColumn Header="触发值" Binding="{Binding TriggerValue, StringFormat=F2}" Width="90" />
+                    <DataGridTextColumn Header="阈值" Binding="{Binding Threshold, StringFormat=F2}" Width="90" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <!-- ADR-037 S3：空态提示，有数据时折叠 -->
+            <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{StaticResource TextSecondary}" FontSize="13">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Items.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
     </Grid>
 </UserControl>

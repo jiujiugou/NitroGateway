@@ -13,7 +13,13 @@ public partial class PointEditorWindow : Window
         Title = editor.Id == Guid.Empty ? "添加点位" : "编辑点位";
     }
 
-    private void OnSave(object sender, RoutedEventArgs e) => DialogResult = true;
+    /// <summary>保存（ADR-037 S4）：校验未通过时不关窗，错误经 ErrorTemplate 行内提示。</summary>
+    private void OnSave(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is PointEditor editor && !editor.Validate())
+            return;
+        DialogResult = true;
+    }
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;
 }

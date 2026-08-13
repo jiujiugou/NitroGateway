@@ -16,6 +16,31 @@
         <SolidColorBrush x:Key="BorderLight" Color="#E4E7ED" />
         <SolidColorBrush x:Key="FillLight" Color="#FAFBFC" />
         <SolidColorBrush x:Key="RowHover" Color="#F5F7FA" />
+        <!-- ADR-037 S1：语义令牌（原散落各视图的硬编码色值收拢于此，改主题只改这一处） -->
+        <SolidColorBrush x:Key="AlternatingRowBrush" Color="#F5F7FA" />
+        <SolidColorBrush x:Key="BadRowBrush" Color="#FDE7E9" />
+        <SolidColorBrush x:Key="SeverityEmergencyBrush" Color="#F8D7DA" />
+        <SolidColorBrush x:Key="SeverityCriticalBrush" Color="#FDE2E4" />
+        <SolidColorBrush x:Key="SeverityWarningBrush" Color="#FFF3CD" />
+        <SolidColorBrush x:Key="StatusBarBackground" Color="#2B3A4A" />
+        <SolidColorBrush x:Key="StatusBarText" Color="#9FB3C8" />
+        <SolidColorBrush x:Key="MutedText" Color="#888888" />
+        <SolidColorBrush x:Key="CurveCardBorderBrush" Color="#D9DEE4" />
+        <SolidColorBrush x:Key="ButtonHoverBorderBrush" Color="#C0C4CC" />
+        <SolidColorBrush x:Key="ButtonPressedBrush" Color="#EBEEF5" />
+        <!-- ADR-037 S2：设备状态语义色，与 Web 端 DeviceStatusTag.vue 保持一致 -->
+        <SolidColorBrush x:Key="StatusOnlineBrush" Color="#67C23A" />
+        <SolidColorBrush x:Key="StatusOfflineBrush" Color="#F56C6C" />
+        <SolidColorBrush x:Key="StatusErrorBrush" Color="#E6A23C" />
+        <SolidColorBrush x:Key="StatusUnknownBrush" Color="#A0AEC0" />
+        <SolidColorBrush x:Key="StatusMaintenanceBrush" Color="#9060EB" />
+        <SolidColorBrush x:Key="ErrorBrush" Color="#F56C6C" />
+        <!-- ADR-037 S10：品牌块轻微渐变（轻渐变不加重低配机渲染负担） -->
+        <LinearGradientBrush x:Key="BrandGradientBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#409EFF" Offset="0" />
+            <GradientStop Color="#79BBFF" Offset="1" />
+        </LinearGradientBrush>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <!-- 窗口基础：统一底色与字体 -->
         <Style TargetType="Window">
@@ -55,10 +80,10 @@
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{StaticResource RowHover}" />
-                    <Setter Property="BorderBrush" Value="#C0C4CC" />
+                    <Setter Property="BorderBrush" Value="{StaticResource ButtonHoverBorderBrush}" />
                 </Trigger>
                 <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#EBEEF5" />
+                    <Setter Property="Background" Value="{StaticResource ButtonPressedBrush}" />
                 </Trigger>
                 <Trigger Property="IsDefault" Value="True">
                     <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
@@ -95,6 +120,21 @@
             <Setter Property="Padding" Value="8,5" />
             <Setter Property="MinHeight" Value="30" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <!-- ADR-037 S4：字段级校验错误外观——红框 + 悬浮错误文案（由 INotifyDataErrorInfo 自动触发） -->
+            <Setter Property="Validation.ErrorTemplate">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" CornerRadius="2">
+                            <AdornedElementPlaceholder />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="True">
+                    <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=(Validation.Errors)[0].ErrorContent}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style TargetType="ComboBox">
@@ -164,7 +204,7 @@
             <Setter Property="BorderBrush" Value="{StaticResource BorderLight}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="RowBackground" Value="{StaticResource CardBackground}" />
-            <Setter Property="AlternatingRowBackground" Value="{StaticResource FillLight}" />
+            <Setter Property="AlternatingRowBackground" Value="{StaticResource AlternatingRowBrush}" />
             <Setter Property="GridLinesVisibility" Value="None" />
             <Setter Property="HeadersVisibility" Value="Column" />
             <Setter Property="RowHeight" Value="34" />

@@ -94,4 +94,44 @@ public sealed class DesktopViewSmokeTests
         Assert.Null(error);
         Assert.False(thread.IsAlive);
     }
+
+    [Fact]
+    public void ListViews_initialize_on_sta()
+    {
+        Exception? error = null;
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                // ADR-037 S1/S3：列表视图合并共享样式（含 BoolToVis/状态色令牌/空态叠加层），
+                // 无 Application 实例时 StaticResource 也必须可解析（DataContext 留空仅验证模板加载）
+                var views = new System.Windows.FrameworkElement[]
+                {
+                    new DevicesView(),
+                    new AlarmsView(),
+                    new HistoryView(),
+                    new SettingsView(),
+                    new StartupWindow()
+                };
+                foreach (var view in views)
+                {
+                    Assert.NotNull(view);
+                    view.Measure(new Size(800, 600));
+                    view.Arrange(new Rect(0, 0, 800, 600));
+                    view.UpdateLayout();
+                }
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join(TimeSpan.FromSeconds(30));
+
+        Assert.Null(error);
+        Assert.False(thread.IsAlive);
+    }
 }

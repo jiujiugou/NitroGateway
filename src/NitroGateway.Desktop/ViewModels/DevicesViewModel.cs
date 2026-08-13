@@ -31,14 +31,22 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     /// <summary>设备行集合（UI 线程）</summary>
     public ObservableCollection<DeviceItem> Items { get; } = [];
 
+    /// <summary>设备数变更事件（ADR-037 S11：MainViewModel 复用本事件展示设备数，不再重复查询目录）。</summary>
+    public event EventHandler<int>? DeviceCountChanged;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(EditDeviceCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteDeviceCommand))]
     [NotifyCanExecuteChangedFor(nameof(ManagePointsCommand))]
     private DeviceItem? _selectedDevice;
 
-    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsIdle))]
+    private bool _isLoading;
     [ObservableProperty] private string _statusText = "";
+
+    /// <summary>加载完成标志（ADR-037 S3）：刷新中禁用刷新按钮，避免无反馈的防重入吞点击。</summary>
+    public bool IsIdle => !IsLoading;
 
     public DevicesViewModel(
         IDeviceSnapshotCache cache,
@@ -187,22 +195,34 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
 
             _ui.Post(() =>
             {
-                Items.Clear();
+                // ADR-037 S7：先 diff 再增删改——既有行按 Id 原位更新（保留行实例/选中/滚动），
+                // 仅新增/消失的设备做集合增删
+                var incoming = devices.ToDictionary(d => d.Id);
+                for (var i = Items.Count - 1; i >= 0; i--)
+                {
+                    if (!incoming.TryGetValue(Items[i].Id, out var device))
+                    {
+                        if (ReferenceEquals(SelectedDevice, Items[i]))
+                            SelectedDevice = null;
+                        Items.RemoveAt(i);
+                        continue;
+                    }
+
+                    snapshots.TryGetValue(device.Id, out var snapshot);
+                    ApplySnapshot(Items[i], device, snapshot);
+                }
+
                 foreach (var device in devices)
                 {
+                    if (Items.Any(item => item.Id == device.Id))
+                        continue;
                     snapshots.TryGetValue(device.Id, out var snapshot);
-                    Items.Add(new DeviceItem
-                    {
-                        Id = device.Id,
-                        Name = device.Name,
-                        Protocol = BuildProtocolText(device.Protocol),
-                        Status = snapshot?.Status ?? device.Status,
-                        LastCollectionAt = snapshot?.LastCollectionAt,
-                        LastError = snapshot?.LastError,
-                        PointsCount = device.Points.Count
-                    });
+                    var item = new DeviceItem { Id = device.Id, Name = device.Name };
+                    ApplySnapshot(item, device, snapshot);
+                    Items.Add(item);
                 }
                 StatusText = $"共 {Items.Count} 台设备";
+                DeviceCountChanged?.Invoke(this, Items.Count);
             });
         }
         catch (Exception ex)
@@ -231,6 +251,21 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         return text;
     }
 
+    /// <summary>把设备目录行 + 健康快照原位写入行模型（ADR-037 S7，属性可观察触发 UI 刷新）。</summary>
+    private static void ApplySnapshot(DeviceItem item, Device device, DeviceHealthSnapshot? snapshot)
+    {
+        item.Name = device.Name;
+        item.Protocol = BuildProtocolText(device.Protocol);
+        item.Status = snapshot?.Status ?? device.Status;
+        item.LastCollectionAt = snapshot?.LastCollectionAt;
+        item.LastError = snapshot?.LastError;
+        item.PointsCount = device.Points.Count;
+        item.UnitId = device.Connection.Parameters.TryGetValue("UnitId", out var rawUnitId)
+            && int.TryParse(rawUnitId?.ToString(), out var unitId)
+                ? unitId
+                : null;
+    }
+
     public void Dispose()
     {
         _bridge.FrameReady -= OnFrame;
@@ -246,16 +281,28 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     }
 }
 
-/// <summary>设备列表行（不可变快照，每次刷新重建）</summary>
-public sealed class DeviceItem
+/// <summary>设备列表行（ADR-037 S7：可观察对象，增量刷新时原位更新避免重建/选中丢失）</summary>
+public sealed partial class DeviceItem : ObservableObject
 {
     public Guid Id { get; init; }
-    public required string Name { get; init; }
-    public required string Protocol { get; init; }
-    public DeviceStatus Status { get; init; }
-    public DateTime? LastCollectionAt { get; init; }
-    public string? LastError { get; init; }
-    public int PointsCount { get; init; }
+
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private string _protocol = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
+    private DeviceStatus _status;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LastCollectionText))]
+    private DateTime? _lastCollectionAt;
+
+    [ObservableProperty] private string? _lastError;
+    [ObservableProperty] private int _pointsCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UnitIdText))]
+    private int? _unitId;
 
     public string StatusText => Status switch
     {
@@ -267,4 +314,7 @@ public sealed class DeviceItem
     };
 
     public string LastCollectionText => LastCollectionAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—";
+
+    /// <summary>从站号显示文本（非 Modbus/未配置显示占位符）</summary>
+    public string UnitIdText => UnitId is null ? "—" : UnitId.Value.ToString();
 }

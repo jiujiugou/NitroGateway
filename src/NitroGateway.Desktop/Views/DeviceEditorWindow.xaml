@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         xmlns:dev="clr-namespace:NitroGateway.Domain.Devices;assembly=NitroGateway.Domain"
-        Width="720" SizeToContent="Height" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Width="720" Height="620" MinWidth="560" MinHeight="400" SizeToContent="Manual"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         ShowInTaskbar="False">
     <Window.Resources>
         <!-- 合并共享样式：无 Application 实例（单元测试冒烟）时也能解析 StaticResource（PrimaryButtonStyle 等） -->
@@ -20,7 +21,9 @@
         </ResourceDictionary>
     </Window.Resources>
 
-    <Grid Margin="16">
+    <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="16">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="*" />
@@ -28,6 +31,7 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -45,15 +49,15 @@
         <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,12">
             <TextBlock Text="协议" />
             <ComboBox SelectedItem="{Binding ProtocolName}">
-                <ComboBoxItem Content="Modbus" />
-                <ComboBoxItem Content="S7" />
+                <sys:String>Modbus</sys:String>
+                <sys:String>S7</sys:String>
             </ComboBox>
         </StackPanel>
         <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,12,12">
             <TextBlock Text="传输方式" />
             <ComboBox SelectedItem="{Binding Dialect}">
-                <ComboBoxItem Content="TCP" />
-                <ComboBoxItem Content="RTU" />
+                <sys:String>TCP</sys:String>
+                <sys:String>RTU</sys:String>
             </ComboBox>
         </StackPanel>
         <StackPanel Grid.Row="0" Grid.Column="3" Margin="0,0,0,12">
@@ -76,10 +80,10 @@
                     Visibility="{Binding IsModbus, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="字节序" />
             <ComboBox SelectedItem="{Binding DataFormat}">
-                <ComboBoxItem Content="ABCD" />
-                <ComboBoxItem Content="CDAB" />
-                <ComboBoxItem Content="BADC" />
-                <ComboBoxItem Content="DCBA" />
+                <sys:String>ABCD</sys:String>
+                <sys:String>CDAB</sys:String>
+                <sys:String>BADC</sys:String>
+                <sys:String>DCBA</sys:String>
             </ComboBox>
         </StackPanel>
         <StackPanel Grid.Row="1" Grid.Column="3" Margin="0,0,0,12"
@@ -98,10 +102,10 @@
                     Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="CPU 型号" />
             <ComboBox SelectedItem="{Binding CpuType}">
-                <ComboBoxItem Content="S-1200" />
-                <ComboBoxItem Content="S-1500" />
-                <ComboBoxItem Content="S-300" />
-                <ComboBoxItem Content="S-400" />
+                <sys:String>S-1200</sys:String>
+                <sys:String>S-1500</sys:String>
+                <sys:String>S-300</sys:String>
+                <sys:String>S-400</sys:String>
             </ComboBox>
         </StackPanel>
         <StackPanel Grid.Row="2" Grid.Column="2" Margin="0,0,12,12"
@@ -112,12 +116,12 @@
         <StackPanel Grid.Row="2" Grid.Column="3" Margin="0,0,0,12"
                     Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="波特率" />
-            <ComboBox SelectedItem="{Binding BaudRate}" IsEditable="True">
-                <ComboBoxItem Content="9600" />
-                <ComboBoxItem Content="19200" />
-                <ComboBoxItem Content="38400" />
-                <ComboBoxItem Content="57600" />
-                <ComboBoxItem Content="115200" />
+            <ComboBox Text="{Binding BaudRate}" IsEditable="True">
+                <sys:String>9600</sys:String>
+                <sys:String>19200</sys:String>
+                <sys:String>38400</sys:String>
+                <sys:String>57600</sys:String>
+                <sys:String>115200</sys:String>
             </ComboBox>
         </StackPanel>
 
@@ -126,38 +130,55 @@
                     Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="校验位" />
             <ComboBox SelectedItem="{Binding Parity}">
-                <ComboBoxItem Content="None" />
-                <ComboBoxItem Content="Even" />
-                <ComboBoxItem Content="Odd" />
+                <sys:String>None</sys:String>
+                <sys:String>Even</sys:String>
+                <sys:String>Odd</sys:String>
+                <sys:String>Mark</sys:String>
+                <sys:String>Space</sys:String>
             </ComboBox>
         </StackPanel>
-        <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,12,12">
+        <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,12,12" Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="数据位" />
+            <ComboBox Text="{Binding DataBits}" IsEditable="True">
+                <sys:String>8</sys:String>
+                <sys:String>7</sys:String>
+            </ComboBox>
+        </StackPanel>
+        <StackPanel Grid.Row="3" Grid.Column="2" Margin="0,0,12,12" Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="停止位" />
+            <ComboBox SelectedItem="{Binding StopBits}">
+                <sys:String>One</sys:String>
+                <sys:String>Two</sys:String>
+            </ComboBox>
+        </StackPanel>
+        <StackPanel Grid.Row="3" Grid.Column="3" Margin="0,0,12,12">
             <TextBlock Text="连接超时(ms)" />
             <TextBox Text="{Binding ConnectTimeoutMs, UpdateSourceTrigger=PropertyChanged}" />
         </StackPanel>
-        <StackPanel Grid.Row="3" Grid.Column="2" Margin="0,0,12,12">
+        <StackPanel Grid.Row="4" Grid.Column="0" Margin="0,0,12,12">
             <TextBlock Text="请求超时(ms)" />
             <TextBox Text="{Binding RequestTimeoutMs, UpdateSourceTrigger=PropertyChanged}" />
         </StackPanel>
-        <StackPanel Grid.Row="3" Grid.Column="3" Margin="0,0,0,12">
+        <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,12">
             <TextBlock Text="重试次数" />
             <TextBox Text="{Binding RetryCount, UpdateSourceTrigger=PropertyChanged}" />
         </StackPanel>
 
         <!-- 行 5：重试间隔 / 描述 -->
-        <StackPanel Grid.Row="4" Grid.Column="0" Margin="0,0,12,12">
+        <StackPanel Grid.Row="4" Grid.Column="2" Margin="0,0,12,12">
             <TextBlock Text="重试间隔(ms)" />
             <TextBox Text="{Binding RetryIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
         </StackPanel>
-        <StackPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,12">
+        <StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="4" Margin="0,0,0,12">
             <TextBlock Text="描述" />
             <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" />
         </StackPanel>
 
         <!-- 行 6：按钮 -->
-        <StackPanel Grid.Row="5" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="6" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="保存" Width="90" Margin="0,0,12,0" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
             <Button Content="取消" Width="90" IsCancel="True" Click="OnCancel" />
         </StackPanel>
-    </Grid>
+        </Grid>
+    </ScrollViewer>
 </Window>

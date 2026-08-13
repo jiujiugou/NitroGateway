@@ -21,8 +21,11 @@ namespace NitroGateway.Desktop.ViewModels;
 /// </summary>
 public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
 {
-    /// <summary>曲线环形缓冲上限（1s 采集 ≈ 10 分钟窗口）。</summary>
-    private const int MaxChartPoints = 600;
+    /// <summary>
+    /// 曲线环形缓冲上限（ADR-037 S9：与预载 2 小时历史对齐，1s 采集 ≈ 2 小时窗口）。
+    /// 帧更新时只追加，溢出按批移除（S12），避免逐项 O(n) 删除。
+    /// </summary>
+    private const int MaxChartPoints = 7200;
 
     private readonly IDeviceSnapshotCache _cache;
     private readonly IMeasurementStore _store;
@@ -41,7 +44,7 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<DeviceOption> Devices { get; } = [];
     public ObservableCollection<RealtimePointItem> Points { get; } = [];
-    public ObservableCollection<DateTimePoint> ChartValues { get; } = [];
+    public RingObservableCollection<DateTimePoint> ChartValues { get; } = [];
 
     /// <summary>LiveCharts2 绑定：系列 / X 轴（时间）/ Y 轴</summary>
     public ISeries[] Series { get; }
@@ -228,8 +231,9 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
                     TryToDouble(snapshot.Value, out var value))
                 {
                     ChartValues.Add(new DateTimePoint(snapshot.Timestamp.ToLocalTime(), value));
-                    while (ChartValues.Count > MaxChartPoints)
-                        ChartValues.RemoveAt(0);
+                    // ADR-037 S12：溢出批量移除（单次 Reset 通知），替代逐项 RemoveAt(0) 的 O(n) 搬移
+                    var overflow = ChartValues.Count - MaxChartPoints;
+                    ChartValues.TrimFront(overflow);
                 }
             }
         });
