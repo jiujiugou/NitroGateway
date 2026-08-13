@@ -68,13 +68,15 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
         _bridge = bridge;
         _logger = logger;
 
+        // 曲线配色与桌面主题（Styles.xaml PrimaryBrush #2563EB）对齐：
+        // 实线 2px 靛蓝 + 同色系淡蓝渐变填充，坐标轴文字/分隔线用浅灰
         _series = new LineSeries<DateTimePoint>
         {
             Name = "实时值",
-            Fill = null,
+            Fill = new LinearGradientPaint(new SKColor(37, 99, 235, 60), new SKColor(37, 99, 235, 0)),
             GeometrySize = 0,
-            LineSmoothness = 0,
-            Stroke = new SolidColorPaint(SKColors.SteelBlue) { StrokeThickness = 1.5f }
+            LineSmoothness = 0.2,
+            Stroke = new SolidColorPaint(SKColor.Parse("#2563EB")) { StrokeThickness = 2 }
         };
         Series = new ISeries[] { _series };
         // 空曲线时 LiveCharts 会用 NaN 等占位值调 labeler，(long)NaN 为负数会令 new DateTime 抛 Ticks 越界，故先做范围保护
@@ -89,10 +91,20 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
                         return string.Empty;
                     return new DateTime(ticks).ToString("HH:mm:ss");
                 },
-                TextSize = 11
+                TextSize = 11,
+                LabelsPaint = new SolidColorPaint(SKColor.Parse("#64748B")),
+                SeparatorsPaint = new SolidColorPaint(SKColor.Parse("#E2E8F0")) { StrokeThickness = 1 }
             }
         };
-        YAxes = new[] { new Axis { TextSize = 11 } };
+        YAxes = new[]
+        {
+            new Axis
+            {
+                TextSize = 11,
+                LabelsPaint = new SolidColorPaint(SKColor.Parse("#64748B")),
+                SeparatorsPaint = new SolidColorPaint(SKColor.Parse("#E2E8F0")) { StrokeThickness = 1 }
+            }
+        };
 
         _bridge.FrameReady += OnFrame;
         _ = LoadDevicesAsync();

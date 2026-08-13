@@ -3,8 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:NitroGateway.Desktop.ViewModels"
         xmlns:views="clr-namespace:NitroGateway.Desktop.Views"
-        Title="NitroGateway 现场采集端" Height="720" Width="1180"
-        WindowStartupLocation="CenterScreen">
+        Title="NitroGateway 现场采集端" Height="760" Width="1240"
+        MinHeight="600" MinWidth="1000"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource PageBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontSize="13.5">
     <Window.Resources>
         <DataTemplate DataType="{x:Type vm:DevicesViewModel}"><views:DevicesView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:RealtimeViewModel}"><views:RealtimeView /></DataTemplate>
@@ -12,28 +17,25 @@
         <DataTemplate DataType="{x:Type vm:HistoryViewModel}"><views:HistoryView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}"><views:SettingsView /></DataTemplate>
 
-        <!-- 左侧导航项：悬停浅灰、选中主色底 + 左侧主色条 -->
+        <!-- 左侧导航项（深色侧栏）：悬停浅灰底、选中主色圆角胶囊 + 白色文字 -->
         <Style x:Key="NavItemStyle" TargetType="ListBoxItem">
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="Foreground" Value="{StaticResource NavForeground}" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Margin" Value="0,2" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd"
-                                Background="Transparent"
-                                BorderBrush="Transparent"
-                                BorderThickness="3,0,0,0"
-                                Padding="16,11">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="7" Padding="13,11">
                             <ContentPresenter />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHover}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource NavHoverBrush}" />
+                                <Setter Property="Foreground" Value="White" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource PrimaryLightBrush}" />
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
-                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource NavSelectedBrush}" />
+                                <Setter Property="Foreground" Value="White" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -50,38 +52,47 @@
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="224" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧导航：品牌区 + 菜单 -->
-            <Border Grid.Column="0" Background="White" BorderBrush="{StaticResource BorderLight}" BorderThickness="0,0,1,0">
+            <!-- 左侧导航：深色渐变 + 品牌区 + 菜单 + 页脚 -->
+            <Border Grid.Column="0" Background="{StaticResource NavGradientBrush}">
                 <DockPanel>
-                    <StackPanel DockPanel.Dock="Top" Margin="20,20,20,18">
+                    <StackPanel DockPanel.Dock="Top" Margin="20,24,20,20">
                         <StackPanel Orientation="Horizontal">
-                            <Border Width="34" Height="34" CornerRadius="6">
-                                <!-- ADR-037 S10：品牌块轻微渐变（令牌化画刷，低配机无阴影开销） -->
+                            <Border Width="38" Height="38" CornerRadius="9">
+                                <!-- ADR-037 S10：品牌块渐变（令牌化画刷，低配机无阴影开销） -->
                                 <Border.Background>
                                     <StaticResource ResourceKey="BrandGradientBrush" />
                                 </Border.Background>
-                                <TextBlock Text="NG" Foreground="White" FontWeight="Bold" FontSize="14"
+                                <TextBlock Text="NG" Foreground="White" FontWeight="Bold" FontSize="15"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="NitroGateway" FontWeight="Bold" FontSize="15" />
-                                <TextBlock Text="现场采集端" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,2,0,0" />
+                            <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="NitroGateway" Foreground="White" FontWeight="Bold" FontSize="16" />
+                                <TextBlock Text="现场采集端" Foreground="{StaticResource NavMutedBrush}" FontSize="11.5" Margin="0,2,0,0" />
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Bottom" Margin="20,14,20,18">
+                        <Border Height="1" Background="{StaticResource NavHoverBrush}" Margin="0,0,0,12" />
+                        <TextBlock Text="本地采集 · 单机运行" Foreground="{StaticResource NavMutedBrush}" FontSize="11.5" />
+                    </StackPanel>
+
                     <ListBox ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNav}"
-                             Background="Transparent" BorderThickness="0" Padding="0"
+                             Background="Transparent" BorderThickness="0" Padding="10,0"
+                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
                              ItemContainerStyle="{StaticResource NavItemStyle}">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                                               VerticalAlignment="Center" Margin="0,0,10,0" />
-                                    <TextBlock Text="{Binding Title}" FontSize="13.5" />
+                                    <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="17"
+                                               VerticalAlignment="Center" Margin="0,0,12,0"
+                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
+                                    <TextBlock Text="{Binding Title}" FontSize="14"
+                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -93,15 +104,23 @@
         </Grid>
 
         <!-- 状态栏（ADR-026 D9：MQTT 状态 + 缓冲水位现场可视） -->
-        <Border Grid.Row="1" Background="{StaticResource StatusBarBackground}" Padding="12,6">
+        <Border Grid.Row="1" Background="{StaticResource StatusBarBackground}"
+                BorderBrush="{StaticResource StatusBarTopBorderBrush}" BorderThickness="0,1,0,0"
+                Padding="22,9">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="MQTT：" Foreground="{StaticResource StatusBarText}" />
-                <TextBlock Text="{Binding MqttStateText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
-                <TextBlock Text="缓冲积压：" Foreground="{StaticResource StatusBarText}" />
-                <TextBlock Text="{Binding BufferBacklogText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
-                <TextBlock Text="设备：" Foreground="{StaticResource StatusBarText}" />
-                <TextBlock Text="{Binding DeviceCountText}" Foreground="White" FontWeight="SemiBold" Margin="2,0,18,0" />
-                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource StatusBarText}" />
+                <TextBlock Text="MQTT" Foreground="{StaticResource StatusBarText}" FontSize="12" />
+                <TextBlock Text="{Binding MqttStateText}" Foreground="White" FontWeight="SemiBold"
+                           FontSize="12" Margin="6,0,0,0" />
+                <Border Width="1" Height="14" Background="{StaticResource StatusBarSeparatorBrush}" Margin="20,0" />
+                <TextBlock Text="缓冲积压" Foreground="{StaticResource StatusBarText}" FontSize="12" />
+                <TextBlock Text="{Binding BufferBacklogText}" Foreground="White" FontWeight="SemiBold"
+                           FontSize="12" Margin="6,0,0,0" />
+                <Border Width="1" Height="14" Background="{StaticResource StatusBarSeparatorBrush}" Margin="20,0" />
+                <TextBlock Text="设备" Foreground="{StaticResource StatusBarText}" FontSize="12" />
+                <TextBlock Text="{Binding DeviceCountText}" Foreground="White" FontWeight="SemiBold"
+                           FontSize="12" Margin="6,0,0,0" />
+                <Border Width="1" Height="14" Background="{StaticResource StatusBarSeparatorBrush}" Margin="20,0" />
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource StatusBarText}" FontSize="12" />
             </StackPanel>
         </Border>
     </Grid>

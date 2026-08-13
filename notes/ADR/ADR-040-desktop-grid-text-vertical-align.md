@@ -1,0 +1,11 @@
+# ADR-040: 表格文字垂直对齐（DataGridTextColumn 上飘修复）
+- 日期: 2026-08-13 | 状态: 已实施 | 来源: 用户「这里的显示不对称，很突兀」（设备表格行内文字）
+- 范围: src/NitroGateway.Desktop 的 Themes/Styles.xaml + Views/AlarmsView.xaml + Views/DevicesView.xaml + Views/HistoryView.xaml + Views/PointsWindow.xaml + Views/RealtimeView.xaml
+- 三问: 为什么做=同一行里 DataGridTextColumn 文本顶部对齐、DataGridTemplateColumn（图标+名称/状态徽章）垂直居中，文字「上飘」约 16px 视觉错位；验收=文本列与模板列垂直中线对齐，build+单测全绿；不做=表格行内视觉重心不一致
+- G1 确认: 纯 XAML 样式/视觉变更，无接口/数据/行为变更，直接实施
+- 根因: DataGridTextColumn 生成的 TextBlock 默认 VerticalAlignment=Stretch，字形渲染在文本块顶部（CellStyle 的 VerticalContentAlignment=Center 只居中 TextBlock 的整块布局框，框内字形仍在顶部）；DataGridTemplateColumn 根元素显式 VerticalAlignment=Center 则真正居中
+- 像素定位（tools/ui-asym.png，1550×950 物理 @125% DPI）：数据行 y378-440 中线 409；模板列 c1 设备名=412 / c2 状态徽章=410.5（居中），文本列 c3 从站=393.5 / c4 上次采集=393.5 / c5 点位数=393.5 / c6 错误=395（上飘 -14~-16px）
+- 修复: Styles.xaml 新增 DataGridCellTextStyle（TextBlock VerticalAlignment=Center + Foreground=TextPrimary + TextFormattingMode=Display）；5 个含 DataGridTextColumn 的视图共 29 处加 ElementStyle="{StaticResource DataGridCellTextStyle}"
+- 坑: ElementStyle 会覆盖隐式 TextBlock 样式（Foreground=TextPrimary/Display 模式），故共享样式显式补齐这两个 Setter，避免单元格文字变色/渲染模式漂移
+- 验证: dotnet build NitroGateway.slnx 0 错误；单测 559 全绿；重启应用重抓 tools/verify-1.png 逐列测量——c3/c4/c5=410.5、c6=412，全部落回中线 ±3px 内，与模板列一致（修复前 -14~-16px）
+- 未提交: git 提交由用户执行

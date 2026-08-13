@@ -45,6 +45,12 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     private bool _isLoading;
     [ObservableProperty] private string _statusText = "";
 
+    // ADR-038：设备管理统计卡（设备总数/在线/离线/点位数），随 RefreshAsync 重算
+    [ObservableProperty] private int _totalCount;
+    [ObservableProperty] private int _onlineCount;
+    [ObservableProperty] private int _offlineCount;
+    [ObservableProperty] private int _totalPoints;
+
     /// <summary>加载完成标志（ADR-037 S3）：刷新中禁用刷新按钮，避免无反馈的防重入吞点击。</summary>
     public bool IsIdle => !IsLoading;
 
@@ -221,6 +227,10 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
                     ApplySnapshot(item, device, snapshot);
                     Items.Add(item);
                 }
+                TotalCount = Items.Count;
+                OnlineCount = Items.Count(i => i.Status == DeviceStatus.Online);
+                OfflineCount = Items.Count(i => i.Status == DeviceStatus.Offline);
+                TotalPoints = Items.Sum(i => i.PointsCount);
                 StatusText = $"共 {Items.Count} 台设备";
                 DeviceCountChanged?.Invoke(this, Items.Count);
             });

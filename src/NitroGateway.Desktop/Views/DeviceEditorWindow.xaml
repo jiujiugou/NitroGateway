@@ -3,182 +3,209 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         xmlns:dev="clr-namespace:NitroGateway.Domain.Devices;assembly=NitroGateway.Domain"
-        Width="720" Height="620" MinWidth="560" MinHeight="400" SizeToContent="Manual"
+        Width="760" Height="680" MinWidth="600" MinHeight="480" SizeToContent="Manual"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
-        ShowInTaskbar="False">
+        ShowInTaskbar="False"
+        Background="{DynamicResource PageBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontSize="13.5">
     <Window.Resources>
         <!-- 合并共享样式：无 Application 实例（单元测试冒烟）时也能解析 StaticResource（PrimaryButtonStyle 等） -->
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
-        <BooleanToVisibilityConverter x:Key="BoolToVis" />
-        <ObjectDataProvider x:Key="DeviceStatusValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="dev:DeviceStatus" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
+            <ObjectDataProvider x:Key="DeviceStatusValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+                <ObjectDataProvider.MethodParameters>
+                    <x:Type TypeName="dev:DeviceStatus" />
+                </ObjectDataProvider.MethodParameters>
+            </ObjectDataProvider>
+            <!-- ADR-038：表单字段统一尺寸（两列排布，隐藏字段自动回流） -->
+            <Style x:Key="FormFieldStyle" TargetType="StackPanel">
+                <Setter Property="Width" Value="300" />
+                <Setter Property="Margin" Value="0,0,18,16" />
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
-    <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="16">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+    <Grid Margin="26">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 行 1：名称 / 协议 / 传输方式 / 状态 -->
-        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,12">
-            <TextBlock Text="设备名称" />
-            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,12">
-            <TextBlock Text="协议" />
-            <ComboBox SelectedItem="{Binding ProtocolName}">
-                <sys:String>Modbus</sys:String>
-                <sys:String>S7</sys:String>
-            </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,12,12">
-            <TextBlock Text="传输方式" />
-            <ComboBox SelectedItem="{Binding Dialect}">
-                <sys:String>TCP</sys:String>
-                <sys:String>RTU</sys:String>
-            </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Row="0" Grid.Column="3" Margin="0,0,0,12">
-            <TextBlock Text="状态" />
-            <ComboBox ItemsSource="{Binding Source={StaticResource DeviceStatusValues}}"
-                      SelectedItem="{Binding Status}" />
+        <!-- 页头：设备图标 + 标题 + 副标题 -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <Border Width="46" Height="46" CornerRadius="10" Background="{StaticResource PrimaryLightBrush}"
+                    VerticalAlignment="Center">
+                <TextBlock Text="{StaticResource IconDevice}" FontFamily="Segoe MDL2 Assets" FontSize="20"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                           Style="{StaticResource PageTitleStyle}" />
+                <TextBlock Text="配置设备连接参数与采集属性" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+            </StackPanel>
         </StackPanel>
 
-        <!-- 行 2：连接地址 / UnitId / 字节序 / Rack -->
-        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,12">
-            <TextBlock Text="连接地址（串口填 COM3 等）" />
-            <TextBox Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,12"
-                    Visibility="{Binding IsModbus, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="从站地址 UnitId" />
-            <TextBox Text="{Binding UnitId, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,12,12"
-                    Visibility="{Binding IsModbus, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="字节序" />
-            <ComboBox SelectedItem="{Binding DataFormat}">
-                <sys:String>ABCD</sys:String>
-                <sys:String>CDAB</sys:String>
-                <sys:String>BADC</sys:String>
-                <sys:String>DCBA</sys:String>
-            </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="3" Margin="0,0,0,12"
-                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="Rack（机架）" />
-            <TextBox Text="{Binding Rack, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
+        <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
+            <StackPanel>
+                <!-- 基础信息 -->
+                <GroupBox Header="基础信息" Margin="0,0,0,14">
+                    <WrapPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="设备名称" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="协议" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox SelectedItem="{Binding ProtocolName}">
+                                <sys:String>Modbus</sys:String>
+                                <sys:String>S7</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="传输方式" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox SelectedItem="{Binding Dialect}">
+                                <sys:String>TCP</sys:String>
+                                <sys:String>RTU</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="状态" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox ItemsSource="{Binding Source={StaticResource DeviceStatusValues}}"
+                                      SelectedItem="{Binding Status}" />
+                        </StackPanel>
+                    </WrapPanel>
+                </GroupBox>
 
-        <!-- 行 3：Slot / CpuType / PingAddress / 波特率 -->
-        <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,12"
-                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="Slot（插槽）" />
-            <TextBox Text="{Binding Slot, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,12,12"
-                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="CPU 型号" />
-            <ComboBox SelectedItem="{Binding CpuType}">
-                <sys:String>S-1200</sys:String>
-                <sys:String>S-1500</sys:String>
-                <sys:String>S-300</sys:String>
-                <sys:String>S-400</sys:String>
-            </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Row="2" Grid.Column="2" Margin="0,0,12,12"
-                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="Ping 地址（如 DB1.DBW0）" />
-            <TextBox Text="{Binding PingAddress, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="2" Grid.Column="3" Margin="0,0,0,12"
-                    Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="波特率" />
-            <ComboBox Text="{Binding BaudRate}" IsEditable="True">
-                <sys:String>9600</sys:String>
-                <sys:String>19200</sys:String>
-                <sys:String>38400</sys:String>
-                <sys:String>57600</sys:String>
-                <sys:String>115200</sys:String>
-            </ComboBox>
-        </StackPanel>
+                <!-- 连接参数（按协议动态显隐） -->
+                <GroupBox Header="连接参数" Margin="0,0,0,14">
+                    <WrapPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="连接地址（串口填 COM3 等）" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsModbus, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="从站地址 UnitId" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding UnitId, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsModbus, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="字节序" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox SelectedItem="{Binding DataFormat}">
+                                <sys:String>ABCD</sys:String>
+                                <sys:String>CDAB</sys:String>
+                                <sys:String>BADC</sys:String>
+                                <sys:String>DCBA</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Rack（机架）" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding Rack, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Slot（插槽）" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding Slot, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="CPU 型号" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox SelectedItem="{Binding CpuType}">
+                                <sys:String>S-1200</sys:String>
+                                <sys:String>S-1500</sys:String>
+                                <sys:String>S-300</sys:String>
+                                <sys:String>S-400</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsS7, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Ping 地址（如 DB1.DBW0）" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding PingAddress, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="波特率" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox Text="{Binding BaudRate}" IsEditable="True">
+                                <sys:String>9600</sys:String>
+                                <sys:String>19200</sys:String>
+                                <sys:String>38400</sys:String>
+                                <sys:String>57600</sys:String>
+                                <sys:String>115200</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="校验位" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox SelectedItem="{Binding Parity}">
+                                <sys:String>None</sys:String>
+                                <sys:String>Even</sys:String>
+                                <sys:String>Odd</sys:String>
+                                <sys:String>Mark</sys:String>
+                                <sys:String>Space</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="数据位" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox Text="{Binding DataBits}" IsEditable="True">
+                                <sys:String>8</sys:String>
+                                <sys:String>7</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}"
+                                    Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="停止位" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox SelectedItem="{Binding StopBits}">
+                                <sys:String>One</sys:String>
+                                <sys:String>Two</sys:String>
+                            </ComboBox>
+                        </StackPanel>
+                    </WrapPanel>
+                </GroupBox>
 
-        <!-- 行 4：校验位 / 超时 -->
-        <StackPanel Grid.Row="3" Grid.Column="0" Margin="0,0,12,12"
-                    Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="校验位" />
-            <ComboBox SelectedItem="{Binding Parity}">
-                <sys:String>None</sys:String>
-                <sys:String>Even</sys:String>
-                <sys:String>Odd</sys:String>
-                <sys:String>Mark</sys:String>
-                <sys:String>Space</sys:String>
-            </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,12,12" Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="数据位" />
-            <ComboBox Text="{Binding DataBits}" IsEditable="True">
-                <sys:String>8</sys:String>
-                <sys:String>7</sys:String>
-            </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Row="3" Grid.Column="2" Margin="0,0,12,12" Visibility="{Binding IsRtu, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="停止位" />
-            <ComboBox SelectedItem="{Binding StopBits}">
-                <sys:String>One</sys:String>
-                <sys:String>Two</sys:String>
-            </ComboBox>
-        </StackPanel>
-        <StackPanel Grid.Row="3" Grid.Column="3" Margin="0,0,12,12">
-            <TextBlock Text="连接超时(ms)" />
-            <TextBox Text="{Binding ConnectTimeoutMs, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="4" Grid.Column="0" Margin="0,0,12,12">
-            <TextBlock Text="请求超时(ms)" />
-            <TextBox Text="{Binding RequestTimeoutMs, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,12">
-            <TextBlock Text="重试次数" />
-            <TextBox Text="{Binding RetryCount, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
+                <!-- 采集参数 -->
+                <GroupBox Header="采集参数" Margin="0,0,0,14">
+                    <WrapPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="连接超时(ms)" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding ConnectTimeoutMs, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="请求超时(ms)" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding RequestTimeoutMs, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="重试次数" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding RetryCount, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="重试间隔(ms)" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding RetryIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                    </WrapPanel>
+                </GroupBox>
 
-        <!-- 行 5：重试间隔 / 描述 -->
-        <StackPanel Grid.Row="4" Grid.Column="2" Margin="0,0,12,12">
-            <TextBlock Text="重试间隔(ms)" />
-            <TextBox Text="{Binding RetryIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="4" Margin="0,0,0,12">
-            <TextBlock Text="描述" />
-            <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
+                <!-- 描述 -->
+                <GroupBox Header="描述">
+                    <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                             TextWrapping="Wrap" AcceptsReturn="True" Height="72"
+                             VerticalScrollBarVisibility="Auto" />
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
 
-        <!-- 行 6：按钮 -->
-        <StackPanel Grid.Row="6" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="保存" Width="90" Margin="0,0,12,0" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
-            <Button Content="取消" Width="90" IsCancel="True" Click="OnCancel" />
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Width="96" Margin="0,0,12,0" IsCancel="True" Click="OnCancel" />
+            <Button Content="保存" Width="96" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
         </StackPanel>
-        </Grid>
-    </ScrollViewer>
+    </Grid>
 </Window>

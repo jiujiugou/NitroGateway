@@ -1,9 +1,13 @@
-﻿<Window x:Class="NitroGateway.Desktop.Views.StartupWindow"
+<Window x:Class="NitroGateway.Desktop.Views.StartupWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="NitroGateway 现场采集端" Width="380" SizeToContent="Height"
+        Title="NitroGateway 现场采集端" Width="420" SizeToContent="Height"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
-        WindowStartupLocation="CenterScreen" Topmost="True">
+        WindowStartupLocation="CenterScreen" Topmost="True"
+        Background="{DynamicResource PageBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontSize="13.5">
     <!-- ADR-037 S8：启动反馈窗口——宿主启动（迁移+后台服务）期间可见，失败时窗口内提示而非仅 MessageBox -->
     <Window.Resources>
         <ResourceDictionary>
@@ -12,15 +16,30 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Window.Resources>
-    <Border BorderBrush="{StaticResource BorderLight}" BorderThickness="1" Padding="24">
+    <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLight}"
+            BorderThickness="1" Padding="28">
         <StackPanel>
-            <TextBlock Text="NitroGateway 现场采集端" FontWeight="Bold" FontSize="16" />
-            <TextBlock Text="正在启动采集服务（数据库迁移与后台服务初始化）…"
-                       Foreground="{StaticResource TextSecondary}" Margin="0,8,0,0" TextWrapping="Wrap" />
-            <ProgressBar x:Name="StartupProgress" IsIndeterminate="True" Height="4" Margin="0,12,0,8" />
-            <TextBlock x:Name="StatusText" Text="请稍候…" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal">
+                <Border Width="46" Height="46" CornerRadius="10">
+                    <!-- ADR-037 S10：品牌块渐变 -->
+                    <Border.Background>
+                        <StaticResource ResourceKey="BrandGradientBrush" />
+                    </Border.Background>
+                    <TextBlock Text="NG" Foreground="White" FontWeight="Bold" FontSize="17"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="NitroGateway" FontWeight="Bold" FontSize="17" />
+                    <TextBlock Text="现场采集端" Foreground="{StaticResource TextSecondary}" FontSize="12" Margin="0,2,0,0" />
+                </StackPanel>
+            </StackPanel>
+            <TextBlock Text="正在启动采集服务…" Foreground="{StaticResource TextRegular}"
+                       Margin="0,22,0,0" />
+            <ProgressBar x:Name="StartupProgress" IsIndeterminate="True" Height="6" Margin="0,14,0,12" />
+            <TextBlock x:Name="StatusText" Text="正在初始化数据库与后台服务…"
+                       Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
             <Button x:Name="CloseButton" Content="关闭" Visibility="Collapsed" Click="OnClose"
-                    HorizontalAlignment="Right" Margin="0,16,0,0" Padding="16,5" />
+                    HorizontalAlignment="Right" Margin="0,20,0,0" Padding="22,6" />
         </StackPanel>
     </Border>
 </Window>

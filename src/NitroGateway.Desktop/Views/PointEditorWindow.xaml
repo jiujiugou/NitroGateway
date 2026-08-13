@@ -3,97 +3,118 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         xmlns:dev="clr-namespace:NitroGateway.Domain.Devices;assembly=NitroGateway.Domain"
-        Width="680" Height="500" MinWidth="520" MinHeight="360" SizeToContent="Manual"
+        Width="720" Height="560" MinWidth="560" MinHeight="420" SizeToContent="Manual"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
-        ShowInTaskbar="False">
+        ShowInTaskbar="False"
+        Background="{DynamicResource PageBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontSize="13.5">
     <Window.Resources>
         <!-- 合并共享样式：无 Application 实例（单元测试冒烟）时也能解析 StaticResource（PrimaryButtonStyle 等） -->
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
-        <ObjectDataProvider x:Key="DataTypeValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="dev:DataType" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="PointAccessValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="dev:PointAccess" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
+            <ObjectDataProvider x:Key="DataTypeValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+                <ObjectDataProvider.MethodParameters>
+                    <x:Type TypeName="dev:DataType" />
+                </ObjectDataProvider.MethodParameters>
+            </ObjectDataProvider>
+            <ObjectDataProvider x:Key="PointAccessValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+                <ObjectDataProvider.MethodParameters>
+                    <x:Type TypeName="dev:PointAccess" />
+                </ObjectDataProvider.MethodParameters>
+            </ObjectDataProvider>
         </ResourceDictionary>
     </Window.Resources>
 
-    <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="16">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+    <Grid Margin="26">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 行 1：名称 / 地址 / 类型 / 权限 -->
-        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,12">
-            <TextBlock Text="点位名称" />
-            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,12">
-            <TextBlock Text="地址" />
-            <TextBox Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" ToolTip="Modbus 如 40001 / S7 如 DB1.DBD0" />
-        </StackPanel>
-        <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,12,12">
-            <TextBlock Text="数据类型" />
-            <ComboBox ItemsSource="{Binding Source={StaticResource DataTypeValues}}"
-                      SelectedItem="{Binding DataType}" />
-        </StackPanel>
-        <StackPanel Grid.Row="0" Grid.Column="3" Margin="0,0,0,12">
-            <TextBlock Text="权限" />
-            <ComboBox ItemsSource="{Binding Source={StaticResource PointAccessValues}}"
-                      SelectedItem="{Binding Access}" />
+        <!-- 页头 -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="配置点位地址、缩放与采集参数" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
         </StackPanel>
 
-        <!-- 行 2：缩放 / 死区 / 采集间隔 -->
-        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,12">
-            <TextBlock Text="缩放系数" />
-            <TextBox Text="{Binding ScaleFactor, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,12">
-            <TextBlock Text="缩放偏移" />
-            <TextBox Text="{Binding ScaleOffset, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,12,12">
-            <TextBlock Text="死区" />
-            <TextBox Text="{Binding Deadband, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="3" Margin="0,0,0,12">
-            <TextBlock Text="采集间隔(ms，0=继承)" />
-            <TextBox Text="{Binding ScanIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
+        <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
+            <Border Style="{StaticResource CardBorderStyle}" Padding="20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-        <!-- 行 2 追加：启用 -->
-        <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,12" Orientation="Horizontal">
-            <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
-            <TextBlock Text="启用采集" VerticalAlignment="Center" Margin="4,0,0,0" />
-        </StackPanel>
-        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,12">
-            <TextBlock Text="描述" />
-            <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" />
-        </StackPanel>
+                    <!-- 行 1：名称 / 地址 / 类型 / 权限 -->
+                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,14">
+                        <TextBlock Text="点位名称" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,14">
+                        <TextBlock Text="地址" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Modbus 如 40001 / S7 如 DB1.DBD0" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,12,14">
+                        <TextBlock Text="数据类型" Style="{StaticResource FormLabelStyle}" />
+                        <ComboBox ItemsSource="{Binding Source={StaticResource DataTypeValues}}"
+                                  SelectedItem="{Binding DataType}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="3" Margin="0,0,0,14">
+                        <TextBlock Text="权限" Style="{StaticResource FormLabelStyle}" />
+                        <ComboBox ItemsSource="{Binding Source={StaticResource PointAccessValues}}"
+                                  SelectedItem="{Binding Access}" />
+                    </StackPanel>
 
-        <!-- 行 3：按钮 -->
-        <StackPanel Grid.Row="3" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="保存" Width="90" Margin="0,0,12,0" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
-            <Button Content="取消" Width="90" IsCancel="True" Click="OnCancel" />
+                    <!-- 行 2：缩放 / 死区 / 采集间隔 / 启用 -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,14">
+                        <TextBlock Text="缩放系数" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding ScaleFactor, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,14">
+                        <TextBlock Text="缩放偏移" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding ScaleOffset, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,12,14">
+                        <TextBlock Text="死区" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding Deadband, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="3" Margin="0,0,0,14">
+                        <TextBlock Text="采集间隔(ms，0=继承)" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding ScanIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+
+                    <!-- 行 3：启用 + 描述 -->
+                    <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,14" Orientation="Horizontal">
+                        <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
+                        <TextBlock Text="启用采集" VerticalAlignment="Center" Margin="6,0,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,14">
+                        <TextBlock Text="描述" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Width="96" Margin="0,0,12,0" IsCancel="True" Click="OnCancel" />
+            <Button Content="保存" Width="96" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
         </StackPanel>
-        </Grid>
-    </ScrollViewer>
+    </Grid>
 </Window>

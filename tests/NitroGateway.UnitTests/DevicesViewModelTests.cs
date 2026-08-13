@@ -344,6 +344,29 @@ public sealed class DevicesViewModelTests : IDisposable
         Assert.Equal(1, raised);
     }
 
+    [Fact]
+    public async Task Refresh_computes_total_online_offline_and_point_counts()
+    {
+        // ADR-038：统计卡数据源——设备总数/在线/离线/点位数在刷新 diff 完成后重算
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var online = TestDevices.Device("在线设备", TestDevices.Point("P1"), TestDevices.Point("P2"));
+        online.Status = DeviceStatus.Online;
+        var offline = TestDevices.Device("离线设备");
+        offline.Status = DeviceStatus.Offline;
+        var unknown = TestDevices.Device("未知设备", TestDevices.Point("P3"));
+        unknown.Status = DeviceStatus.Unknown;
+        cache.EnqueueSuccess(online, offline, unknown);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(3, vm.TotalCount);
+        Assert.Equal(1, vm.OnlineCount);
+        Assert.Equal(1, vm.OfflineCount);
+        Assert.Equal(3, vm.TotalPoints);
+    }
+
     private DevicesViewModel CreateVm(
         IDeviceSnapshotCache cache, StubDeviceManager manager, StubDeviceDialogService dialogs,
         StubConfigSyncOutboxStore? outbox = null)

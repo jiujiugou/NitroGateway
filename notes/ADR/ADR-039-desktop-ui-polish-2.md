@@ -1,0 +1,13 @@
+# ADR-039: 桌面 UI 二轮打磨（侧栏对比度 / 统计卡 / 行美化 / 弹窗美化）
+- 日期: 2026-08-13 | 状态: 已实施 | 来源: 用户「左侧栏文字看不清、设备页要统计数、加设备后那行很丑、弹窗要美化」
+- 范围: src/NitroGateway.Desktop 的 Themes/Styles.xaml + Views/MainWindow.xaml + Views/DevicesView.xaml + Views/DeviceEditorWindow.xaml + ViewModels/DevicesViewModel.cs
+- 三问: 为什么做=侧栏导航文字在深底上仍渲染为深色看不见（根因见坑1），设备页缺概览数字，行/弹窗观感粗糙；验收=导航文字亮色可读 + 4 张统计卡 + 行徽章/双层名 + 分组弹窗，build+单测全绿；不做=主操作面可读性与信息密度不足
+- G1 确认: 纯视觉/样式变更 + DevicesViewModel 新增 4 个只读统计属性（无接口/数据模型变更），按 ADR-038 直接实施
+- 侧栏对比度: NavForeground #CBD5E1→#E2E8F0、NavMutedBrush #64748B→#94A3B8、NavHoverBrush #1F2937→#293548
+- 统计卡: DevicesViewModel 增 TotalCount/OnlineCount/OfflineCount/TotalPoints（RefreshAsync diff 后重算，附单测）；DevicesView 顶部 4 卡（蓝总/绿在线/红离线/紫点位，42×42 圆角图标底 + 22pt 粗体数值），工具栏下移一行
+- 行美化: DataGrid RowHeight=48；设备名列=30×30 靛蓝图标块 + 名称 13.5 SemiBold + 协议灰字双层；状态列=圆角徽章（圆角 11 + 圆点 + 12px SemiBold），DataTrigger 切 Online/Offline/Error/Maintenance 软底+语义色（与 web DeviceStatusTag 对齐）
+- 弹窗美化: DeviceEditorWindow 页头 46×46 靛蓝图标 + 标题/副标题；表单 4 个 GroupBox 分区（基础信息/连接参数/采集参数/描述）+ WrapPanel 两列（FormFieldStyle 宽 300）；高度 640→680 Min 440→480
+- 坑1（MainWindow.xaml 导航项 DataTemplate）: Styles.xaml 隐式 Style TargetType="TextBlock" 设 Foreground=TextPrimary(#1E293B)，优先级高于 ListBoxItem.Foreground 的继承，导致导航文字恒为深色（悬停/选中也不变白）→ 两个 TextBlock 显式绑定 `Foreground={Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}`，默认跟 NavForeground、悬停/选中跟 White
+- 坑2（DesktopThemeTests 回归）: Views/*.xaml 中任何 `#` 字符（含 XML 实体 `&#xE787;`）都会触发扫描失败 → 5 个 Segoe MDL2 图标字形（E787/E7F3/E73E/E711/E71B）全部收拢到 Styles.xaml 为 sys:String 资源，Views 仅 `{StaticResource IconXxx}` 引用（Views 零 `#`）
+- 验证: dotnet build NitroGateway.slnx 0 错误；单测 559 全绿（+1 Refresh_computes_total_online_offline_and_point_counts）；capture-window-dpi.ps1 像素采样确认导航文字 #E2E8F0 亮色、4 卡图标语义色、在线徽章软底 #EDF8E7+绿 #67C23A；经 UI 自动化加设备验证行/徽章渲染后已删除测试数据
+- 未提交: git 提交由用户执行

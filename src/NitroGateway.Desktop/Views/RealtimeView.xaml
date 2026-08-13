@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="NitroGateway.Desktop.Views.RealtimeView"
+<UserControl x:Class="NitroGateway.Desktop.Views.RealtimeView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF">
@@ -10,79 +10,104 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
-    <Grid Margin="12">
+
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-            <TextBlock Text="设备：" VerticalAlignment="Center" />
-            <ComboBox Width="220" ItemsSource="{Binding Devices}" DisplayMemberPath="Name"
-                      SelectedItem="{Binding SelectedDevice}" Margin="4,0,16,0" />
-            <TextBlock Text="点位：" VerticalAlignment="Center" />
-            <ComboBox Width="220" ItemsSource="{Binding Points}" DisplayMemberPath="Name"
-                      SelectedItem="{Binding SelectedPoint}" Margin="4,0,0,0" />
-            <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="16,0,0,0" />
+        <!-- 页头 -->
+        <StackPanel Grid.Row="0" Margin="26,22,26,14">
+            <TextBlock Text="实时数据" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="设备点位实时值与趋势曲线（最近 2 小时）" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
         </StackPanel>
 
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+        <Grid Grid.Row="1" Margin="26,0,26,22">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-            <Grid Grid.Column="0" Margin="0,0,8,0">
-                <DataGrid ItemsSource="{Binding Points}"
-                          AutoGenerateColumns="False" IsReadOnly="True" SelectedItem="{Binding SelectedPoint}"
-                          GridLinesVisibility="Horizontal" HeadersVisibility="Column">
-                    <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsBad}" Value="True">
-                                    <Setter Property="Background" Value="{StaticResource BadRowBrush}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </DataGrid.RowStyle>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="点位" Binding="{Binding Name}" Width="*" />
-                        <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="100" />
-                        <DataGridTextColumn Header="类型" Binding="{Binding DataType}" Width="80" />
-                        <DataGridTextColumn Header="值" Binding="{Binding ValueText}" Width="*" />
-                        <DataGridTextColumn Header="质量" Binding="{Binding QualityText}" Width="70" />
-                        <DataGridTextColumn Header="时间" Binding="{Binding TimestampText}" Width="90" />
-                    </DataGrid.Columns>
-                </DataGrid>
-                <!-- ADR-037 S3：空态提示（未选设备/无点位时显示），有点位时折叠 -->
-                <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Foreground="{StaticResource TextSecondary}" FontSize="13">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Points.Count}" Value="0">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </Grid>
-
-            <Border Grid.Column="1" BorderBrush="{StaticResource CurveCardBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8" Background="{StaticResource CardBackground}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" FontWeight="Bold" Margin="0,0,0,6">
-                        <Run Text="曲线：" />
-                        <Run Text="{Binding SelectedPoint.Name, FallbackValue=请选择点位查看曲线}" />
-                    </TextBlock>
-                    <lvc:CartesianChart Grid.Row="1" Series="{Binding Series}" XAxes="{Binding XAxes}" YAxes="{Binding YAxes}" />
-                </Grid>
+            <!-- 查询工具栏（卡片） -->
+            <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="14,10" Margin="0,0,0,12">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="设备" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,0,0" />
+                    <ComboBox Width="220" ItemsSource="{Binding Devices}" DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedDevice}" Margin="6,0,18,0" />
+                    <TextBlock Text="点位" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" />
+                    <ComboBox Width="220" ItemsSource="{Binding Points}" DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedPoint}" Margin="6,0,0,0" />
+                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondary}"
+                               VerticalAlignment="Center" Margin="18,0,0,0" />
+                </StackPanel>
             </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 点位实时表 -->
+                <Grid Grid.Column="0" Margin="0,0,12,0">
+                    <DataGrid ItemsSource="{Binding Points}"
+                              AutoGenerateColumns="False" IsReadOnly="True" SelectedItem="{Binding SelectedPoint}"
+                              HeadersVisibility="Column">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsBad}" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource BadRowBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="点位" Binding="{Binding Name}" Width="*" />
+                            <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="地址" Binding="{Binding Address}" Width="100" />
+                            <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="类型" Binding="{Binding DataType}" Width="76" />
+                            <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="值" Binding="{Binding ValueText}" Width="*" />
+                            <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="质量" Binding="{Binding QualityText}" Width="66" />
+                            <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="时间" Binding="{Binding TimestampText}" Width="86" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <!-- ADR-037 S3：空态提示（未选设备/无点位时显示），有点位时折叠 -->
+                    <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondary}" FontSize="13">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Points.Count}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+
+                <!-- 曲线卡片 -->
+                <Border Grid.Column="1" Style="{StaticResource CardElevatedStyle}" Padding="16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+                            <Border Width="3" Height="14" CornerRadius="1.5"
+                                    Background="{StaticResource PrimaryBrush}" VerticalAlignment="Center" Margin="0,0,9,0" />
+                            <TextBlock Text="趋势曲线" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding SelectedPoint.Name, FallbackValue=请选择点位查看曲线}"
+                                       Foreground="{StaticResource TextSecondary}" FontSize="12.5"
+                                       VerticalAlignment="Center" Margin="12,0,0,0" />
+                        </StackPanel>
+                        <lvc:CartesianChart Grid.Row="1" Series="{Binding Series}"
+                                            XAxes="{Binding XAxes}" YAxes="{Binding YAxes}" />
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>
