@@ -581,6 +581,9 @@ public sealed class FakeAlarmRuleRepository : IAlarmRuleRepository
     public Task<OperationResult<IReadOnlyList<AlarmRuleDomain>>> GetAllAsync(CancellationToken ct = default)
         => Task.FromResult<OperationResult<IReadOnlyList<AlarmRuleDomain>>>(Array.Empty<AlarmRuleDomain>());
 
+    public Task<OperationResult<IReadOnlyList<AlarmRuleDomain>>> GetAllIncludingDisabledAsync(CancellationToken ct = default)
+        => Task.FromResult<OperationResult<IReadOnlyList<AlarmRuleDomain>>>(Array.Empty<AlarmRuleDomain>());
+
     public Task<OperationResult> SaveAsync(AlarmRuleDomain rule, CancellationToken ct = default)
     {
         LastSaved = rule;

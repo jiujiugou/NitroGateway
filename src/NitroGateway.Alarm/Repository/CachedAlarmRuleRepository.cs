@@ -49,6 +49,16 @@ public sealed class CachedAlarmRuleRepository : IAlarmRuleRepository
         => _cache.GetOrLoadAsync(_inner.GetAllAsync, ct);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// ADR-043：管理页要展示/恢复禁用规则，而缓存只存启用规则（内层 GetAllAsync 已过滤
+    /// Enabled），因此本方法绕过缓存直读内层仓储，不失效/不更新缓存；管理页为低频调用，
+    /// 直读 DB 代价可忽略。
+    /// </remarks>
+    public Task<OperationResult<IReadOnlyList<Domain.AlarmRule>>> GetAllIncludingDisabledAsync(
+        CancellationToken ct = default)
+        => _inner.GetAllIncludingDisabledAsync(ct);
+
+    /// <inheritdoc />
     public async Task<OperationResult> SaveAsync(Domain.AlarmRule rule, CancellationToken ct = default)
     {
         var result = await _inner.SaveAsync(rule, ct);

@@ -24,6 +24,9 @@ public class CachedAlarmRuleRepositoryTests
         /// <summary>GetAllAsync 被调用次数（= 内层 DB 查询次数）。</summary>
         public int GetAllCallCount { get; private set; }
 
+        /// <summary>GetAllIncludingDisabledAsync 被调用次数（ADR-043：管理页直读路径）。</summary>
+        public int GetAllIncludingDisabledCallCount { get; private set; }
+
         /// <summary>置 true 时下一次 GetAllAsync 返回失败（模拟 DB 故障），随后自动复位。</summary>
         public bool FailNextGetAll { get; set; }
 
@@ -54,6 +57,14 @@ public class CachedAlarmRuleRepositoryTests
 
             return Task.FromResult<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>>(
                 _rules.Values.Where(r => r.Enabled).ToList());
+        }
+
+        public Task<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>> GetAllIncludingDisabledAsync(
+            CancellationToken ct = default)
+        {
+            GetAllIncludingDisabledCallCount++;
+            return Task.FromResult<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>>(
+                _rules.Values.ToList());
         }
 
         public Task<OperationResult> SaveAsync(AlarmDomain.AlarmRule rule, CancellationToken ct = default)
@@ -223,5 +234,30 @@ public class CachedAlarmRuleRepositoryTests
 
         Assert.Single(result.Value!);
         Assert.Equal(1, inner.GetAllCallCount);
+    }
+
+    [Fact]
+    public async Task GetAllIncludingDisabledAsync_ReturnsDisabledRules_AndBypassesCache()
+    {
+        // ADR-043：管理页读取含禁用规则，必须绕过只存启用规则的缓存直读内层——
+        // 既能看到禁用规则，也不污染热路径缓存（GetAllCallCount 不增长）。
+        var inner = new FakeRuleRepository();
+        var repo = new CachedAlarmRuleRepository(new AlarmRuleCache(), inner);
+        var deviceId = Guid.NewGuid();
+        await inner.SaveAsync(NewRule(deviceId, Guid.NewGuid()));
+        await inner.SaveAsync(NewRule(deviceId, Guid.NewGuid(), enabled: false));
+
+        // 先触发一次热路径加载（进缓存）
+        await repo.GetByDeviceAsync(deviceId);
+        Assert.Equal(1, inner.GetAllCallCount);
+
+        var result = await repo.GetAllIncludingDisabledAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Contains(result.Value!, r => !r.Enabled);
+        // 管理页直读不失效缓存：热路径查询次数不变
+        Assert.Equal(1, inner.GetAllCallCount);
+        Assert.Equal(1, inner.GetAllIncludingDisabledCallCount);
     }
 }

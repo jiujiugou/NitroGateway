@@ -81,6 +81,25 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
     }
 
     /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<AlarmDomain.AlarmRule>>> GetAllIncludingDisabledAsync(
+        CancellationToken ct = default)
+    {
+        try
+        {
+            // ADR-043：管理页需要展示/恢复禁用规则，故不受 Enabled 过滤，全量返回。
+            var rows = await _db.AlarmRules
+                .AsNoTracking()
+                .ToListAsync(ct);
+            return rows.Select(ToDomain).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("告警规则查询失败: {Error}", ex.Message);
+            return Classify(ex, "告警规则查询失败");
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<OperationResult> SaveAsync(AlarmDomain.AlarmRule rule, CancellationToken ct = default)
     {
         try

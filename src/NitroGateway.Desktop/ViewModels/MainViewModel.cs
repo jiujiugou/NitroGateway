@@ -29,6 +29,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         DevicesViewModel devices,
         RealtimeViewModel realtime,
         AlarmsViewModel alarms,
+        AlarmRulesViewModel alarmRules,
         HistoryViewModel history,
         SettingsViewModel settings,
         EventBridge bridge,
@@ -41,6 +42,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         NavItems.Add(new NavItem("设备", "\uE772", devices));
         NavItems.Add(new NavItem("实时数据", "\uE9D9", realtime));
         NavItems.Add(new NavItem("告警", "\uE7BA", alarms));
+        // ADR-043：告警规则管理页（紧邻「告警」，Segoe MDL2 BulletedList）
+        NavItems.Add(new NavItem("告警规则", "\uE8FD", alarmRules));
         NavItems.Add(new NavItem("历史查询", "\uE81C", history));
         NavItems.Add(new NavItem("设置", "\uE713", settings));
 

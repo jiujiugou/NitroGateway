@@ -33,11 +33,15 @@ public static class DesktopServiceCollectionExtensions
         services.AddSingleton<DevicesViewModel>();
         services.AddSingleton<RealtimeViewModel>();
         services.AddSingleton<AlarmsViewModel>();
+        services.AddSingleton<AlarmRulesViewModel>();
         services.AddSingleton<HistoryViewModel>();
         services.AddSingleton<SettingsViewModel>();
 
         // ADR-029 P4：设备/点位编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
         services.AddSingleton<IDeviceDialogService, DeviceDialogService>();
+
+        // ADR-043：告警规则编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
+        services.AddSingleton<IAlarmRuleDialogService, AlarmRuleDialogService>();
 
         // ADR-033 阶段 2：中心配置导入（地址/Token 本机存储 + 快照拉取 + 以中心为准重置本地）。
         // HttpClient 按 Singleton 注册并统一超时，避免每次导入新建连接资源。

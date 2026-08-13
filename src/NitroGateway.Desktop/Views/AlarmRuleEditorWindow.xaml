@@ -1,0 +1,149 @@
+<Window x:Class="NitroGateway.Desktop.Views.AlarmRuleEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        xmlns:alarm="clr-namespace:NitroGateway.Alarm.Domain;assembly=NitroGateway.Alarm"
+        Width="720" Height="600" MinWidth="600" MinHeight="460" SizeToContent="Manual"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource PageBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontSize="13.5">
+    <Window.Resources>
+        <!-- 合并共享样式：无 Application 实例（单元测试冒烟）时也能解析 StaticResource（PrimaryButtonStyle 等） -->
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <ObjectDataProvider x:Key="SeverityValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+                <ObjectDataProvider.MethodParameters>
+                    <x:Type TypeName="alarm:AlarmSeverity" />
+                </ObjectDataProvider.MethodParameters>
+            </ObjectDataProvider>
+            <x:Array x:Key="Operators" Type="{x:Type sys:String}">
+                <sys:String>&gt;</sys:String>
+                <sys:String>&gt;=</sys:String>
+                <sys:String>&lt;</sys:String>
+                <sys:String>&lt;=</sys:String>
+                <sys:String>==</sys:String>
+                <sys:String>!=</sys:String>
+                <sys:String>Between</sys:String>
+            </x:Array>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid Margin="26">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 页头 -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="按设备/点位配置阈值条件，达到后触发报警" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
+            <Border Style="{StaticResource CardBorderStyle}" Padding="20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 行 1：设备 / 点位（级联）/ 运算符 / 严重等级 -->
+                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,14">
+                        <TextBlock Text="设备" Style="{StaticResource FormLabelStyle}" />
+                        <ComboBox ItemsSource="{Binding Devices}" SelectedValue="{Binding DeviceId}"
+                                  SelectedValuePath="Id">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,14">
+                        <TextBlock Text="点位" Style="{StaticResource FormLabelStyle}" />
+                        <ComboBox ItemsSource="{Binding Points}" SelectedValue="{Binding PointId}"
+                                  SelectedValuePath="Id">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Name}" />
+                                        <TextBlock Text="{Binding Address}" Foreground="{StaticResource TextSecondary}"
+                                                   Margin="8,0,0,0" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,12,14">
+                        <TextBlock Text="运算符" Style="{StaticResource FormLabelStyle}" />
+                        <ComboBox ItemsSource="{Binding Source={StaticResource Operators}}"
+                                  SelectedItem="{Binding Operator}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="3" Margin="0,0,0,14">
+                        <TextBlock Text="严重等级" Style="{StaticResource FormLabelStyle}" />
+                        <ComboBox ItemsSource="{Binding Source={StaticResource SeverityValues}}"
+                                  SelectedItem="{Binding Severity}" />
+                    </StackPanel>
+
+                    <!-- 行 2：阈值（Between=下限）/ 上限 / 持续时长 / 启用 -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,14">
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource FormLabelStyle}">
+                                    <Setter Property="Text" Value="阈值" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsBetween}" Value="True">
+                                            <Setter Property="Text" Value="下限" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBox Text="{Binding Threshold, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,14"
+                                Visibility="{Binding IsBetween, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="上限" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding ThresholdUpper, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,12,14">
+                        <TextBlock Text="持续时间(秒，0=立即)" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding DurationSeconds, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="3" Margin="0,0,0,14" Orientation="Horizontal">
+                        <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
+                        <TextBlock Text="启用规则" VerticalAlignment="Center" Margin="6,0,0,0" />
+                    </StackPanel>
+
+                    <!-- 行 3：消息模板 -->
+                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4" Margin="0,0,0,14">
+                        <TextBlock Text="消息模板（{value} 实际值 / {threshold} 阈值）" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding MessageTemplate, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="如：{value} 超过阈值 {threshold}，请及时处理" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Width="96" Margin="0,0,12,0" IsCancel="True" Click="OnCancel" />
+            <Button Content="保存" Width="96" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
+        </StackPanel>
+    </Grid>
+</Window>

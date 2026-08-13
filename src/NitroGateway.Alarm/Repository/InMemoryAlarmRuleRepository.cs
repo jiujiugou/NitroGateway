@@ -35,6 +35,14 @@ internal sealed class InMemoryAlarmRuleRepository : IAlarmRuleRepository
         return Task.FromResult<OperationResult<IReadOnlyList<Domain.AlarmRule>>>(rules);
     }
 
+    public Task<OperationResult<IReadOnlyList<Domain.AlarmRule>>> GetAllIncludingDisabledAsync(
+        CancellationToken ct = default)
+    {
+        // ADR-043：管理页语义——全量返回（含禁用），与 GetAllAsync 的 Enabled 过滤区分。
+        var rules = _rules.Values.ToList();
+        return Task.FromResult<OperationResult<IReadOnlyList<Domain.AlarmRule>>>(rules);
+    }
+
     public Task<OperationResult> SaveAsync(Domain.AlarmRule rule, CancellationToken ct = default)
     {
         _rules[rule.Id] = rule;

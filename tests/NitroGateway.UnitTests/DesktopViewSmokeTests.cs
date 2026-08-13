@@ -6,6 +6,7 @@ using NitroGateway.Desktop.Services;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Views;
 using NitroGateway.DeviceManagement;
+using NitroGateway.Domain.Devices;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
@@ -68,6 +69,13 @@ public sealed class DesktopViewSmokeTests
                 pointWindow.Arrange(new Rect(0, 0, 800, 600));
                 pointWindow.UpdateLayout();
 
+                // ADR-043：告警规则编辑窗口（设备/点位级联表单），无 Application 实例时也可解析
+                var alarmRuleWindow = new AlarmRuleEditorWindow(new AlarmRuleEditor(Array.Empty<Device>()));
+                Assert.NotNull(alarmRuleWindow);
+                alarmRuleWindow.Measure(new Size(800, 600));
+                alarmRuleWindow.Arrange(new Rect(0, 0, 800, 600));
+                alarmRuleWindow.UpdateLayout();
+
                 var services = new ServiceCollection();
                 services.AddScoped<IPointManager>(_ => new StubPointManager());
                 using var provider = services.BuildServiceProvider();
@@ -110,6 +118,7 @@ public sealed class DesktopViewSmokeTests
                 {
                     new DevicesView(),
                     new AlarmsView(),
+                    new AlarmRulesView(),
                     new HistoryView(),
                     new SettingsView(),
                     new StartupWindow()
