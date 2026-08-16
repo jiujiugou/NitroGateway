@@ -1,0 +1,100 @@
+# ADR-049：及格线告警规则（挂载到容器 /etc/prometheus/rules.yml）
+# 阈值均为「及格线」占位值：长期运行后用 soak 基线校准（ADR-049「验证」）。
+# 业务指标按 job 区分（nitro-gateway=采集/转发/落库，nitro-ingest=中心接收）；
+# 运行时指标（dotnet_*）与 MQTT/磁盘对两个 job 都有效。
+groups:
+  - name: nitro-runtime
+    rules:
+      # 内存超标：dotnet_total_memory_bytes = 进程已分配内存总量（占位 500MiB，按 soak 基线校准）
+      - alert: HighMemoryUsage
+        expr: dotnet_total_memory_bytes > 524288000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} 内存超标"
+          description: "{{ $labels.job }} 已分配内存 {{ $value | humanize1024 }}B，持续超过 500MiB 达 10 分钟。"
+
+      # GC 占比高：dotnet_gc_pause_ratio 为 0~1 的暂停占比，超过 5%
+      - alert: HighGcRatio
+        expr: dotnet_gc_pause_ratio > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} GC 占比过高"
+          description: "{{ $labels.job }} 花在 GC 上的时间占比 {{ $value }}，超过 5% 达 5 分钟。"
+
+  - name: nitro-gateway
+    rules:
+      # 采集失败：5 分钟内存在失败（含 label 为 failure 的计数增长）
+      - alert: CollectionFailures
+        expr: increase(nitro_collection_total{job="nitro-gateway", status="failure"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关存在采集失败"
+          description: "过去 5 分钟内有采集失败（设备/点位读取异常），请检查协议驱动与设备连通性。"
+
+      # 采集拖周期：单轮采集耗时 p99 拖过 1s（采集周期 1s，见 AGENTS.md 模块说明）
+      - alert: CollectionSlow
+        expr: histogram_quantile(0.99, sum(rate(nitro_collection_duration_ms_bucket{job="nitro-gateway"}[5m])) by (le)) > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关采集拖周期"
+          description: "单轮采集耗时 p99 = {{ $value }}ms，逼近 1s 采集周期，存在超期风险。"
+
+      # 转发背压：缓冲积压批次持续 > 0（下游 MQTT 堵）
+      - alert: ForwardBacklog
+        expr: nitro_buffer_backlog{job="nitro-gateway"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "转发缓冲积压"
+          description: "转发缓冲积压 {{ $value }} 批，持续 5 分钟——下游 MQTT 疑似阻塞。"
+
+      # 落库失败：时序库写失败计数增长
+      - alert: StoreWriteFailures
+        expr: increase(nitro_store_write_failures_total{job="nitro-gateway"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "时序库落库失败"
+          description: "过去 5 分钟时序库落库失败次数增长，检查磁盘空间与 SQLite 状态。"
+
+  - name: nitro-connectivity
+    rules:
+      # MQTT 断连：状态枚举 2=Connected（见 NitroMetrics.MqttState），两个 job 均有效
+      - alert: MqttDisconnected
+        expr: nitro_mqtt_state != 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} MQTT 断连"
+          description: "{{ $labels.job }} MQTT 状态非 Connected（当前 {{ $value }}），已持续 1 分钟。"
+
+      # 磁盘告急：剩余空间低于 1GiB（占位阈值，按现场磁盘校准）
+      - alert: LowDiskSpace
+        expr: nitro_disk_free_bytes < 1073741824
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} 磁盘告急"
+          description: "{{ $labels.job }} 目录 {{ $labels.path }} 剩余 {{ $value | humanize1024 }}B，低于 1GiB 持续 5 分钟。"
+
+      # 探针失败：存活/就绪检查未通过（blackbox http_2xx）
+      - alert: ProbeFailing
+        expr: probe_success{job="nitro-probes"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} 探针失败"
+          description: "{{ $labels.instance }} 未通过 HTTP 存活/就绪检查，已持续 2 分钟。"

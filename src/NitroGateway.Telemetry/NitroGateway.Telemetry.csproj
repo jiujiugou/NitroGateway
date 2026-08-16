@@ -9,6 +9,8 @@
   <ItemGroup>
     <PackageReference Include="prometheus-net" Version="*" />
     <PackageReference Include="prometheus-net.AspNetCore" Version="*" />
+    <!-- ADR-049：自动把 System.Runtime EventCounters 汇入全局注册表（/metrics 一次暴露运行时指标，不改业务指标契约） -->
+    <PackageReference Include="prometheus-net.DotNetRuntime" Version="*" />
     <PackageReference Include="OpenTelemetry" Version="*" />
   </ItemGroup>
 

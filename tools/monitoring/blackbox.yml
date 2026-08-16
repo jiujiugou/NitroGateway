@@ -1,0 +1,7 @@
+# ADR-049：blackbox-exporter 配置（http 探针）
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4

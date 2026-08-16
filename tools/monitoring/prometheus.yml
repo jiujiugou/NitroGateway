@@ -1,0 +1,40 @@
+# ADR-049：Prometheus 抓取配置（挂载到容器 /etc/prometheus/prometheus.yml）
+# gateway / ingest 服务名仅在主栈默认网络内可解析（见 docker-compose.monitoring.yml 启动方式）。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules.yml
+
+scrape_configs:
+  # ── 网关运行时 + 业务指标（NitroMetrics + dotnet_*）──
+  - job_name: nitro-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["gateway:5100"]
+
+  # ── 中心 Ingest 指标（ingest_* + dotnet_*）──
+  - job_name: nitro-ingest
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ingest:5200"]
+
+  # ── HTTP 存活/就绪探针（blackbox-exporter 代理 /probe）──
+  - job_name: nitro-probes
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://gateway:5100/healthz
+          - http://gateway:5100/readyz
+          - http://ingest:5200/healthz
+          - http://ingest:5200/readyz
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

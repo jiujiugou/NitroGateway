@@ -2,6 +2,7 @@
 using NitroGateway.Ingest.HealthChecks;
 using NitroGateway.Persistence;
 using NitroGateway.Persistence.Sqlite;
+using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 using Prometheus;
 using Serilog;
@@ -28,6 +29,8 @@ builder.Host.UseSerilog((context, services, configuration) =>
 // AddNitroSqlite: 复用 M001~ 迁移建中心库 + measurements 保留清理（与现场端同 schema，D3）
 builder.Services.AddNitroSqlite(builder.Configuration);
 builder.Services.AddNitroMqtt(builder.Configuration);
+// ADR-049：运行时指标（dotnet_*）与 ingest_* 业务指标统一进 /metrics，供 Prometheus 采集
+builder.Services.AddNitroTelemetry();
 builder.Services.AddSingleton<IIngestStore>(_ => new SqliteIngestStore(connectionString));
 builder.Services.AddHostedService<IngestService>();
 

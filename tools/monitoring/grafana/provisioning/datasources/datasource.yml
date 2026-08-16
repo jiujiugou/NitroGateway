@@ -1,0 +1,11 @@
+# ADR-049：Grafana 预置 Prometheus 数据源（provisioning，随容器启动自动生效）
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

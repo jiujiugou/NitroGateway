@@ -1,0 +1,13 @@
+# ADR-049：Grafana 预置「运行情况」面板（provisioning，随容器启动自动生效）
+apiVersion: 1
+
+providers:
+  - name: nitro
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

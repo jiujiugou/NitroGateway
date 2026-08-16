@@ -1,0 +1,54 @@
+# NitroGateway — 本地监控栈（ADR-049）：Prometheus（采集 + 告警 rules）+ Grafana「运行情况」面板
+# 数据流: gateway:5100/metrics 与 ingest:5200/metrics ─> Prometheus ─> Grafana
+#          gateway/ingest 的 /healthz /readyz ─> blackbox-exporter 探针 ─> Prometheus
+#
+# 启动方式二选一（监控栈需与主栈在同一个 Docker 默认网络内才能访问 gateway/ingest 服务名）：
+#   方式 A（推荐，与主栈合并成一个 compose 项目，服务共享默认网络）：
+#     docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d --build
+#   方式 B（监控栈独立启动，用 -p 指定与主栈相同的项目名以复用 nitrogateway_default 网络）：
+#     docker compose -p nitrogateway -f docker-compose.monitoring.yml up -d
+#   停止/查看：docker compose [-p nitrogateway] [-f docker-compose.monitoring.yml] down
+#              Prometheus http://localhost:9090 | Grafana http://localhost:3000（admin/admin123，开发默认）
+#
+# ⚠ 告警阈值（rules.yml）为「及格线」占位值，长期运行后按 soak 基线校准；Grafana 为开发默认凭据，生产用环境变量覆盖。
+
+services:
+  # ── Prometheus（抓取 + 告警评估）──
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./tools/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./tools/monitoring/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    restart: unless-stopped
+
+  # ── blackbox-exporter（HTTP 存活/就绪探针）──
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./tools/monitoring/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+
+  # ── Grafana（预置 datasource + 「运行情况」面板，via provisioning）──
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./tools/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      # 开发默认凭据（与仓库 admin/admin123 惯例一致），生产必须用环境变量覆盖
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
