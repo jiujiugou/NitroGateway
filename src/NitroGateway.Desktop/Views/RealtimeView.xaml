@@ -53,7 +53,11 @@
                 <Grid Grid.Column="0" Margin="0,0,12,0">
                     <DataGrid ItemsSource="{Binding Points}"
                               AutoGenerateColumns="False" IsReadOnly="True" SelectedItem="{Binding SelectedPoint}"
-                              HeadersVisibility="Column">
+                              HeadersVisibility="Column"
+                              EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                              ScrollViewer.CanContentScroll="True"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling">
                         <DataGrid.RowStyle>
                             <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
                                 <Style.Triggers>

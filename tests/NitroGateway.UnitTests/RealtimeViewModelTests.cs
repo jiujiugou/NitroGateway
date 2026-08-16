@@ -103,6 +103,95 @@ public sealed class RealtimeViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Frame_driven_device_switch_does_not_query_latest_and_grid_is_immediate()
+    {
+        // ADR-050：切设备不再每次扫全历史。先发一帧把各设备点位最新值灌进内存缓存
+        // （模拟已在线采集一段时间的设备），随后 选设备→切走→切回：
+        // 网格全程即时用「配置 + 帧内存」填充，LatestDequeueCount 保持 0（未触发 DB 最新值查询）。
+        var cache = new StagedSnapshotCache();
+        var deviceA = TestDevices.Device("A", TestDevices.Point("P1"), TestDevices.Point("P2"));
+        var deviceB = TestDevices.Device("B", TestDevices.Point("Q1"));
+        cache.EnqueueSuccess(deviceA, deviceB); // 构造时 LoadDevicesAsync
+        cache.EnqueueSuccess(deviceA, deviceB); // LoadPointsAsync(A)
+        cache.EnqueueSuccess(deviceA, deviceB); // LoadPointsAsync(B)
+        cache.EnqueueSuccess(deviceA, deviceB); // LoadPointsAsync(A)（切回）
+
+        var store = new StagedMeasurementStore();
+        var vm = new RealtimeViewModel(cache, store, new UiDispatcher(),
+            _bridge, NullLogger<RealtimeViewModel>.Instance);
+
+        var p1 = deviceA.Points.ElementAt(0);
+        var p2 = deviceA.Points.ElementAt(1);
+        var q1 = deviceB.Points.First();
+        await ((IPointStoredSink)_bridge).OnStoredAsync(new PointStoredEvent
+        {
+            DeviceId = deviceA.Id,
+            Snapshots =
+            [
+                TestDevices.Snapshot(deviceA.Id, p1.Id, 10.0),
+                TestDevices.Snapshot(deviceA.Id, p2.Id, 20.0),
+                TestDevices.Snapshot(deviceB.Id, q1.Id, 30.0)
+            ]
+        });
+        _bridge.Flush();
+
+        vm.SelectedDevice = new DeviceOption(deviceA.Id, deviceA.Name);
+        await TestWait.UntilAsync(() => vm.Points.Count == deviceA.Points.Count);
+        Assert.Equal(0, store.LatestDequeueCount); // 帧内存已覆盖，未触发 DB
+        Assert.Equal("10", vm.Points.First(p => p.PointId == p1.Id).ValueText); // 帧值即时显示
+
+        vm.SelectedDevice = new DeviceOption(deviceB.Id, deviceB.Name);
+        await TestWait.UntilAsync(() => vm.Points.Count == deviceB.Points.Count);
+        Assert.Equal(0, store.LatestDequeueCount);
+        Assert.Equal("30", vm.Points.First(p => p.PointId == q1.Id).ValueText);
+
+        vm.SelectedDevice = new DeviceOption(deviceA.Id, deviceA.Name);
+        await TestWait.UntilAsync(() => vm.Points.Count == deviceA.Points.Count);
+        Assert.Equal(0, store.LatestDequeueCount); // 全程零 DB 最新值查询
+        Assert.Equal("20", vm.Points.First(p => p.PointId == p2.Id).ValueText);
+    }
+
+    [Fact]
+    public async Task Missing_point_falls_back_to_db_and_does_not_override_frame_value()
+    {
+        // ADR-050：冷启动/离线点位（从未在帧中出现）才走一次 DB 兜底；
+        // 兜底只填缺失点位——在线点位以帧值为准，不被 DB 旧值覆盖。
+        var cache = new StagedSnapshotCache();
+        var device = TestDevices.Device("A", TestDevices.Point("P1"), TestDevices.Point("P2"));
+        cache.EnqueueSuccess(device); // 构造时 LoadDevicesAsync
+        cache.EnqueueSuccess(device); // LoadPointsAsync(A)
+
+        var store = new StagedMeasurementStore();
+        var p1 = device.Points.ElementAt(0);
+        var p2 = device.Points.ElementAt(1);
+        // DB 兜底：P1 返回旧值 99（应被帧值 10 覆盖忽略）、P2 返回缺失值 20（应被填充）
+        store.EnqueueLatest(Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(
+        [
+            TestDevices.Snapshot(device.Id, p1.Id, 99.0),
+            TestDevices.Snapshot(device.Id, p2.Id, 20.0)
+        ])));
+        var vm = new RealtimeViewModel(cache, store, new UiDispatcher(),
+            _bridge, NullLogger<RealtimeViewModel>.Instance);
+
+        // 只发 P1 的帧（P2 离线，从未在帧中出现）
+        await ((IPointStoredSink)_bridge).OnStoredAsync(new PointStoredEvent
+        {
+            DeviceId = device.Id,
+            Snapshots = [TestDevices.Snapshot(device.Id, p1.Id, 10.0)]
+        });
+        _bridge.Flush();
+
+        vm.SelectedDevice = new DeviceOption(device.Id, device.Name);
+        // 阶段① 网格立即出现（P1 帧值 10、P2 暂无值），随后 DB 兜底在线程池填充 P2
+        await TestWait.UntilAsync(() => vm.Points.Count == device.Points.Count);
+        await TestWait.UntilAsync(() => store.LatestDequeueCount == 1);
+        await TestWait.UntilAsync(() => vm.Points.First(p => p.PointId == p2.Id).ValueText == "20");
+
+        Assert.Equal(1, store.LatestDequeueCount); // 仅触发一次兜底查询
+        Assert.Equal("10", vm.Points.First(p => p.PointId == p1.Id).ValueText); // 帧值不被 DB 旧值覆盖
+    }
+
+    [Fact]
     public async Task Raw_buffer_keeps_at_most_two_hour_window_and_chart_is_downsampled()
     {
         // ADR-037 S9/S12 + ADR-045 P2：原始缓冲上限 7200（1s×2h），溢出批量裁剪；
@@ -262,5 +351,96 @@ public sealed class RealtimeViewModelTests : IDisposable
         vm.IsActive = true;
         await TestWait.UntilAsync(() => vm.RawValues.Count == 1);
         Assert.Equal(11.0, vm.RawValues[0].Value!.Value);
+    }
+
+    [Fact]
+    public async Task Frame_updates_cache_but_grid_refresh_is_throttled()
+    {
+        // ADR-051：表格节流——帧值先入内存缓存（O(1) 无通知），DataGrid 行按节流周期批量刷，
+        // 不再逐帧 Update（原 500×4×5fps ≈ 1 万通知/秒压满 UI 线程饿死交互）。
+        // 拉大节流周期，确定性断言「帧已到、缓存已更新、网格未逐帧刷」。
+        var cache = new StagedSnapshotCache();
+        var device = TestDevices.Device("A", TestDevices.Point("P1"));
+        cache.EnqueueSuccess(device); // LoadDevicesAsync
+        cache.EnqueueSuccess(device); // LoadPointsAsync(A)
+        var vm = new RealtimeViewModel(cache, new StagedMeasurementStore(), new UiDispatcher(),
+            _bridge, NullLogger<RealtimeViewModel>.Instance);
+        vm.GridRefreshInterval = TimeSpan.FromHours(1); // 测试不靠真实时间触发节流
+
+        vm.SelectedDevice = new DeviceOption(device.Id, device.Name);
+        await TestWait.UntilAsync(() => vm.Points.Count == 1);
+        var point = device.Points.First();
+
+        await ((IPointStoredSink)_bridge).OnStoredAsync(new PointStoredEvent
+        {
+            DeviceId = device.Id,
+            Snapshots = [TestDevices.Snapshot(device.Id, point.Id, 42.0)]
+        });
+        _bridge.Flush();
+
+        Assert.Equal(42d, (double)vm.LatestByPoint[point.Id].Value!); // 值已入内存缓存（后续刷新/切设备会用）
+        Assert.Equal("—", vm.Points[0].ValueText); // 网格未被逐帧刷新（节流生效）
+    }
+
+    [Fact]
+    public async Task Grid_refreshes_from_cache_on_throttle_boundary_and_resume()
+    {
+        // ADR-051：到节流周期后由内存缓存批量补齐网格；窗口恢复（IsActive 重新置 true）走同一补齐路径。
+        var cache = new StagedSnapshotCache();
+        var device = TestDevices.Device("A", TestDevices.Point("P1"));
+        cache.EnqueueSuccess(device); // LoadDevicesAsync
+        cache.EnqueueSuccess(device); // LoadPointsAsync(A)
+        cache.EnqueueSuccess(device); // 恢复激活时 LoadDevicesAsync（ADR-048）
+        var vm = new RealtimeViewModel(cache, new StagedMeasurementStore(), new UiDispatcher(),
+            _bridge, NullLogger<RealtimeViewModel>.Instance);
+        vm.GridRefreshInterval = TimeSpan.FromHours(1); // 节流不靠真实时间
+
+        vm.SelectedDevice = new DeviceOption(device.Id, device.Name);
+        await TestWait.UntilAsync(() => vm.Points.Count == 1);
+        var point = device.Points.First();
+
+        await ((IPointStoredSink)_bridge).OnStoredAsync(new PointStoredEvent
+        {
+            DeviceId = device.Id,
+            Snapshots = [TestDevices.Snapshot(device.Id, point.Id, 42.0)]
+        });
+        _bridge.Flush();
+        Assert.Equal("—", vm.Points[0].ValueText); // 节流期未逐帧刷表
+
+        vm.RefreshGridFromCache(); // 节流到点 / 恢复补齐的批量路径
+        Assert.Equal("42", vm.Points[0].ValueText);
+
+        // 失焦（停用）期间帧被丢弃；恢复激活时 OnIsActiveChanged 用缓存一次补齐表格
+        vm.IsActive = false;
+        vm.IsActive = true;
+        await TestWait.UntilAsync(() => vm.Points.Count == 1);
+        Assert.Equal("42", vm.Points[0].ValueText);
+    }
+
+    [Fact]
+    public async Task Grid_refreshes_each_frame_when_throttle_disabled()
+    {
+        // ADR-051 控制组：节流间隔为 0（测试专用）时每帧都刷——证明批量路径与逐帧路径
+        // 结果一致，节流只降刷新频率、不改变刷新正确性。
+        var cache = new StagedSnapshotCache();
+        var device = TestDevices.Device("A", TestDevices.Point("P1"));
+        cache.EnqueueSuccess(device); // LoadDevicesAsync
+        cache.EnqueueSuccess(device); // LoadPointsAsync(A)
+        var vm = new RealtimeViewModel(cache, new StagedMeasurementStore(), new UiDispatcher(),
+            _bridge, NullLogger<RealtimeViewModel>.Instance);
+        vm.GridRefreshInterval = TimeSpan.Zero; // 每帧都刷（无节流）
+
+        vm.SelectedDevice = new DeviceOption(device.Id, device.Name);
+        await TestWait.UntilAsync(() => vm.Points.Count == 1);
+        var point = device.Points.First();
+
+        await ((IPointStoredSink)_bridge).OnStoredAsync(new PointStoredEvent
+        {
+            DeviceId = device.Id,
+            Snapshots = [TestDevices.Snapshot(device.Id, point.Id, 7.0)]
+        });
+        _bridge.Flush();
+
+        Assert.Equal("7", vm.Points[0].ValueText); // 无节流时帧到即刷
     }
 }

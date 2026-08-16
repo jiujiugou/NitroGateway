@@ -42,12 +42,19 @@ internal sealed class StagedMeasurementStore : IMeasurementStore
     private readonly Queue<Task<OperationResult<IReadOnlyList<PointSnapshot>>>> _paged = new();
     private readonly Queue<Task<OperationResult<IReadOnlyList<PointSnapshot>>>> _latest = new();
     private int _pagedDequeueCount;
+    private int _latestDequeueCount;
 
     /// <summary>分页查询调用记录：(limit, offset)。</summary>
     public List<(int Limit, int Offset)> PagedCalls { get; } = new();
 
     /// <summary>分页查询已出队次数（Task.Run 下出队在线程池，供测试等待查询真正发起后再触发下一次）。</summary>
     public int PagedDequeueCount => Volatile.Read(ref _pagedDequeueCount);
+
+    /// <summary>
+    /// 最新值查询（QueryLatestAsync）已出队次数（ADR-050）。Task.Run 下出队在线程池，
+    /// 供测试断言「帧驱动切设备全程未触发 DB 最新值查询」或等待兜底查询真正发起。
+    /// </summary>
+    public int LatestDequeueCount => Volatile.Read(ref _latestDequeueCount);
 
     public void EnqueuePaged(Task<OperationResult<IReadOnlyList<PointSnapshot>>> result)
     {
@@ -76,9 +83,12 @@ internal sealed class StagedMeasurementStore : IMeasurementStore
         Guid deviceId, Guid? pointId, CancellationToken ct = default)
     {
         lock (_gate)
+        {
+            Interlocked.Increment(ref _latestDequeueCount);
             return _latest.Count > 0
                 ? _latest.Dequeue()
                 : Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(Array.Empty<PointSnapshot>()));
+        }
     }
 
     public Task<OperationResult> WriteAsync(IReadOnlyList<PointSnapshot> snapshots, CancellationToken ct = default) =>
