@@ -1,6 +1,8 @@
 using System.Collections;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using NitroGateway.Desktop.Services;
 using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Desktop.ViewModels;
@@ -37,6 +39,23 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     /// <summary>新建默认 Unknown，由 HealthMonitor 驱动状态（不手填 Online 伪状态）</summary>
     [ObservableProperty] private DeviceStatus _status = DeviceStatus.Unknown;
 
+    /// <summary>
+    /// 连接测试服务（ADR-044，由 DeviceDialogService.EditDevice 注入；null 时测试按钮禁用）。
+    /// 把测试动作收敛为命令 + 状态绑定，窗口 code-behind 不再直接操控件。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(TestConnectionCommand))]
+    private IDeviceConnectionTester? _connectionTester;
+
+    /// <summary>测试中标志：测试期间禁用按钮并阻止并发点击。</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(TestConnectionCommand))]
+    private bool _isTestingConnection;
+
+    /// <summary>连接测试结果文案（窗口底部内联展示）。</summary>
+    [ObservableProperty]
+    private string _testResultText = "";
+
     /// <summary>连接地址：Modbus TCP "192.168.1.100:502"、RTU 串口 "COM3"、S7 "192.168.1.100:102"</summary>
     [ObservableProperty] private string _endpoint = "";
 
@@ -63,6 +82,9 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     public bool IsModbus => ProtocolName == "Modbus";
     public bool IsS7 => ProtocolName == "S7";
     public bool IsRtu => IsModbus && Dialect == "RTU";
+
+    /// <summary>测试按钮可用性：已注入测试服务且当前未在测试。</summary>
+    public bool IsTestEnabled => ConnectionTester is not null && !IsTestingConnection;
 
     /// <summary>是否存在校验错误（ADR-037 S4）。</summary>
     public bool HasErrors => _errors.Count > 0;
@@ -129,6 +151,36 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     partial void OnRetryIntervalMsChanged(int value) => Validate();
     partial void OnBaudRateChanged(int value) => Validate();
     partial void OnDataBitsChanged(int value) => Validate();
+
+    /// <summary>
+    /// 测试连接（ADR-044/ADR-023）：由当前表单构建设备 → Connect+Ping 双验，
+    /// 结果写回 <see cref="TestResultText"/>；与采集引擎共用同一协议驱动实现。
+    /// UI 流程（禁用/文案）由 <see cref="IsTestingConnection"/> 绑定驱动。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsTestEnabled))]
+    private async Task TestConnectionAsync()
+    {
+        if (ConnectionTester is null)
+            return;
+
+        IsTestingConnection = true;
+        TestResultText = "测试中…";
+        try
+        {
+            var result = await ConnectionTester.TestAsync(ToDevice());
+            TestResultText = result.Success
+                ? $"连接成功 ({result.LatencyMs}ms)"
+                : $"连接失败: {result.Error}";
+        }
+        catch (Exception ex)
+        {
+            TestResultText = $"测试异常: {ex.Message}";
+        }
+        finally
+        {
+            IsTestingConnection = false;
+        }
+    }
 
     /// <summary>由表单构建设备实体（协议参数按当前选择写入 Parameters）</summary>
     public Device ToDevice()

@@ -1,5 +1,4 @@
-﻿using System.Collections.ObjectModel;
-using System.Windows.Threading;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +22,7 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
     private readonly IDeviceSnapshotCache _cache;
     private readonly UiDispatcher _ui;
     private readonly ILogger<AlarmsViewModel> _logger;
-    private readonly DispatcherTimer _timer;
+    private readonly IUiTimer _timer;
 
     public ObservableCollection<AlarmItem> Items { get; } = [];
 
@@ -39,14 +38,16 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
         IServiceScopeFactory scopeFactory,
         IDeviceSnapshotCache cache,
         UiDispatcher ui,
-        ILogger<AlarmsViewModel> logger)
+        ILogger<AlarmsViewModel> logger,
+        IUiTimer? timer = null)
     {
         _scopeFactory = scopeFactory;
         _cache = cache;
         _ui = ui;
         _logger = logger;
 
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        // 轮询节奏是 view 关注点：经 IUiTimer 注入，测试可手动触发；缺省用 WPF DispatcherTimer
+        _timer = timer ?? new DispatcherUiTimer(TimeSpan.FromSeconds(5));
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();
         _ = RefreshAsync();

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
@@ -110,6 +110,32 @@ public sealed class AlarmsViewModelTests
 
         var survivor = Assert.Single(vm.Items);
         Assert.Equal(a1.Id, survivor.Id);
+    }
+
+    [Fact]
+    public async Task Timer_tick_triggers_refresh()
+    {
+        // 轮询节奏经 IUiTimer 注入：FakeUiTimer 手动触发一个周期等价 DispatcherTimer 到达
+        var repo = new StubAlarmRepository();
+        var services = new ServiceCollection();
+        services.AddScoped<IAlarmRepository>(_ => repo);
+        using var provider = services.BuildServiceProvider();
+        var timer = new FakeUiTimer();
+        var vm = new AlarmsViewModel(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new StagedSnapshotCache(),
+            new UiDispatcher(),
+            NullLogger<AlarmsViewModel>.Instance,
+            timer);
+
+        Assert.True(timer.IsStarted);
+        Assert.Equal(1, timer.StartCalls);
+
+        repo.History.Add(TestAlarm("A1", DateTime.UtcNow.AddMinutes(-1)));
+        timer.RaiseTick();
+
+        await TestWait.UntilAsync(() => vm.Items.Count == 1);
+        Assert.Equal("A1", vm.Items[0].Message);
     }
 
     private static (AlarmsViewModel Vm, ServiceProvider Provider) CreateVm(StubAlarmRepository repo)

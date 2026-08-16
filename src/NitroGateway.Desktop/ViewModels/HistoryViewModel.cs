@@ -171,8 +171,12 @@ public sealed partial class HistoryViewModel : ObservableObject
             var fromUtc = FromDate.Value.Date.ToUniversalTime();
             var toUtc = ToDate.Value.Date.AddDays(1).ToUniversalTime();
 
-            var result = await _store.QueryPagedAsync(
-                SelectedDevice.Id, SelectedPoint.Id, fromUtc, toUtc, PageSize, (page - 1) * PageSize);
+            // ADR-047：先捕获 deviceId/pointId 到局部变量（异步期间不依赖可变属性），
+            // 再包 Task.Run 把查询移出 UI 线程（SQLite async 是同步外包，否则历史查询点击冻结窗口）。
+            var deviceId = SelectedDevice.Id;
+            var pointId = SelectedPoint.Id;
+            var result = await Task.Run(() => _store.QueryPagedAsync(
+                deviceId, pointId, fromUtc, toUtc, PageSize, (page - 1) * PageSize));
 
             if (result.IsFailure)
             {

@@ -83,6 +83,7 @@ public sealed class DesktopViewSmokeTests
                     Guid.NewGuid(), "测试设备",
                     provider.GetRequiredService<IServiceScopeFactory>(),
                     new StubDeviceDialogService(), new StubConfigSyncOutboxStore(),
+                    new StubCsvFileService(), new PointBatchService(NullLogger<PointBatchService>.Instance),
                     NullLogger<PointsViewModel>.Instance);
                 var pointsWindow = new PointsWindow(pointsVm);
                 Assert.NotNull(pointsWindow);

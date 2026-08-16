@@ -6,6 +6,7 @@ namespace NitroGateway.Desktop.Views;
 /// <summary>设备表单窗口（ADR-029 P3）：DataContext 为 DeviceEditor，保存/取消设置 DialogResult。</summary>
 public partial class DeviceEditorWindow : Window
 {
+    /// <param name="editor">设备表单模型（绑定 DataContext）</param>
     public DeviceEditorWindow(DeviceEditor editor)
     {
         InitializeComponent();

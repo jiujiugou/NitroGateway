@@ -42,6 +42,8 @@
                                Foreground="{StaticResource TextSecondary}" />
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <Button Content="刷新" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
+                        <Button Content="⬆ 导入 CSV" Command="{Binding ImportCsvCommand}" Margin="0,0,8,0" />
+                        <Button Content="⬇ 导出 CSV" Command="{Binding ExportCsvCommand}" Margin="0,0,8,0" />
                         <Button Content="+ 添加点位" Command="{Binding AddCommand}"
                                 Margin="0,0,8,0" Style="{StaticResource PrimaryButtonStyle}" />
                         <Button Content="编辑" Command="{Binding EditCommand}" Margin="0,0,8,0" />

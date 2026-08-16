@@ -1,4 +1,4 @@
-﻿using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.DeviceManagement;
 using NitroGateway.DeviceManagement.Events;
@@ -152,6 +152,35 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
     public void ShowPoints(Guid deviceId, string deviceName) => ShowPointsCalls.Add((deviceId, deviceName));
 }
 
+/// <summary>CSV 文件服务测试替身：可编程内容/结果 + 记录调用（点位导入导出用）。</summary>
+internal sealed class StubCsvFileService : ICsvFileService
+{
+    /// <summary>PickImportCsv 返回值；null 表示用户取消</summary>
+    public string? PickImportResult;
+
+    /// <summary>SaveCsv 返回值；false 表示用户取消</summary>
+    public bool SaveResult = true;
+
+    public string? LastSavedFileName;
+    public string? LastSavedContent;
+    public int PickCalls;
+    public int SaveCalls;
+
+    public string? PickImportCsv()
+    {
+        PickCalls++;
+        return PickImportResult;
+    }
+
+    public bool SaveCsv(string defaultFileName, string content)
+    {
+        SaveCalls++;
+        LastSavedFileName = defaultFileName;
+        LastSavedContent = content;
+        return SaveResult;
+    }
+}
+
 /// <summary>ADR-029 测试替身：健康监控（无快照）。</summary>
 internal sealed class StubHealthMonitor : IDeviceHealthMonitor
 {
@@ -164,5 +193,27 @@ internal sealed class StubHealthMonitor : IDeviceHealthMonitor
     public IReadOnlyList<DeviceHealthSnapshot> GetAllSnapshots() => [];
     public void Remove(Guid deviceId) { }
     public void AddListener(IDeviceHealthListener listener) { }
+}
+
+/// <summary>ADR-044 测试替身：可编程连接测试结果 + 记录被测试设备。</summary>
+internal sealed class StubConnectionTester : IDeviceConnectionTester
+{
+    /// <summary>TestAsync 返回值（可编程）。</summary>
+    public ConnectionTestResult Result { get; set; } = new(true, 12, null, "ok");
+
+    /// <summary>非 null 时挂起，直到该任务完成（模拟测试进行中）。</summary>
+    public Task<ConnectionTestResult>? Gate { get; set; }
+
+    /// <summary>TestAsync 收到的设备对象。</summary>
+    public List<Device> Calls { get; } = [];
+
+    /// <summary>最后一次被测试的设备（无调用时为 null）。</summary>
+    public Device? LastDevice => Calls.Count == 0 ? null : Calls[^1];
+
+    public async Task<ConnectionTestResult> TestAsync(Device device, CancellationToken ct = default)
+    {
+        Calls.Add(device);
+        return Gate is null ? Result : await Gate;
+    }
 }
 

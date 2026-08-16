@@ -14,6 +14,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly EventBridge _bridge;
     private readonly UiDispatcher _ui;
+    private readonly RealtimeViewModel _realtime;
 
     public ObservableCollection<NavItem> NavItems { get; } = [];
 
@@ -37,6 +38,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _bridge = bridge;
         _ui = ui;
+        _realtime = realtime;
 
         // ADR-037 S10：导航项带 Segoe MDL2 Assets 图标字形
         NavItems.Add(new NavItem("设备", "\uE772", devices));
@@ -58,7 +60,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnSelectedNavChanged(NavItem? value)
     {
         if (value is not null)
+        {
             CurrentViewModel = value.ViewModel;
+            // ADR-045 P1：仅实时页激活曲线，其余页全部暂停（后台不再重绘/增长）
+            _realtime.IsActive = ReferenceEquals(value.ViewModel, _realtime);
+        }
+    }
+
+    /// <summary>
+    /// 窗口可见性变化（ADR-045 P1）：最小化时暂停实时曲线（背景不重绘），
+    /// 还原时仅在当前就在实时页时恢复。
+    /// </summary>
+    public void SetRealtimeVisible(bool visible)
+    {
+        if (!visible)
+            _realtime.IsActive = false;
+        else
+            _realtime.IsActive = ReferenceEquals(SelectedNav?.ViewModel, _realtime);
     }
 
     private void OnFrame(UiFrame frame)

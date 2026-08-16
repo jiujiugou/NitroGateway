@@ -1,6 +1,4 @@
 using System.Windows;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Views;
 
@@ -9,23 +7,22 @@ namespace NitroGateway.Desktop.Services;
 /// <summary>WPF 对话框实现（模态 Window，Owner 取主窗口）。</summary>
 public sealed class DeviceDialogService : IDeviceDialogService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IConfigSyncOutboxStore _outbox;
-    private readonly ILogger<PointsViewModel> _logger;
+    private readonly IDeviceConnectionTester _connectionTester;
+    private readonly IPointsViewModelFactory _pointsFactory;
 
     public DeviceDialogService(
-        IServiceScopeFactory scopeFactory,
-        IConfigSyncOutboxStore outbox,
-        ILogger<PointsViewModel> logger)
+        IDeviceConnectionTester connectionTester,
+        IPointsViewModelFactory pointsFactory)
     {
-        _scopeFactory = scopeFactory;
-        _outbox = outbox;
-        _logger = logger;
+        _connectionTester = connectionTester;
+        _pointsFactory = pointsFactory;
     }
 
     /// <inheritdoc />
     public bool EditDevice(DeviceEditor editor)
     {
+        // ADR-044：把连接测试服务注入表单模型，「测试连接」按钮命令在本机做 Connect+Ping
+        editor.ConnectionTester = _connectionTester;
         var window = new DeviceEditorWindow(editor) { Owner = Application.Current?.MainWindow };
         return window.ShowDialog() == true;
     }
@@ -45,7 +42,8 @@ public sealed class DeviceDialogService : IDeviceDialogService
     /// <inheritdoc />
     public void ShowPoints(Guid deviceId, string deviceName)
     {
-        var viewModel = new PointsViewModel(deviceId, deviceName, _scopeFactory, this, _outbox, _logger);
+        // ADR-029 P2：ViewModel 构造与 scope 依赖解析收敛到工厂，对话框只依赖工厂接口
+        var viewModel = _pointsFactory.Create(deviceId, deviceName);
         var window = new PointsWindow(viewModel) { Owner = Application.Current?.MainWindow };
         window.ShowDialog();
         viewModel.Dispose();

@@ -40,6 +40,15 @@ public static class DesktopServiceCollectionExtensions
         // ADR-029 P4：设备/点位编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
         services.AddSingleton<IDeviceDialogService, DeviceDialogService>();
 
+        // ADR-029 P2：点位 ViewModel 工厂（scope 解析收敛，对话框不再手工 new + GetRequiredService）
+        services.AddSingleton<IPointsViewModelFactory, PointsViewModelFactory>();
+
+        // 点位 CSV 导入/导出文件对话框（WPF 实现；ViewModel 依赖接口便于单测）
+        services.AddSingleton<ICsvFileService, CsvFileService>();
+
+        // ADR-044：桌面端连接测试（Connect+Ping，复用协议驱动工厂），供设备编辑窗口「测试连接」按钮
+        services.AddSingleton<IDeviceConnectionTester, DeviceConnectionTester>();
+
         // ADR-043：告警规则编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
         services.AddSingleton<IAlarmRuleDialogService, AlarmRuleDialogService>();
 

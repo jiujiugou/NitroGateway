@@ -175,11 +175,101 @@ public sealed class PointsViewModelTests : IDisposable
         Assert.Equal(point.Id, row.PointId);
     }
 
+    [Fact]
+    public async Task ImportCsv_imports_points_and_records_outbox()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService();
+        var outbox = new StubConfigSyncOutboxStore();
+        var csvFiles = new StubCsvFileService
+        {
+            PickImportResult = """
+Name,Address,DataType,Access,Enabled,ScanIntervalMs,Deadband,ScaleFactor,ScaleOffset,Description
+温度,40001,Float,ReadOnly,True,1000,0,1,0,测试
+压力,40003,Float,ReadOnly,True,1000,0,1,0,测试
+"""
+        };
+        var vm = CreateVm(manager, dialogs, outbox, csvFiles);
+
+        await vm.ImportCsvCommand.ExecuteAsync(null);
+
+        var imported = Assert.Single(manager.Imported);
+        Assert.Equal(_deviceId, imported.DeviceId);
+        Assert.Equal(2, imported.Points.Count);
+        Assert.Equal(2, outbox.Records.Count(r => r.Kind == ConfigSyncOutboxKind.Point));
+        Assert.Contains("已导入 2 个点位", vm.StatusText);
+        Assert.Equal(2, vm.Items.Count);
+    }
+
+    [Fact]
+    public async Task ImportCsv_cancel_does_not_import()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService();
+        var csvFiles = new StubCsvFileService { PickImportResult = null };
+        var vm = CreateVm(manager, dialogs, null, csvFiles);
+
+        await vm.ImportCsvCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, csvFiles.PickCalls);
+        Assert.Empty(manager.Imported);
+    }
+
+    [Fact]
+    public async Task ImportCsv_invalid_csv_reports_error()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService();
+        // 缺少必填列 DataType → 解析失败，不落库
+        var csvFiles = new StubCsvFileService { PickImportResult = "Name,Address\n温度,40001" };
+        var vm = CreateVm(manager, dialogs, null, csvFiles);
+
+        await vm.ImportCsvCommand.ExecuteAsync(null);
+
+        Assert.Empty(manager.Imported);
+        Assert.Contains("导入失败", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task ExportCsv_saves_file_with_points()
+    {
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, TestDevices.Point("温度"), TestDevices.Point("压力"));
+        var dialogs = new StubDeviceDialogService();
+        var csvFiles = new StubCsvFileService();
+        var vm = CreateVm(manager, dialogs, null, csvFiles);
+
+        await vm.ExportCsvCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, csvFiles.SaveCalls);
+        Assert.Equal($"points_{_deviceId}.csv", csvFiles.LastSavedFileName);
+        Assert.NotNull(csvFiles.LastSavedContent);
+        Assert.Contains("温度", csvFiles.LastSavedContent);
+        Assert.Contains("压力", csvFiles.LastSavedContent);
+        Assert.Contains("已导出 2 个点位", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task ExportCsv_cancel_does_not_report_exported()
+    {
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, TestDevices.Point("温度"));
+        var dialogs = new StubDeviceDialogService();
+        var csvFiles = new StubCsvFileService { SaveResult = false };
+        var vm = CreateVm(manager, dialogs, null, csvFiles);
+
+        await vm.ExportCsvCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, csvFiles.SaveCalls);
+        Assert.DoesNotContain("已导出", vm.StatusText);
+    }
+
     public void Dispose() => _provider?.Dispose();
 
     private PointsViewModel CreateVm(
         StubPointManager manager, StubDeviceDialogService dialogs,
-        StubConfigSyncOutboxStore? outbox = null)
+        StubConfigSyncOutboxStore? outbox = null,
+        StubCsvFileService? csvFiles = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IPointManager>(_ => manager);
@@ -187,7 +277,8 @@ public sealed class PointsViewModelTests : IDisposable
         return new PointsViewModel(
             _deviceId, "车间 PLC",
             _provider.GetRequiredService<IServiceScopeFactory>(), dialogs,
-            outbox ?? new StubConfigSyncOutboxStore(),
+            outbox ?? new StubConfigSyncOutboxStore(), csvFiles ?? new StubCsvFileService(),
+            new PointBatchService(NullLogger<PointBatchService>.Instance),
             NullLogger<PointsViewModel>.Instance);
     }
 }

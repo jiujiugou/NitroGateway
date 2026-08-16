@@ -35,10 +35,33 @@
             </StackPanel>
             <TextBlock Text="正在启动采集服务…" Foreground="{StaticResource TextRegular}"
                        Margin="0,22,0,0" />
-            <ProgressBar x:Name="StartupProgress" IsIndeterminate="True" Height="6" Margin="0,14,0,12" />
-            <TextBlock x:Name="StatusText" Text="正在初始化数据库与后台服务…"
-                       Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
-            <Button x:Name="CloseButton" Content="关闭" Visibility="Collapsed" Click="OnClose"
+            <!-- 进度条：启动中可见；失败（IsFailed=true）隐藏 -->
+            <ProgressBar IsIndeterminate="True" Height="6" Margin="0,14,0,12">
+                <ProgressBar.Style>
+                    <Style TargetType="ProgressBar">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFailed}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ProgressBar.Style>
+            </ProgressBar>
+            <!-- 状态文案：默认次级色；失败（IsFailed=true）置红 -->
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFailed}" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <Button Content="关闭" Visibility="{Binding IsFailed, Converter={StaticResource BoolToVis}}" Click="OnClose"
                     HorizontalAlignment="Right" Margin="0,20,0,0" Padding="22,6" />
         </StackPanel>
     </Border>

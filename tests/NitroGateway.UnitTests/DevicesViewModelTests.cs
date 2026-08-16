@@ -367,9 +367,29 @@ public sealed class DevicesViewModelTests : IDisposable
         Assert.Equal(3, vm.TotalPoints);
     }
 
+    [Fact]
+    public async Task Timer_tick_triggers_refresh()
+    {
+        // 轮询节奏经 IUiTimer 注入：FakeUiTimer 手动触发一个周期等价 DispatcherTimer 到达
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess(); // 构造时首次刷新
+        var timer = new FakeUiTimer();
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService(), timer: timer);
+
+        Assert.True(timer.IsStarted);
+        Assert.Equal(1, timer.StartCalls);
+
+        var device = TestDevices.Device("PLC-1");
+        cache.EnqueueSuccess(device);
+        timer.RaiseTick();
+
+        await TestWait.UntilAsync(() => vm.Items.Count == 1);
+        Assert.Equal("PLC-1", vm.Items[0].Name);
+    }
+
     private DevicesViewModel CreateVm(
         IDeviceSnapshotCache cache, StubDeviceManager manager, StubDeviceDialogService dialogs,
-        StubConfigSyncOutboxStore? outbox = null)
+        StubConfigSyncOutboxStore? outbox = null, IUiTimer? timer = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IDeviceManager>(_ => manager);
@@ -379,6 +399,6 @@ public sealed class DevicesViewModelTests : IDisposable
             cache, new FakeHealthMonitor(), new UiDispatcher(), _bridge,
             NullLogger<DevicesViewModel>.Instance,
             provider.GetRequiredService<IServiceScopeFactory>(), dialogs,
-            outbox ?? new StubConfigSyncOutboxStore());
+            outbox ?? new StubConfigSyncOutboxStore(), timer);
     }
 }

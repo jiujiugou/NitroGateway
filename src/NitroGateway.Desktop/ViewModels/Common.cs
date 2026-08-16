@@ -30,4 +30,17 @@ public sealed class RingObservableCollection<T> : ObservableCollection<T>
         ((List<T>)Items).RemoveRange(0, remove);
         OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
     }
+
+    /// <summary>
+    /// 整份替换为指定元素（单次 Reset 通知）。降采样刷新时批量重建显示集合，
+    /// 替代 Clear + 逐项 Add 的 N 次通知（ADR-045 P2）。
+    /// </summary>
+    /// <param name="items">新的完整内容</param>
+    public void Replace(IEnumerable<T> items)
+    {
+        var list = (List<T>)Items;
+        list.Clear();
+        list.AddRange(items);
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
 }

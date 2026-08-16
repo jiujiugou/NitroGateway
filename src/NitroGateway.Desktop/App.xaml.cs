@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Desktop.Hosting;
 using NitroGateway.Desktop.Views;
@@ -50,7 +50,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             _logger?.LogError(ex, "宿主启动失败");
-            splash.ShowError(ex.Message);
+            splash.ViewModel.ShowError(ex.Message);
             return; // 用户点「关闭」退出（ShutdownMode=OnLastWindowClose）
         }
 

@@ -1,4 +1,5 @@
 using NitroGateway.Desktop.ViewModels;
+using NitroGateway.Desktop.Services;
 using NitroGateway.Domain.Devices;
 using Xunit;
 
@@ -298,5 +299,68 @@ public sealed class DeviceEditorTests
 
         Assert.True(editor.Validate());
         Assert.False(editor.HasErrors);
+    }
+
+    // ===== ADR-044：连接测试命令（测试动作收敛为命令 + 结果属性，窗口不再直接操控件） =====
+
+    [Fact]
+    public void IsTestEnabled_false_without_tester()
+    {
+        var editor = new DeviceEditor();
+
+        Assert.False(editor.IsTestEnabled);
+        Assert.False(editor.TestConnectionCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task TestConnection_calls_tester_and_writes_success_text()
+    {
+        var tester = new StubConnectionTester { Result = new ConnectionTestResult(true, 12, null, "ok") };
+        var editor = new DeviceEditor { Name = "PLC-1", ConnectionTester = tester };
+
+        Assert.True(editor.IsTestEnabled);
+        await editor.TestConnectionCommand.ExecuteAsync(null);
+
+        var tested = Assert.Single(tester.Calls);
+        Assert.Equal("PLC-1", tested.Name);
+        Assert.Contains("连接成功", editor.TestResultText);
+        Assert.Contains("12", editor.TestResultText);
+        Assert.False(editor.IsTestingConnection);
+    }
+
+    [Fact]
+    public async Task TestConnection_failure_writes_error_text()
+    {
+        var tester = new StubConnectionTester { Result = new ConnectionTestResult(false, 0, "从站无响应") };
+        var editor = new DeviceEditor { Name = "PLC-1", ConnectionTester = tester };
+
+        await editor.TestConnectionCommand.ExecuteAsync(null);
+
+        Assert.Contains("连接失败", editor.TestResultText);
+        Assert.Contains("从站无响应", editor.TestResultText);
+        Assert.False(editor.IsTestingConnection);
+    }
+
+    [Fact]
+    public async Task TestConnection_marks_testing_while_running()
+    {
+        var gate = new TaskCompletionSource<ConnectionTestResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tester = new StubConnectionTester { Gate = gate.Task };
+        var editor = new DeviceEditor { Name = "PLC-1", ConnectionTester = tester };
+
+        // 测试动作挂起：命令先开始执行，停在 TestAsync 的 Gate 上
+        var running = editor.TestConnectionCommand.ExecuteAsync(null);
+
+        // 挂起期间按钮禁用
+        Assert.True(editor.IsTestingConnection);
+        Assert.False(editor.IsTestEnabled);
+        Assert.Contains("测试中", editor.TestResultText);
+
+        gate.SetResult(new ConnectionTestResult(true, 3, null, "ok"));
+        await running;
+
+        Assert.False(editor.IsTestingConnection);
+        Assert.True(editor.IsTestEnabled);
+        Assert.Contains("连接成功", editor.TestResultText);
     }
 }

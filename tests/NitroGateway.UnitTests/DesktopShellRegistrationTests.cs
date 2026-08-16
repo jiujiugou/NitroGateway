@@ -1,4 +1,4 @@
-﻿using Xunit;
+using Xunit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -36,6 +36,32 @@ public sealed class DesktopShellRegistrationTests
         Assert.Same(bridge, provider.GetRequiredService<IPointStoredSink>());
         Assert.Same(bridge, provider.GetRequiredService<IDeviceHealthListener>());
         Assert.Same(bridge, provider.GetRequiredService<IMqttStateListener>());
+    }
+
+    [Fact]
+    public void PointsViewModelFactory_is_registered_and_resolves()
+    {
+        // ADR-029 P2：点位 ViewModel 工厂经 DI 注册（对话框不再手工 new + 逐个 GetRequiredService）
+        var services = new ServiceCollection();
+        services.AddSingleton<IForwardBuffer>(new StubForwardBuffer());
+        services.AddSingleton<UiDispatcher>();
+        services.AddSingleton<MqttConnectionOptions>();
+        // ADR-033：ConfigSyncOutboxStore 需要连接串（PointsViewModelFactory 的构造函数依赖）
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Persistence:ConnectionString"] = "Data Source=:memory:"
+            })
+            .Build();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddNitroDesktopShell(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<IPointsViewModelFactory>();
+
+        Assert.NotNull(factory);
+        Assert.IsType<PointsViewModelFactory>(factory);
     }
 
     private sealed class StubForwardBuffer : IForwardBuffer

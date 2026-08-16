@@ -95,6 +95,8 @@ public sealed class HistoryViewModelTests
         var second = vm.QueryCommand.ExecuteAsync(null); // 在途时重入应直接返回
         await second;
 
+        // ADR-047：store 查询经 Task.Run 移到线程池，等待第一次查询真正出队后再断言只触达一次
+        await TestWait.UntilAsync(() => store.PagedDequeueCount >= 1);
         Assert.Single(store.PagedCalls); // 第二次查询未再触达存储
 
         gate.SetResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success([]));

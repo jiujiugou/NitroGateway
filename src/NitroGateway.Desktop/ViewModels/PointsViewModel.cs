@@ -20,6 +20,8 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDeviceDialogService _dialogs;
     private readonly IConfigSyncOutboxStore _outbox;
+    private readonly ICsvFileService _csvFiles;
+    private readonly PointBatchService _batch;
     private readonly ILogger<PointsViewModel> _logger;
 
     public ObservableCollection<PointItem> Items { get; } = [];
@@ -36,6 +38,8 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
         IServiceScopeFactory scopeFactory,
         IDeviceDialogService dialogs,
         IConfigSyncOutboxStore outbox,
+        ICsvFileService csvFiles,
+        PointBatchService batch,
         ILogger<PointsViewModel> logger)
     {
         _deviceId = deviceId;
@@ -43,6 +47,8 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
         _scopeFactory = scopeFactory;
         _dialogs = dialogs;
         _outbox = outbox;
+        _csvFiles = csvFiles;
+        _batch = batch;
         _logger = logger;
         _ = RefreshAsync();
     }
@@ -143,6 +149,58 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
         await RecordOutboxAsync(() => _outbox.RecordPointDeleteAsync(_deviceId, SelectedPoint.Id));
         StatusText = $"点位「{SelectedPoint.Name}」已删除";
         await RefreshAsync();
+    }
+
+    /// <summary>批量导入点位：选 CSV → 解析 → ImportAsync → 逐条入 outbox（配置同步上报）。</summary>
+    [RelayCommand]
+    private async Task ImportCsvAsync()
+    {
+        var csvText = _csvFiles.PickImportCsv();
+        if (csvText is null)
+            return; // 用户取消
+
+        var parseResult = _batch.ParseCsv(csvText);
+        if (parseResult.IsFailure)
+        {
+            StatusText = $"导入失败：{parseResult.Error!.Message}";
+            return;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IPointManager>();
+        var result = await manager.ImportAsync(_deviceId, parseResult.Value!);
+        if (result.IsFailure)
+        {
+            StatusText = $"导入失败：{result.Error!.Message}";
+            return;
+        }
+
+        // ADR-033 阶段 4：导入点位逐条入 outbox，同步服务上报中心（与 Add/Edit 同语义）
+        foreach (var point in result.Value!)
+            await RecordOutboxAsync(() => _outbox.RecordPointAsync(_deviceId, point));
+
+        await RefreshAsync();
+        StatusText = $"已导入 {result.Value!.Count} 个点位";
+    }
+
+    /// <summary>导出点位 CSV：GetByDeviceAsync → ExportCsv → 保存文件。</summary>
+    [RelayCommand]
+    private async Task ExportCsvAsync()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IPointManager>();
+        var result = await manager.GetByDeviceAsync(_deviceId);
+        if (result.IsFailure)
+        {
+            StatusText = $"导出失败：{result.Error!.Message}";
+            return;
+        }
+
+        var csv = _batch.ExportCsv(result.Value!);
+        if (!_csvFiles.SaveCsv($"points_{_deviceId}.csv", csv))
+            return; // 用户取消
+
+        StatusText = $"已导出 {result.Value!.Count} 个点位";
     }
 
     public void Dispose()

@@ -1,4 +1,5 @@
-﻿using NitroGateway.DeviceManagement;
+using NitroGateway.DeviceManagement;
+using NitroGateway.Desktop.Services;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Shared;
@@ -32,32 +33,53 @@ internal sealed class StagedSnapshotCache : IDeviceSnapshotCache
 
 /// <summary>
 /// ADR-027：按调用顺序出队的时序存储 fake，记录分页调用参数（limit/offset）供断言。
+/// ADR-047：store 查询在 VM 内经 Task.Run 移到线程池执行，出队可能跨线程，
+/// 故对队列/PagedCalls 加锁，并暴露 <see cref="PagedDequeueCount"/> 供测试等待某次查询真正触达存储。
 /// </summary>
 internal sealed class StagedMeasurementStore : IMeasurementStore
 {
+    private readonly object _gate = new();
     private readonly Queue<Task<OperationResult<IReadOnlyList<PointSnapshot>>>> _paged = new();
     private readonly Queue<Task<OperationResult<IReadOnlyList<PointSnapshot>>>> _latest = new();
+    private int _pagedDequeueCount;
 
     /// <summary>分页查询调用记录：(limit, offset)。</summary>
     public List<(int Limit, int Offset)> PagedCalls { get; } = new();
 
-    public void EnqueuePaged(Task<OperationResult<IReadOnlyList<PointSnapshot>>> result) => _paged.Enqueue(result);
-    public void EnqueueLatest(Task<OperationResult<IReadOnlyList<PointSnapshot>>> result) => _latest.Enqueue(result);
+    /// <summary>分页查询已出队次数（Task.Run 下出队在线程池，供测试等待查询真正发起后再触发下一次）。</summary>
+    public int PagedDequeueCount => Volatile.Read(ref _pagedDequeueCount);
+
+    public void EnqueuePaged(Task<OperationResult<IReadOnlyList<PointSnapshot>>> result)
+    {
+        lock (_gate) _paged.Enqueue(result);
+    }
+
+    public void EnqueueLatest(Task<OperationResult<IReadOnlyList<PointSnapshot>>> result)
+    {
+        lock (_gate) _latest.Enqueue(result);
+    }
 
     public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
         Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default)
     {
-        PagedCalls.Add((limit, offset));
-        return _paged.Count > 0
-            ? _paged.Dequeue()
-            : Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(Array.Empty<PointSnapshot>()));
+        lock (_gate)
+        {
+            Interlocked.Increment(ref _pagedDequeueCount);
+            PagedCalls.Add((limit, offset));
+            return _paged.Count > 0
+                ? _paged.Dequeue()
+                : Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(Array.Empty<PointSnapshot>()));
+        }
     }
 
     public Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
-        Guid deviceId, Guid? pointId, CancellationToken ct = default) =>
-        _latest.Count > 0
-            ? _latest.Dequeue()
-            : Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(Array.Empty<PointSnapshot>()));
+        Guid deviceId, Guid? pointId, CancellationToken ct = default)
+    {
+        lock (_gate)
+            return _latest.Count > 0
+                ? _latest.Dequeue()
+                : Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(Array.Empty<PointSnapshot>()));
+    }
 
     public Task<OperationResult> WriteAsync(IReadOnlyList<PointSnapshot> snapshots, CancellationToken ct = default) =>
         throw new NotSupportedException();
@@ -134,4 +156,37 @@ internal static class TestDevices
         Value = value,
         Timestamp = timestamp ?? DateTime.UtcNow
     };
+}
+
+/// <summary>IUiTimer 测试替身：手动触发 Tick，记录 Start/Stop 调用（轮询节奏注入）。</summary>
+internal sealed class FakeUiTimer : IUiTimer
+{
+    /// <inheritdoc />
+    public event EventHandler? Tick;
+
+    /// <summary>Start 调用次数。</summary>
+    public int StartCalls { get; private set; }
+
+    /// <summary>Stop 调用次数。</summary>
+    public int StopCalls { get; private set; }
+
+    /// <summary>当前是否处于启动态（Start 后未 Stop）。</summary>
+    public bool IsStarted { get; private set; }
+
+    /// <inheritdoc />
+    public void Start()
+    {
+        StartCalls++;
+        IsStarted = true;
+    }
+
+    /// <inheritdoc />
+    public void Stop()
+    {
+        StopCalls++;
+        IsStarted = false;
+    }
+
+    /// <summary>手动触发一个周期（等价 DispatcherTimer 到达间隔）。</summary>
+    public void RaiseTick() => Tick?.Invoke(this, EventArgs.Empty);
 }

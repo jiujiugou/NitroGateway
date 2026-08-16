@@ -25,7 +25,13 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
         Closing += OnWindowClosing;
         Closed += OnWindowClosed;
+        // ADR-045 P1：窗口最小化时暂停实时曲线（背景不重绘），还原时恢复
+        StateChanged += OnWindowStateChanged;
     }
+
+    /// <summary>窗口最小化 → 暂停实时曲线；还原 → 仅当当前在实时页时恢复（ADR-045 P1）。</summary>
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+        => _viewModel.SetRealtimeVisible(WindowState != WindowState.Minimized);
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {

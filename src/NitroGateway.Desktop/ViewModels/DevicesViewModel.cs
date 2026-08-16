@@ -1,5 +1,4 @@
-﻿using System.Collections.ObjectModel;
-using System.Windows.Threading;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +25,7 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     private readonly IDeviceDialogService _dialogs;
     private readonly IConfigSyncOutboxStore _outbox;
     private readonly ILogger<DevicesViewModel> _logger;
-    private readonly DispatcherTimer _timer;
+    private readonly IUiTimer _timer;
 
     /// <summary>设备行集合（UI 线程）</summary>
     public ObservableCollection<DeviceItem> Items { get; } = [];
@@ -62,7 +61,8 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         ILogger<DevicesViewModel> logger,
         IServiceScopeFactory scopeFactory,
         IDeviceDialogService dialogs,
-        IConfigSyncOutboxStore outbox)
+        IConfigSyncOutboxStore outbox,
+        IUiTimer? timer = null)
     {
         _cache = cache;
         _health = health;
@@ -74,7 +74,8 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         _logger = logger;
 
         _bridge.FrameReady += OnFrame;
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        // 轮询节奏是 view 关注点：经 IUiTimer 注入，测试可手动触发；缺省用 WPF DispatcherTimer
+        _timer = timer ?? new DispatcherUiTimer(TimeSpan.FromSeconds(5));
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();
         _ = RefreshAsync();
