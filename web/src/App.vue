@@ -28,7 +28,8 @@
         <router-link to="/alarms" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🔔</span><span>告警记录</span>
         </router-link>
-        <router-link to="/deadletters" class="nav-item" active-class="nav-active">
+        <!-- ADR-044：死信是转发缓冲产物，Center 形态不转发无死信源，隐藏入口 -->
+        <router-link v-if="mode !== 'Center'" to="/deadletters" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📬</span><span>死信管理</span>
         </router-link>
         <router-link to="/sites" class="nav-item" active-class="nav-active">
@@ -45,7 +46,8 @@
     <main class="main-area">
       <header class="topbar">
         <div class="topbar-title">NitroGateway 管理控制台</div>
-        <div class="topbar-status">
+        <!-- ADR-044：Center 形态不采集/不转发/无 MQTT，隐藏转发侧状态，避免误导 -->
+        <div v-if="mode !== 'Center'" class="topbar-status">
           <span :class="['status-dot', mqttConnected ? 'online' : 'offline']"></span>
           <span>{{ mqttConnected ? 'MQTT 已连接' : 'MQTT 未连接' }}</span>
           <span class="status-sep">|</span>
@@ -64,6 +66,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { getSystemStatus } from './api/status'
 import { createLiveConnection } from './api/signalr'
 import type { HubConnection } from '@microsoft/signalr'
+import { mode } from './deployment'
 
 const mqttConnected = ref(false)
 const backlog = ref(0)
@@ -83,6 +86,8 @@ async function refreshStatus() {
 }
 
 onMounted(async () => {
+  // ADR-044：Center 形态不采集/不转发/无 MQTT，跳过状态轮询与 SignalR，避免空转与误导
+  if (mode.value === 'Center') return
   await refreshStatus()
   statusTimer = window.setInterval(refreshStatus, 10000)
 

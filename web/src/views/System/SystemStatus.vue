@@ -4,15 +4,16 @@
 
     <!-- 核心指标 -->
     <div class="stat-grid">
-      <div class="stat-card" :class="mqtt.connected ? 'ok' : 'err'">
+      <!-- ADR-044：MQTT/缓冲积压/节流器是转发侧指标，Center 形态无数据来源，隐藏 -->
+      <div v-if="mode !== 'Center'" class="stat-card" :class="mqtt.connected ? 'ok' : 'err'">
         <div class="stat-label">MQTT</div>
         <div class="stat-value">{{ mqtt.state }}</div>
       </div>
-      <div class="stat-card" :class="backlog > 100 ? 'warn' : 'ok'">
+      <div v-if="mode !== 'Center'" class="stat-card" :class="backlog > 100 ? 'warn' : 'ok'">
         <div class="stat-label">缓冲积压</div>
         <div class="stat-value">{{ backlog }}</div>
       </div>
-      <div class="stat-card">
+      <div v-if="mode !== 'Center'" class="stat-card">
         <div class="stat-label">节流器</div>
         <div class="stat-value">{{ throttle.batch }} / {{ throttle.delay }}ms</div>
       </div>
@@ -22,8 +23,8 @@
       </div>
     </div>
 
-    <!-- 熔断器状态 -->
-    <div class="card" style="margin-top:20px">
+    <!-- 熔断器状态（ADR-044：Center 形态不采集，无熔断器，隐藏） -->
+    <div v-if="mode !== 'Center'" class="card" style="margin-top:20px">
       <h3 style="margin:0 0 16px">设备熔断器</h3>
       <el-table :data="breakers" size="small" empty-text="暂无设备">
         <el-table-column prop="deviceId" label="设备 ID" :formatter="shortId" />
@@ -54,8 +55,8 @@
       </el-table>
     </div>
 
-    <!-- 串口状态 -->
-    <div class="card" style="margin-top:20px">
+    <!-- 串口状态（ADR-044：Center 形态无现场串口，隐藏） -->
+    <div v-if="mode !== 'Center'" class="card" style="margin-top:20px">
       <h3 style="margin:0 0 16px">串口状态</h3>
       <el-table :data="serialPorts" size="small" empty-text="暂无已打开的串口">
         <el-table-column prop="portName" label="端口" width="140" />
@@ -81,6 +82,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import client from '../../api/client'
 import { getSerialPorts, getSerialPortStatus } from '../../api/devices'
+import { mode } from '../../deployment'
 
 const mqtt = ref({ state: '-', connected: false })
 const backlog = ref(0)
@@ -103,8 +105,11 @@ async function refresh() {
     }
     const { data: h } = await client.get('/status/devices/health')
     if (h.data) health.value = h.data
-    availablePorts.value = await getSerialPorts()
-    serialPorts.value = await getSerialPortStatus()
+    // ADR-044：Center 形态串口端点返回 400，跳过拉取（不再每次轮询刷错误）
+    if (mode.value !== 'Center') {
+      availablePorts.value = await getSerialPorts()
+      serialPorts.value = await getSerialPortStatus()
+    }
   } catch {}
 }
 

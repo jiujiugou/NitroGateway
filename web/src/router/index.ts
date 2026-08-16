@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { mode } from '../deployment'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -14,19 +15,21 @@ const router = createRouter({
     { path: '/monitoring', name: 'Monitoring', component: () => import('../views/Monitoring/MonitoringView.vue') },
     { path: '/alarms', name: 'Alarms', component: () => import('../views/Alarms/AlarmListView.vue') },
     { path: '/alarmrules', name: 'AlarmRules', component: () => import('../views/Alarms/AlarmRulesView.vue') },
-    { path: '/deadletters', name: 'DeadLetters', component: () => import('../views/DeadLetters/DeadLettersView.vue') },
+    { path: '/deadletters', name: 'DeadLetters', component: () => import('../views/DeadLetters/DeadLettersView.vue'), meta: { edgeOnly: true } },
     { path: '/sites', name: 'Sites', component: () => import('../views/Sites/SiteManagementView.vue') },
     { path: '/system', name: 'SystemStatus', component: () => import('../views/System/SystemStatus.vue') },
     { path: '/history', name: 'History', component: () => import('../views/History/HistoryView.vue') },
   ]
 })
 
-// 导航守卫：未登录跳 /login
+// 导航守卫：未登录跳 /login；Center 形态禁用边缘能力页面（死信等）
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   if (to.path !== '/login' && !token) {
     next('/login')
   } else if (to.path === '/login' && token) {
+    next('/dashboard')
+  } else if (mode.value === 'Center' && to.meta?.edgeOnly) {
     next('/dashboard')
   } else {
     next()

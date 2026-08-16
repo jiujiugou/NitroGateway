@@ -3,9 +3,6 @@
     <h2 class="page-title">点位管理</h2>
     <div class="actions">
       <el-button @click="handleExport">⬇ 导出 CSV</el-button>
-      <el-upload :auto-upload="false" :show-file-list="false" accept=".csv" @change="handleImport">
-        <el-button>⬆ 导入 CSV</el-button>
-      </el-upload>
       <el-button type="warning" @click="showGen=true">⚙ 批量生成</el-button>
       <el-button type="primary" @click="openAdd">+ 添加点位</el-button>
     </div>
@@ -87,7 +84,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { getDevice, getPoints, addPoint, updatePoint, deletePoint, importPoints, generatePoints, exportPoints } from '../../api/devices'
+import { getDevice, getPoints, addPoint, updatePoint, deletePoint, generatePoints, exportPoints } from '../../api/devices'
 import type { DevicePoint } from '../../api/types'
 
 const route = useRoute()
@@ -152,14 +149,6 @@ async function handleDel(id: string) {
 
 async function handleExport() {
   try { await exportPoints(deviceId) } catch {}
-}
-
-async function handleImport(file: any) {
-  try {
-    const text = await file.raw.text()
-    const count = await importPoints(deviceId, text)
-    if (count > 0) { points.value = await getPoints(deviceId) }
-  } catch {}
 }
 
 async function generate() {

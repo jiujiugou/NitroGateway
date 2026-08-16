@@ -51,11 +51,6 @@ export async function deletePoint(deviceId: string, pointId: string): Promise<bo
   return data.success
 }
 
-export async function importPoints(deviceId: string, csvText: string): Promise<number> {
-  const { data } = await client.post<ApiResponse<{ count: number }>>(`/devices/${deviceId}/points/import`, csvText, { headers: { 'Content-Type': 'text/plain' } })
-  return data.data?.count ?? 0
-}
-
 export async function generatePoints(deviceId: string, req: { nameTemplate: string; startAddress: string; count: number; dataType: string; access: string; protocol?: string }): Promise<number> {
   const { data } = await client.post<ApiResponse<{ count: number }>>(`/devices/${deviceId}/points/generate`, req)
   return data.data?.count ?? 0

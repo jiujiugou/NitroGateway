@@ -110,7 +110,8 @@
       <el-form-item label="描述"><el-input v-model="f.description" type="textarea" rows="2" /></el-form-item>
       <div style="display:flex;gap:12px;margin-top:8px">
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-        <el-button :loading="testing" @click="testConn">🔌 测试连接</el-button>
+        <!-- ADR-044：连接测试是边缘物理操作，Center 形态到不了现场 PLC，入口迁移到桌面端 -->
+        <el-button v-if="mode !== 'Center'" :loading="testing" @click="testConn">🔌 测试连接</el-button>
         <el-button @click="$router.back()">取消</el-button>
       </div>
       <div v-if="testResult !== null" :class="['test-result', testResult.success ? 'test-ok' : 'test-fail']" style="margin-top:12px">
@@ -125,6 +126,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getDevice, createDevice, updateDevice, testConnection, getSerialPorts } from '../../api/devices'
 import { getSites } from '../../api/sites'
+import { mode } from '../../deployment'
 
 const route = useRoute(); const router = useRouter()
 const isEdit = ref(!!route.params.id)
@@ -238,7 +240,10 @@ function onDialectChange() {
 }
 
 onMounted(async () => {
-  try { availablePorts.value = await getSerialPorts() } catch { /* 忽略 */ }
+  // ADR-044：Center 形态无现场串口（后端返回 400），不加载串口列表，允许手填
+  if (mode.value !== 'Center') {
+    try { availablePorts.value = await getSerialPorts() } catch { /* 忽略 */ }
+  }
   try { sites.value = await getSites() } catch { /* 忽略 */ }
   if (isEdit.value) {
     const d = await getDevice(route.params.id as string)
