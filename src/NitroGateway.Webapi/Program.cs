@@ -63,6 +63,9 @@ builder.Services.AddScoped<NitroGateway.Webapi.Services.ConfigSyncService>();
 // 中心侧告警规则 CRUD / 告警查询由 AddNitroSqlite 的仓储支撑，不受影响。
 var deploymentMode = DeploymentModeParser.Parse(builder.Configuration);
 var isCenter = deploymentMode == DeploymentMode.Center;
+// ADR-044：部署形态注册为单例，供控制器按 Gateway/Center 裁剪边缘能力（test-connection/串口/转发状态）。
+// B 阶段中心「意图下发」沿用同一 mode 语义，避免每处重复解析配置。
+builder.Services.AddSingleton(typeof(DeploymentMode), deploymentMode);
 if (!isCenter)
 {
     builder.Services.AddNitroAlarm();
