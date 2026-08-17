@@ -43,8 +43,11 @@ public sealed class DevicePoint
     public int ScanIntervalMs { get; set; }
 
     /// <summary>
-    /// 值变化死区，仅对模拟量（Float、Double 等）有效。
-    /// 相邻两次采集值的变化小于此值时不触发上报，0 表示不启用死区。
+    /// 变化抑制阈值（死区），仅对模拟量（Float、Double 等）有效（ADR-053）。
+    /// 0（默认）= 每样本都上报/落库/推送（向后兼容，需每秒连续历史的点保持 0）；
+    /// &gt; 0 = |新工程值 − 最后已存值| <strong>&lt;</strong> 此值时抑制（不落库、不转发、不推送），
+    /// 达到或超过此值才上报；另有心跳兜底（<c>Collection:DeadbandHeartbeatMs</c>，默认 5 分钟）
+    /// 保证长期静止的点也会周期性补一条，避免断档。
     /// </summary>
     public double Deadband { get; set; }
 

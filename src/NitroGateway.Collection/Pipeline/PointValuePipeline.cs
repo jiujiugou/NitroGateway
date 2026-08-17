@@ -9,8 +9,11 @@ namespace NitroGateway.Collection;
 /// <summary>
 /// 值转换管道实现：协议解码值 → 工程缩放（×ScaleFactor + ScaleOffset）→ 死区 → PointSnapshot。
 /// 协议解码由驱动完成（Modbus ushort[]→类型、OPC UA Variant→.NET 类型），本类不感知协议细节。
-/// <para><b>死区语义（重要）：</b>死区只影响"上次工程值缓存"的更新（供告警 Duration 判定），
-/// 不丢弃数据——快照照常下发，SignalR 推送与存储写入不受死区影响。</para>
+/// <para><b>死区语义（重要）：</b>本管道<u>不丢数据</u>——死区只影响"上次工程值缓存"的更新
+/// （供告警 Duration 判定），并把 <see cref="DevicePoint.Deadband"/> 透传到快照
+/// （<see cref="PointSnapshot.Deadband"/>）。真正的变化抑制由 Dispatcher 层的
+/// <see cref="ChangeDetector"/> 执行（ADR-053），三处消费边界（落库/转发/SignalR）共用放行子集，
+/// 桌面实时图与告警仍收全量。</para>
 /// <para><b>边界：</b>Bool/String 不做缩放与死区；非数值类型直接透传；
 /// 数值缩放失败产出 Uncertain 快照而非抛异常；单点位失败不影响整批。</para>
 /// </summary>
@@ -72,7 +75,9 @@ public sealed class PointValuePipeline : IPointValuePipeline
                 RawValue = rawValue,
                 Value = rawValue,
                 Timestamp = raw.Timestamp,
-                Quality = QualityCode.Good
+                Quality = QualityCode.Good,
+                // ADR-053：Bool/String 无死区概念，但统一透传 Deadband 供 ChangeDetector 读取
+                Deadband = point.Deadband
             };
         }
 
@@ -88,7 +93,9 @@ public sealed class PointValuePipeline : IPointValuePipeline
                 RawValue = rawValue,
                 Value = rawValue,
                 Timestamp = raw.Timestamp,
-                Quality = QualityCode.Good
+                Quality = QualityCode.Good,
+                // ADR-053：非数值类型同样透传 Deadband（ChangeDetector 统一按快照字段判定）
+                Deadband = point.Deadband
             };
         }
 
@@ -109,6 +116,8 @@ public sealed class PointValuePipeline : IPointValuePipeline
                 RawValue = rawValue,
                 Timestamp = raw.Timestamp,
                 Quality = QualityCode.Uncertain,
+                // ADR-053：缩放失败按"质量变化必写"落库；透传 Deadband 供 ChangeDetector 读取
+                Deadband = point.Deadband,
                 ErrorMessage = "缩放失败：无法转换为数值"
             };
         }
@@ -136,7 +145,9 @@ public sealed class PointValuePipeline : IPointValuePipeline
             RawValue = rawValue,
             Value = engValue,
             Timestamp = raw.Timestamp,
-            Quality = QualityCode.Good
+            Quality = QualityCode.Good,
+            // ADR-053：把点位级死区透传到快照，ChangeDetector 在 Dispatcher 层做变化抑制
+            Deadband = point.Deadband
         };
     }
 

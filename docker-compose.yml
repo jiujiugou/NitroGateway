@@ -35,6 +35,11 @@ services:
       - Persistence__ConnectionString=Data Source=/app/data/nitrogateway.db
       # ADR-022 P1-5：JWT 密钥必填，未设置直接拒绝启动（不再回退公开占位符，防伪造 Admin）
       - Security__JwtSecretKey=${JWT_SECRET:?JWT_SECRET 环境变量必须设置（生产强密钥，禁止使用仓库内占位符）}
+      # ADR-052 问题1：单现场网关转发需连到 broker 容器（appsettings 默认 MQTT:Host=localhost 指向自身，会断链）
+      - MQTT__Host=mqtt
+      - MQTT__Port=1883
+      # ADR-052 问题2：生产强制覆盖内置测试账号 admin 密码，未设置直接拒绝启动
+      - Security__Users__0__Password=${ADMIN_PASSWORD:?ADMIN_PASSWORD 环境变量必须设置（生产禁用默认测试账号 admin/admin123）}
     depends_on:
       - mqtt
     restart: unless-stopped

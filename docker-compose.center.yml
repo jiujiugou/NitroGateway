@@ -58,6 +58,8 @@ services:
       - Deployment__Mode=Center
       # ADR-022 P1-5：JWT 密钥必填，未设置直接拒绝启动（与单现场形态一致）
       - Security__JwtSecretKey=${JWT_SECRET:?JWT_SECRET 环境变量必须设置（生产强密钥，禁止使用仓库内占位符）}
+      # ADR-052 问题2：生产强制覆盖内置测试账号 admin 密码，未设置直接拒绝启动（与单现场形态一致）
+      - Security__Users__0__Password=${ADMIN_PASSWORD:?ADMIN_PASSWORD 环境变量必须设置（生产禁用默认测试账号 admin/admin123）}
     depends_on:
       - ingest
     restart: unless-stopped

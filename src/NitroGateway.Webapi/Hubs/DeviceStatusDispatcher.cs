@@ -24,8 +24,15 @@ public class DeviceStatusDispatcher : IPointStoredSink, IDeviceHealthListener, I
 
     public ValueTask OnStoredAsync(PointStoredEvent e, CancellationToken ct = default)
     {
-        _logger.LogDebug("OnStoredAsync: Device={DeviceId}, Count={Count}", e.DeviceId, e.Snapshots.Count);
-        var payload = e.Snapshots.Select(s => new OutboxMeasurement
+        // ADR-053：只推送「实际变化/心跳」的放行子集，不再每秒全量推（Web 实时页瘦身）；
+        // PersistedSnapshots 为 null 时回退全量（兼容旧调用方/独立部署）。
+        // 全抑制（空列表）直接跳过——避免给前端推空包或造成"已清空"假象。
+        var toPush = e.PersistedSnapshots ?? e.Snapshots;
+        if (toPush.Count == 0)
+            return ValueTask.CompletedTask;
+
+        _logger.LogDebug("OnStoredAsync: Device={DeviceId}, Count={Count}", e.DeviceId, toPush.Count);
+        var payload = toPush.Select(s => new OutboxMeasurement
         {
             DevicePointId = s.DevicePointId.ToString(),
             DeviceId = s.DeviceId.ToString(),

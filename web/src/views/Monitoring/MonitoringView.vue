@@ -48,7 +48,7 @@
           :title="`${p.name} · ${p.address}`"
         >
           <span class="point-name">{{ p.name }}</span>
-          <span class="point-value" :class="{ stale: !snapshots[dev.id]?.[p.id] }">
+          <span class="point-value" :class="{ stale: isStale(dev.id, p.id) }">
             {{ snapshots[dev.id]?.[p.id] ? fmtVal(snapshots[dev.id][p.id].value) : '--' }}
           </span>
           <span v-if="snapshots[dev.id]?.[p.id]" class="point-quality">
@@ -77,10 +77,16 @@ import SiteFilter from '../../components/SiteFilter.vue'
 
 const devices = ref<Device[]>([])
 const pointMap = reactive<Record<string, DevicePoint[]>>({})
-const snapshots = reactive<Record<string, Record<string, { value: unknown; quality: string; timestamp: string }>>>({})
+const snapshots = reactive<Record<string, Record<string, { value: unknown; quality: string; timestamp: string; lastSeenAt: number }>>>({})
 const connected = ref(false)
 const siteId = ref('')
 let conn: any = null
+
+// ADR-053：SignalR 只推「变化点 + 心跳（默认 300s）」。stale = 超过 2×心跳没收到任何更新
+// （含心跳）——真正断流才标灰；静默点位由心跳续命，避免把"没变化"误判为"已掉线"。
+const STALE_AFTER_MS = 10 * 60 * 1000 // 2 × 心跳 300s
+const nowTick = ref(Date.now()) // 定时器递增，驱动 isStale 响应式重算
+let staleTimer: ReturnType<typeof setInterval> | undefined
 
 // ADR-035 第 1 步：选中具体站点时仅展示该站点有数据的设备（设备本身是共享配置，不归属站点）
 const visibleDevices = computed(() => {
@@ -99,7 +105,8 @@ async function loadLatest() {
         snapshots[dev.id][s.devicePointId] = {
           value: s.value,
           quality: s.quality,
-          timestamp: s.timestamp
+          timestamp: s.timestamp,
+          lastSeenAt: Date.now() // REST 拉到的最新值视为"刚收到"，避免立即标 stale
         }
       })
     } catch {}
@@ -125,7 +132,8 @@ onMounted(async () => {
       snapshots[m.deviceId][m.devicePointId] = {
         value: m.value,
         quality: m.quality,
-        timestamp: m.timestamp
+        timestamp: m.timestamp,
+        lastSeenAt: Date.now()
       }
     })
   })
@@ -144,11 +152,21 @@ onMounted(async () => {
       conn?.invoke('SubscribeDevice', d.id).catch(() => {})
     })
   } catch (e) { console.warn('SignalR:', e) }
+
+  // ADR-053：30s tick 一次，让超过阈值未更新的点位从灰变回/变灰（不依赖下一条推送）
+  staleTimer = setInterval(() => { nowTick.value = Date.now() }, 30_000)
 })
 
 watch(siteId, () => { loadLatest() })
 
-onUnmounted(() => { conn?.stop() })
+onUnmounted(() => { conn?.stop(); if (staleTimer) clearInterval(staleTimer) })
+
+// ADR-053：点位是否已断流（从未收到值，或超过 2×心跳无任何更新）
+function isStale(devId: string, pid: string): boolean {
+  const s = snapshots[devId]?.[pid]
+  if (!s) return true
+  return nowTick.value - s.lastSeenAt > STALE_AFTER_MS
+}
 
 function fmtVal(v: unknown): string {
   if (typeof v === 'number') return v.toFixed(2)

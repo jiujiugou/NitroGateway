@@ -13,4 +13,12 @@ public sealed record PointStoredEvent
 
     /// <summary>本轮采集的快照</summary>
     public IReadOnlyList<PointSnapshot> Snapshots { get; init; } = Array.Empty<PointSnapshot>();
+
+    /// <summary>
+    /// 实际落库/转发（及 SignalR 推送）的放行子集（ADR-053 变化抑制）。
+    /// <para>语义：<see cref="Snapshots"/> 永远是本轮全量（桌面实时图/告警照收），
+    /// 本属性只含「首样本 + 变化点 + 心跳 + 质量变化」；null 表示未启用抑制
+    /// （兼容旧调用方，此时应回退到 <see cref="Snapshots"/> 全量）。</para>
+    /// </summary>
+    public IReadOnlyList<PointSnapshot>? PersistedSnapshots { get; init; }
 }

@@ -50,7 +50,8 @@ function renderChart() {
   chart?.dispose(); chart = null
   if(!chartRef.value || !chartData.value.length) return
   chart = echarts.init(chartRef.value)
-  chart.setOption({title:{text:'时序趋势',textStyle:{color:'#4a5568',fontSize:14}},tooltip:{trigger:'axis'},xAxis:{type:'time',axisLabel:{color:'#a0aec0'}},yAxis:{type:'value',axisLabel:{color:'#a0aec0'}},series:[{data:chartData.value.map(p=>[p.time,p.value]),type:'line',smooth:true,showSymbol:false,lineStyle:{color:'#409eff',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(64,158,255,.15)'},{offset:1,color:'rgba(64,158,255,0)'}]}}}],grid:{left:50,right:20,top:40,bottom:30}})
+  // ADR-053：死区抑制后历史为「稀疏变化点」，step 曲线避免 ECharts 在长静默段画假连续线
+  chart.setOption({title:{text:'时序趋势',textStyle:{color:'#4a5568',fontSize:14}},tooltip:{trigger:'axis'},xAxis:{type:'time',axisLabel:{color:'#a0aec0'}},yAxis:{type:'value',axisLabel:{color:'#a0aec0'}},series:[{data:chartData.value.map(p=>[p.time,p.value]),type:'line',step:'end',showSymbol:false,lineStyle:{color:'#409eff',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(64,158,255,.15)'},{offset:1,color:'rgba(64,158,255,0)'}]}}}],grid:{left:50,right:20,top:40,bottom:30}})
 }
 function formatVal(v:unknown):string { if(typeof v==='number') return v.toFixed(3); return String(v??'--') }
 </script>

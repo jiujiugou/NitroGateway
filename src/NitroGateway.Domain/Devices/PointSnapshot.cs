@@ -42,6 +42,13 @@ public sealed record PointSnapshot
     /// <summary>数据质量标记</summary>
     public QualityCode Quality { get; init; } = QualityCode.Good;
 
+    /// <summary>
+    /// 死区（变化抑制阈值，ADR-053）。由管线从 <see cref="DevicePoint.Deadband"/> 透传；
+    /// ChangeDetector 在 Dispatcher 层据此判定「未超死区则抑制落库/转发/推送」。
+    /// 0 表示不启用抑制（每样本照写，向后兼容）。
+    /// </summary>
+    public double Deadband { get; init; }
+
     /// <summary>质量异常时的错误描述，如 "Modbus 超时"、"CRC 校验失败"。Good 时为 null</summary>
     public string? ErrorMessage { get; init; }
 }

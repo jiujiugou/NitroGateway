@@ -18,4 +18,11 @@ public sealed class CollectionOption
     /// <summary>熔断冷却封顶秒数；默认 300（5 分钟），防止长期熔断拖死采集。</summary>
     public int CircuitBreakerMaxOpenSeconds { get; init; } = 300;
 
+    /// <summary>
+    /// 死区变化抑制的心跳兜底间隔（毫秒）（ADR-053）。
+    /// 值在死区内静止时，超过该间隔也强制放行一条（写库 + 转发 + SignalR 推送），
+    /// 保留"还活着"的证据并便于前端按「最后收到时间」判 stale。默认 300000（5 分钟）。
+    /// </summary>
+    public int DeadbandHeartbeatMs { get; init; } = 300000;
+
 }

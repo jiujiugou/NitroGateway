@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -48,6 +49,30 @@ public static class SecurityServiceCollectionExtensions
         {
             if (user.Role is not (Roles.Admin or Roles.Operator or Roles.Viewer))
                 throw new InvalidOperationException($"Security:Users 角色无效: {user.Username} → {user.Role}（允许 Admin/Operator/Viewer）");
+        }
+
+        // ADR-052 问题2：非开发环境拒绝仍使用默认测试账号密码（admin/admin123）启动，
+        // 与 JWT 的 ChangeMe 拒绝同思路——防止 appsettings 内置测试账号直接带上生产；
+        // 生产请用环境变量 Security__Users__N__Password 覆盖（compose 已强制 ADMIN_PASSWORD）。
+        if (!IsDevelopment(configuration))
+        {
+            var hasher = new PasswordHasher<UserConfig>();
+            foreach (var user in jwtConfig.Users)
+            {
+                foreach (var defaultPwd in DefaultTestPasswords)
+                {
+                    try
+                    {
+                        if (hasher.VerifyHashedPassword(user, user.Password, defaultPwd) != PasswordVerificationResult.Failed)
+                            throw new InvalidOperationException(
+                                $"Security:Users 账号 {user.Username} 仍使用默认测试密码（{defaultPwd}），禁止用于生产：请通过环境变量 Security__Users__N__Password 覆盖");
+                    }
+                    catch (FormatException)
+                    {
+                        // 非 PasswordHasher 标准哈希（如外部迁移哈希），跳过默认密码比对，登录时自行校验
+                    }
+                }
+            }
         }
 
         services.AddSingleton(jwtConfig);
@@ -107,4 +132,18 @@ public static class SecurityServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// 默认测试账号明文密码（与 appsettings 内置测试账号一致，生产禁止使用）。
+    /// 新增测试账号默认密码时需同步补充此处，供生产守卫比对。
+    /// </summary>
+    private static readonly string[] DefaultTestPasswords = ["admin123", "oper123", "view123"];
+
+    /// <summary>
+    /// 是否开发环境。WebApplication/主机默认环境为 Production；
+    /// 未显式设置任一环境变量时视为非开发（按 Production 行为对待，fail-safe）。
+    /// </summary>
+    private static bool IsDevelopment(IConfiguration configuration)
+        => string.Equals(configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(configuration["DOTNET_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
 }

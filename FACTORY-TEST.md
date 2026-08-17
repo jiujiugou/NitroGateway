@@ -214,3 +214,53 @@
 **场景 3 — MQTT 节流（1 分钟）**
 
 关 MQTT Broker → ForwardingThrottle 批量从 1000 降到 100 → 开 Broker → 自动恢复 1000。
+
+## 14. 现场模拟方案（首选：ModbusSlaveSim :502 + UnitId 1~10）
+
+首选 `D:\resource\Modbus.project\ModbusSlaveSim`（程序化 Modbus TCP 从站模拟器，CSV 驱动、单进程多从站多 IP）：
+10 个从站共用 `127.0.0.1:502`，靠 UnitId 1~10 区分。
+一键启动（自动读 `tools/factory-test/points-device-01~10.csv`，文件名 NN 即 UnitId）：
+
+```powershell
+cd D:\resource\Modbus.project
+dotnet run --project ModbusSlaveSim -- --csv-dir D:\Code\NitroGateway\tools\factory-test
+```
+
+这正是产品 ModbusTCP 驱动设计的目标场景（同 IP:端口建多个设备、分别填 UnitId 1/2/3...，见 `DeviceForm.vue` 注释）。
+设计说明与 CSV 格式见 `D:\resource\Modbus.project\docs\ModbusSlaveSim-设计说明.md`。
+
+### 14.1 模拟器配置（每台从站 4 个 Function 块）
+
+| 功能区 | 起始地址 | 数量 | 产品点位前缀 |
+|---|---|---|---|
+| 03 Holding Registers | 40001 | 90 | `4xxxx` |
+| 04 Input Registers | 30001 | 6 | `3xxxx` |
+| 01 Coils | 00001 | 2 | `0xxxx` |
+| 02 Discrete Inputs | 10001 | 2 | `1xxxx` |
+
+值默认按类型范围随机生成（`--tick <ms>` 周期刷新）；换点位/加从站 = 换 CSV 重启；断链演示：命令行输入 `d` 断开全部连接。
+
+### 14.2 产品侧设备注册参数
+
+- 协议：Modbus / TCP；Endpoint：`127.0.0.1:502`
+- 10 台设备分别填 `UnitId = 1..10`（即 Modbus Slave 的从站号）
+- `DataFormat = ABCD`（标准大端/高字在前，默认）；读到 32/64 位乱码时换 `CDAB`（低字在前）
+
+### 14.3 点位加载（50 点/台 × 10 台，覆盖 9 种数据类型）
+
+点位 CSV 由 `tools/factory_test_points.py` 生成，已提交到 `tools/factory-test/points-device-01.csv` ~ `points-device-10.csv`：
+
+- 保持寄存器 42 点：Float/Int32/UInt32/Int16/UInt16/Double/Int64/UInt64
+- 输入寄存器 4 点、线圈 2 点、离散输入 2 点（Bool）
+- 导入路径（桌面端，产品功能）：设备 → 点位管理 → `⬆ 导入 CSV`（批量导入为边缘现场能力，Web 端已移除导入 UI；桌面导入同 Web 共用 `PointBatchService` 解析器，格式一致）
+- 自动化/脚本路径：`POST /api/devices/{id}/points/import`（Webapi 保留该 API，供集成测试与批量脚本）
+
+重新生成：`python tools/factory_test_points.py`
+
+### 14.4 备用自动化方案
+
+`tools/modbus_slaves.py`（Python/pymodbus）：需要脚本化故障注入（T2.4 精确关某几台、T4.1.x 重复断连）时用，
+每从站独立进程可用 `Taskkill /PID ...` 注入故障。缺点：每从站独立端口（默认 15020+，避开 :502 需管理员），
+与真实现场"一 IP 多从站"形态不同，因此仅作备用。
+
+> 另：Witte Modbus Slave GUI 手动法仍可用作无 .NET 8 环境的备选，详见 `docs/09-现场模拟测试搭建指南.md` 附录 A。

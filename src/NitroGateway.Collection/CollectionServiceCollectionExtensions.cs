@@ -37,6 +37,7 @@ public static class CollectionServiceCollectionExtensions
             .Validate(o => o.CircuitBreakerOpenSeconds >= 0, "Collection:CircuitBreakerOpenSeconds 不能为负")
             .Validate(o => o.CircuitBreakerMaxOpenSeconds >= o.CircuitBreakerOpenSeconds,
                 "Collection:CircuitBreakerMaxOpenSeconds 不能小于 CircuitBreakerOpenSeconds")
+            .Validate(o => o.DeadbandHeartbeatMs > 0, "Collection:DeadbandHeartbeatMs 必须大于 0（心跳兜底间隔）")
             .ValidateOnStart();
 
         // ADR-014：熔断器冷却时长来自配置，不再硬编码 5s / 5min。
@@ -50,6 +51,10 @@ public static class CollectionServiceCollectionExtensions
 
         services.AddSingleton<IDeviceReader, DeviceReader>();
         services.AddSingleton<IPointValuePipeline, PointValuePipeline>();
+        // ADR-053：死区变化抑制器——心跳间隔取自配置，Singleton 持有每点状态
+        services.AddSingleton(sp => new ChangeDetector(
+            TimeSpan.FromMilliseconds(
+                sp.GetRequiredService<IOptions<CollectionOption>>().Value.DeadbandHeartbeatMs)));
         // ADR-012：磁盘状态可选注入——未注册 AddNitroSqlite（无 DiskGuardService）的宿主不受影响
         // ADR-011 P3：入队路由与 Forwarder 同一配置（Forwarder:Channels），非法值启动即报错
         var forwardChannels = ResolveForwardChannels(configuration["Forwarder:Channels"] ?? "mqtt");
@@ -61,7 +66,9 @@ public static class CollectionServiceCollectionExtensions
             sp.GetService<NitroGateway.Storage.Disk.IDiskStatus>(),
             forwardChannels,
             // ADR-035 第 1 步：站点标识随负载上行（Site:Id，缺省 default）
-            NitroGateway.Shared.SiteOptions.Resolve(configuration["Site:Id"])));
+            NitroGateway.Shared.SiteOptions.Resolve(configuration["Site:Id"]),
+            // ADR-053：注入死区变化抑制器，Dispatcher 层统一计算三处消费的放行子集
+            sp.GetRequiredService<ChangeDetector>()));
         services.AddSingleton<MeasurementWriteHost>();
         services.AddHostedService(sp => sp.GetRequiredService<MeasurementWriteHost>());
         services.AddSingleton<SinkDispatcher>();

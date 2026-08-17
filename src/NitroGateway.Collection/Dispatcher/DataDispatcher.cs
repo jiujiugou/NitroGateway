@@ -24,6 +24,7 @@ public sealed class DataDispatcher : IDataDispatcher
     private readonly IDiskStatus? _diskStatus;
     private readonly IReadOnlyList<string> _forwardChannels;
     private readonly string _siteId;
+    private readonly ChangeDetector? _changeDetector;
 
     private readonly ILogger<DataDispatcher> _logger;
 
@@ -35,6 +36,7 @@ public sealed class DataDispatcher : IDataDispatcher
     /// <param name="diskStatus">磁盘状态（ADR-012）；null 表示不启用降级（独立测试用）</param>
     /// <param name="forwardChannels">北向通道列表（ADR-011 P3）；缺省或空时仅 mqtt</param>
     /// <param name="siteId">站点标识（ADR-035 第 1 步）；随 BatchMeasurements 负载上行，缺省空串</param>
+    /// <param name="changeDetector">死区变化抑制器（ADR-053）；null 表示不抑制（兼容旧调用方/独立测试）</param>
     public DataDispatcher(
         MeasurementWriteHost measurement,
         IForwardBuffer buffer,
@@ -42,12 +44,14 @@ public sealed class DataDispatcher : IDataDispatcher
         ILogger<DataDispatcher> logger,
         IDiskStatus? diskStatus = null,
         IReadOnlyList<string>? forwardChannels = null,
-        string? siteId = null)
+        string? siteId = null,
+        ChangeDetector? changeDetector = null)
     {
         _measurement = measurement;
         _buffer = buffer;
         _sinks = sinks;
         _diskStatus = diskStatus;
+        _changeDetector = changeDetector;
         _forwardChannels = forwardChannels is { Count: > 0 }
             ? forwardChannels
             : [IForwardBuffer.MqttChannel];
@@ -82,35 +86,49 @@ public sealed class DataDispatcher : IDataDispatcher
             return OperationResult.Success();
         }
 
-        // ── 写时序库 ──
-        var posted=_measurement.Post(snapshots);
-        if (!posted)
-        {
-            _logger.LogWarning("Measurement Channel 已满，丢弃数据");
-        }
+        // ADR-053 第一刀：死区变化抑制——在 Dispatcher 层统一计算一次放行子集，
+        // 存储(SQLite)、转发(MQTT)、推送(SignalR) 三处共用，避免各算一遍、语义不一致。
+        // 事件仍发全量（桌面实时图/告警不受影响），PersistedSnapshots 携带实际放行子集。
+        var toStore = _changeDetector?.Filter(snapshots, DateTime.UtcNow) ?? snapshots;
 
-        // ── 入转发缓冲 ──
-        var batch = ToBatchMeasurements(deviceId, snapshots);
-        // ADR-011 P3：按配置通道入队（mqtt/http/both）。多通道时每通道一行且独立 batchId，
-        // 避免缓冲表以 batchId 为主键时 same Id 冲突；各通道引擎按通道隔离出队互不争抢。
-        foreach (var channel in _forwardChannels)
+        if (toStore.Count > 0)
         {
-            var channelBatch = _forwardChannels.Count > 1
-                ? batch with { Id = Guid.NewGuid() }
-                : batch;
-            var bufResult = await _buffer.EnqueueAsync(channelBatch, channel, ct);
-            if (bufResult.IsFailure)
+            // ── 写时序库（只写放行子集）──
+            var posted = _measurement.Post(toStore);
+            if (!posted)
             {
-                var err = bufResult.Error!;
-                if (err.Severity >= OperationalSeverity.Error)
-                    _logger.LogError("缓冲入队失败 [{Code}] {Message}（通道 {Channel}）", err.Code, err.Message, channel);
-                else
-                    _logger.LogWarning("缓冲入队失败: {Message}（通道 {Channel}）", err.Message, channel);
+                _logger.LogWarning("Measurement Channel 已满，丢弃数据");
+            }
+
+            // ── 入转发缓冲（只转放行子集）──
+            var batch = ToBatchMeasurements(deviceId, toStore);
+            // ADR-011 P3：按配置通道入队（mqtt/http/both）。多通道时每通道一行且独立 batchId，
+            // 避免缓冲表以 batchId 为主键时 same Id 冲突；各通道引擎按通道隔离出队互不争抢。
+            foreach (var channel in _forwardChannels)
+            {
+                var channelBatch = _forwardChannels.Count > 1
+                    ? batch with { Id = Guid.NewGuid() }
+                    : batch;
+                var bufResult = await _buffer.EnqueueAsync(channelBatch, channel, ct);
+                if (bufResult.IsFailure)
+                {
+                    var err = bufResult.Error!;
+                    if (err.Severity >= OperationalSeverity.Error)
+                        _logger.LogError("缓冲入队失败 [{Code}] {Message}（通道 {Channel}）", err.Code, err.Message, channel);
+                    else
+                        _logger.LogWarning("缓冲入队失败: {Message}（通道 {Channel}）", err.Message, channel);
+                }
             }
         }
 
         // ── 通知订阅方（Channel 推送，非阻塞）──
-        _sinks.Post(new PointStoredEvent { DeviceId = deviceId, Snapshots = snapshots });
+        // Snapshots 永远全量；PersistedSnapshots 为放行子集（全抑制时为空列表，SignalR 据此跳过）
+        _sinks.Post(new PointStoredEvent
+        {
+            DeviceId = deviceId,
+            Snapshots = snapshots,
+            PersistedSnapshots = toStore
+        });
 
 
         activity?.SetStatus(ActivityStatusCode.Ok);
