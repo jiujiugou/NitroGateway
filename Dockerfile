@@ -3,6 +3,10 @@
 ARG APP_PROJECT=src/NitroGateway.Webapi/NitroGateway.Webapi.csproj
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Docker ARG 作用域：全局 ARG（FROM 前声明）在 build 阶段内不可见，必须在此重新声明，
+# 否则 $APP_PROJECT 为空，dotnet restore 会回退还原工作目录下的 NitroGateway.slnx，
+# 因容器内缺少 Desktop/Storage.Disk/tests 的 csproj 而报 MSB3202（曾导致 center 镜像构建失败）。
+ARG APP_PROJECT
 WORKDIR /src
 
 # 复制所有项目文件
@@ -26,6 +30,9 @@ COPY src/NitroGateway.Protocol/NitroGateway.Protocols/*.csproj src/NitroGateway.
 COPY src/NitroGateway.Storage/Buffer/*.csproj                  src/NitroGateway.Storage/Buffer/
 COPY src/NitroGateway.Storage/Configuration/*.csproj           src/NitroGateway.Storage/Configuration/
 COPY src/NitroGateway.Storage/TimeSeries/*.csproj              src/NitroGateway.Storage/TimeSeries/
+# Storage.Disk 被 Persistence/Collection/Forwarder/Webapi 硬引用：restore 阶段必须拿到它的 csproj，
+# 否则发布时 --no-restore 因缺少 project.assets.json 报 NETSDK1004
+COPY src/NitroGateway.Storage/Disk/*.csproj                    src/NitroGateway.Storage/Disk/
 COPY src/NitroGateway.Transport/MQTT/*.csproj                  src/NitroGateway.Transport/MQTT/
 COPY src/NitroGateway.Transport/HTTP/*.csproj                  src/NitroGateway.Transport/HTTP/
 
