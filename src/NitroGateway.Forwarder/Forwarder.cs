@@ -108,7 +108,7 @@ public sealed class Forwarder : IForwarder
             try
             {
                 var payload = _serializer.Serialize(batch);
-                // ADR-035 第 1 步：上行 topic 增加站点层，中心 Ingest 按第三段解析 siteId 入库
+                // ADR-035 第 1 步：上行 topic 增加站点层，任意订阅端按第三段解析 siteId 区分现场
                 var topic = $"nitrogateway/{_siteId}/{batch.DeviceId}/measurements";
                 var result = await _mqtt.PublishAsync(topic, payload, qos: 1, ct);
 

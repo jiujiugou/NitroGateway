@@ -43,7 +43,7 @@ public sealed class MqttAlarmNotifier : IAlarmNotifier
             alarm.OccurredAt
         }, _jsonOptions);
 
-        // ADR-035 第 1 步：告警上行 topic 与遥测一致带站点层，中心 Ingest 按第三段解析 siteId
+        // ADR-035 第 1 步：告警上行 topic 与遥测一致带站点层，任意订阅端按第三段解析 siteId 区分现场
         var topic = $"nitrogateway/{_siteId}/{alarm.DeviceId}/alarms";
         var result = await _mqtt.PublishAsync(topic, Encoding.UTF8.GetBytes(payload), qos: 1, ct);
 

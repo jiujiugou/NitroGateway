@@ -19,7 +19,7 @@
         <!-- 页头 -->
         <StackPanel Grid.Row="0" Margin="26,22,26,14">
             <TextBlock Text="设置" Style="{StaticResource PageTitleStyle}" />
-            <TextBlock Text="站点标识、中心上报与本地存储" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+            <TextBlock Text="站点标识、MQTT 上报与本地存储" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="26,0,26,22">
@@ -33,12 +33,12 @@
                             <Button Content="重新生成" Command="{Binding RegenerateSiteIdCommand}" />
                         </StackPanel>
                         <TextBlock Text="{Binding SiteIdStatus}" TextWrapping="Wrap" Margin="0,8,0,0" />
-                        <TextBlock Text="首次启动自动生成唯一标识；保存/重新生成后重启生效。格式：小写字母/数字开头、可含连字符、≤32 位（MQTT topic 与 URL 友好）。同一标识被多台机器使用会造成中心数据混淆。"
+                        <TextBlock Text="首次启动自动生成唯一标识；保存/重新生成后重启生效。格式：小写字母/数字开头、可含连字符、≤32 位（MQTT topic 与 URL 友好）。同一标识被多台机器使用会造成订阅端数据混淆。"
                                    Foreground="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0" />
                     </StackPanel>
                 </GroupBox>
 
-                <GroupBox Header="MQTT 上报（中心 broker，ADR-025 契约）" Margin="0,0,0,14">
+                <GroupBox Header="MQTT 上报（独立发布，谁订阅谁消费）" Margin="0,0,0,14">
                     <StackPanel>
                         <TextBlock Margin="0,2"><Run Text="Broker：" /><Run Text="{Binding MqttBroker}" /></TextBlock>
                         <TextBlock Margin="0,2"><Run Text="ClientId：" /><Run Text="{Binding MqttClientId}" /></TextBlock>

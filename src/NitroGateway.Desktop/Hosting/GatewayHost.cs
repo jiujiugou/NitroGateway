@@ -74,7 +74,7 @@ public sealed class GatewayHost : IAsyncDisposable
     }
 
     /// <summary>
-    /// 启动：先跑 FluentMigrator 迁移（与中心同 schema，复用 M001~ 迁移），
+    /// 启动：先跑 FluentMigrator 迁移（与 Webapi 同 schema，复用 M001~ 迁移），
     /// 再启动宿主与全部后台服务（采集 / 落库 / 转发 / 告警 / MQTT）。
     /// </summary>
     public async Task StartAsync(CancellationToken ct = default)
