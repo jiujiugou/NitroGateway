@@ -3,10 +3,18 @@
     <h2 class="page-title">点位管理</h2>
     <div class="actions">
       <el-button @click="handleExport">⬇ 导出 CSV</el-button>
+      <!-- ADR-055 缺口2：点位 CSV 导入前端接线（后端 PointImportController.ImportCsv 已实现） -->
+      <el-tooltip
+        content="CSV 列头：Name,Address,DataType（可选 Access,Enabled,ScanIntervalMs,Deadband,ScaleFactor,ScaleOffset,Description），支持引号转义"
+        placement="top"
+      >
+        <el-button type="success" plain @click="triggerImport">⬆ 导入 CSV</el-button>
+      </el-tooltip>
       <el-button type="warning" @click="showGen=true">⚙ 批量生成</el-button>
       <el-button type="primary" @click="openAdd">+ 添加点位</el-button>
     </div>
   </div>
+  <input ref="importInputRef" type="file" accept=".csv,text/csv" style="display:none" @change="handleImportFile" />
 
   <div class="card">
     <el-table :data="points" row-key="id" size="small">
@@ -84,7 +92,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { getDevice, getPoints, addPoint, updatePoint, deletePoint, generatePoints, exportPoints } from '../../api/devices'
+import { ElMessage } from 'element-plus'
+import { getDevice, getPoints, addPoint, updatePoint, deletePoint, generatePoints, exportPoints, importPoints } from '../../api/devices'
 import type { DevicePoint } from '../../api/types'
 
 const route = useRoute()
@@ -93,6 +102,7 @@ const points = ref<DevicePoint[]>([])
 const showForm = ref(false)
 const showGen = ref(false)
 const editingId = ref<string | null>(null)
+const importInputRef = ref<HTMLInputElement>()
 const types = ['Bool','Byte','Int16','UInt16','Int32','UInt32','Int64','UInt64','Float','Double','String']
 const deviceProtocol = ref('Modbus')
 
@@ -149,6 +159,36 @@ async function handleDel(id: string) {
 
 async function handleExport() {
   try { await exportPoints(deviceId) } catch {}
+}
+
+function triggerImport() {
+  importInputRef.value?.click()
+}
+
+// ADR-055 缺口2：读文件 → 调 importPoints → 刷新列表；后端错误信息（CSV 缺列/解析失败）透出给用户。
+// 中文 Windows/Excel 常导出 GBK 编码 CSV，UTF-8 解码出现替换符时回退按 GBK 再解，避免中文点位名乱码。
+async function handleImportFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 允许再次选择同一文件
+  if (!file) return
+  try {
+    const text = await readCsvText(file)
+    const count = await importPoints(deviceId, text)
+    ElMessage.success(`已导入 ${count} 个点位`)
+    points.value = await getPoints(deviceId)
+  } catch (err: any) {
+    ElMessage.error(`导入失败: ${err?.response?.data?.error?.message ?? err?.message ?? '未知错误'}`)
+  }
+}
+
+async function readCsvText(file: File): Promise<string> {
+  const buf = await file.arrayBuffer()
+  let text = new TextDecoder('utf-8').decode(buf)
+  if (text.includes('\uFFFD')) {
+    text = new TextDecoder('gbk').decode(buf)
+  }
+  return text.replace(/^\uFEFF/, '')
 }
 
 async function generate() {

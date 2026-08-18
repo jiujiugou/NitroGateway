@@ -56,6 +56,13 @@ export async function generatePoints(deviceId: string, req: { nameTemplate: stri
   return data.data?.count ?? 0
 }
 
+// ADR-055 缺口2：点位 CSV 导入。后端 PointImportController.ImportCsv 用 [FromBody] string 接收，
+// 与 updateDeviceStatus 相同的 JSON 字符串编码（application/json + JSON.stringify）。
+export async function importPoints(deviceId: string, csvText: string): Promise<number> {
+  const { data } = await client.post<ApiResponse<{ count: number }>>(`/devices/${deviceId}/points/import`, JSON.stringify(csvText))
+  return data.data?.count ?? 0
+}
+
 export async function exportPoints(deviceId: string): Promise<void> {
   const r = await client.get(`/devices/${deviceId}/points/export`, { responseType: 'blob' })
   const url = URL.createObjectURL(new Blob([r.data]))
