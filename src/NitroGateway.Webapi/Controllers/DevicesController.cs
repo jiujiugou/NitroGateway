@@ -5,7 +5,6 @@ using NitroGateway.Domain.Devices;
 using NitroGateway.Protocols;
 using NitroGateway.Protocols.Modbus;
 using NitroGateway.Webapi.Models;
-using NitroGateway.Webapi.Deployment;
 
 using NitroGateway.Security;
 
@@ -20,22 +19,19 @@ public class DevicesController : ControllerBase
     private readonly IDeviceHealthMonitor _healthMonitor;
     private readonly IProtocolDriverFactory _driverFactory;
     private readonly ISerialPortManager _serialPorts;
-    private readonly DeploymentMode _deploymentMode;
 
     public DevicesController(
         IDeviceManager devices,
         IPointManager points,
         IDeviceHealthMonitor healthMonitor,
         IProtocolDriverFactory driverFactory,
-        ISerialPortManager serialPorts,
-        DeploymentMode deploymentMode)
+        ISerialPortManager serialPorts)
     {
         _devices = devices;
         _points = points;
         _healthMonitor = healthMonitor;
         _driverFactory = driverFactory;
         _serialPorts = serialPorts;
-        _deploymentMode = deploymentMode;
     }
 
     [HttpGet]
@@ -155,10 +151,6 @@ public class DevicesController : ControllerBase
     [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<object>>> TestConnection(DeviceDto d)
     {
-        // ADR-044：连接测试是边缘物理操作，中心形态到不了现场 PLC，显式拒绝（不返回空/500）
-        if (_deploymentMode == DeploymentMode.Center)
-            return BadRequest(ApiResponse<object>.Fail("TestConnection", "中心形态无现场通路，请在桌面端测试连接"));
-
         if (d.Protocol is null || d.Connection is null)
             return Ok(ApiResponse<object>.Ok(new { success = false, latencyMs = 0L, error = "Protocol/Connection 不能为空" }));
 
@@ -202,8 +194,6 @@ public class DevicesController : ControllerBase
     [HttpGet("serial-ports")]
     public ActionResult<ApiResponse<List<string>>> GetSerialPorts()
     {
-        if (_deploymentMode == DeploymentMode.Center)
-            return BadRequest(ApiResponse<List<string>>.Fail("SerialPorts", "中心形态无现场串口，请到桌面端查看"));
         var ports = _serialPorts.GetAvailablePorts();
         return Ok(ApiResponse<List<string>>.Ok(ports.ToList()));
     }
@@ -212,8 +202,6 @@ public class DevicesController : ControllerBase
     [HttpGet("serial-port-status")]
     public ActionResult<ApiResponse<List<Protocols.Modbus.SerialPortInfo>>> GetSerialPortStatus()
     {
-        if (_deploymentMode == DeploymentMode.Center)
-            return BadRequest(ApiResponse<List<Protocols.Modbus.SerialPortInfo>>.Fail("SerialPortStatus", "中心形态无现场串口，请到桌面端查看"));
         var status = _serialPorts.GetStatus();
         return Ok(ApiResponse<List<Protocols.Modbus.SerialPortInfo>>.Ok(status.ToList()));
     }

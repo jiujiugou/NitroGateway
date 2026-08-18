@@ -1,7 +1,7 @@
-﻿export interface Device {
+export interface Device {
   id: string
   name: string
-  /// ADR-035 方案 A：设备所属站点（空 = 未标注/旧数据）
+  /// 设备站点归属（后端 DTO 保留字段）。ADR-054：web 收敛为纯边缘单一站点，前端不再维护站点归属，恒为空/默认
   siteId?: string
   description?: string
   protocol: ProtocolIdentifier

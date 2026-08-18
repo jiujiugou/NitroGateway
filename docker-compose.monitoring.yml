@@ -1,8 +1,8 @@
 # NitroGateway — 本地监控栈（ADR-049）：Prometheus（采集 + 告警 rules）+ Grafana「运行情况」面板
-# 数据流: gateway:5100/metrics 与 ingest:5200/metrics ─> Prometheus ─> Grafana
-#          gateway/ingest 的 /healthz /readyz ─> blackbox-exporter 探针 ─> Prometheus
+# 数据流: gateway:5100/metrics ─> Prometheus ─> Grafana（中心 Ingest 已归档暂不删，ADR-054；如独立建中心项目再补 ingest:5200/metrics）
+#          gateway 的 /healthz /readyz ─> blackbox-exporter 探针 ─> Prometheus
 #
-# 启动方式二选一（监控栈需与主栈在同一个 Docker 默认网络内才能访问 gateway/ingest 服务名）：
+# 启动方式二选一（监控栈需与主栈在同一个 Docker 默认网络内才能访问 gateway 服务名）：
 #   方式 A（推荐，与主栈合并成一个 compose 项目，服务共享默认网络）：
 #     docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d --build
 #   方式 B（监控栈独立启动，用 -p 指定与主栈相同的项目名以复用 nitrogateway_default 网络）：

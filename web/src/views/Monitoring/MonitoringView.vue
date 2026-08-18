@@ -1,22 +1,20 @@
-﻿<template>
+<template>
   <h2 class="page-title">实时监控</h2>
   <div class="topbar">
-    <!-- ADR-035 第 1 步：按站点过滤实时数据（空 = 全部站点） -->
-    <SiteFilter v-model="siteId" />
     <span class="topbar-sep"></span>
     <span style="font-size:12px">
       <span :class="['status-dot', connected ? 'online' : 'offline']"></span>
       {{ connected ? '实时更新中' : '未连接' }}
     </span>
     <span style="margin-left:12px;color:var(--text-muted);font-size:12px">
-      {{ visibleDevices.length }} 台设备
+      {{ devices.length }} 台设备
     </span>
   </div>
 
   <!-- 空状态 -->
-  <div v-if="visibleDevices.length === 0" class="card" style="padding:60px;text-align:center;color:var(--text-muted)">
+  <div v-if="devices.length === 0" class="card" style="padding:60px;text-align:center;color:var(--text-muted)">
     <div style="font-size:48px;margin-bottom:16px">🔌</div>
-    <div>暂无设备，或当前站点暂无数据</div>
+    <div>暂无设备</div>
     <div style="margin-top:8px">
       <el-button type="primary" @click="$router.push('/devices/new')">+ 添加设备</el-button>
     </div>
@@ -25,7 +23,7 @@
   <!-- 设备卡片 -->
   <div v-else class="cards-grid">
     <div
-      v-for="dev in visibleDevices"
+      v-for="dev in devices"
       :key="dev.id"
       class="device-card"
       :class="{ 'card-online': dev.status === 'Online', 'card-offline': dev.status !== 'Online' }"
@@ -85,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 // ADR-055 缺口1：复用 HistoryView 的 echarts 按需引入（Line + Grid/Tooltip + Canvas），替代整包引入
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
@@ -97,13 +95,11 @@ import { getLatestBatch, getHistory } from '../../api/measurements'
 import { createLiveConnection } from '../../api/signalr'
 import type { Device, DevicePoint, PointSnapshot } from '../../api/types'
 import StatusTag from '../../components/DeviceStatusTag.vue'
-import SiteFilter from '../../components/SiteFilter.vue'
 
 const devices = ref<Device[]>([])
 const pointMap = reactive<Record<string, DevicePoint[]>>({})
 const snapshots = reactive<Record<string, Record<string, { value: unknown; quality: string; timestamp: string; lastSeenAt: number }>>>({})
 const connected = ref(false)
-const siteId = ref('')
 let conn: any = null
 
 // ADR-055 缺口1：实时曲线状态。选中点位后预载最近 2h 历史（默认 limit=1000，后端夹紧上限），
@@ -128,19 +124,11 @@ const chartPointOptions = computed(() => {
 const STALE_AFTER_MS = 10 * 60 * 1000 // 2 × 心跳 300s
 const nowTick = ref(Date.now()) // 定时器递增，驱动 isStale 响应式重算
 let staleTimer: ReturnType<typeof setInterval> | undefined
-
-// ADR-035 第 1 步：选中具体站点时仅展示该站点有数据的设备（设备本身是共享配置，不归属站点）
-const visibleDevices = computed(() => {
-  if (!siteId.value) return devices.value
-  return devices.value.filter(d => snapshots[d.id] && Object.keys(snapshots[d.id]).length > 0)
-})
-
-// ADR-035 第 1 步：按当前站点重拉最新值；切换站点先清空旧快照，避免跨站点数据残留
 async function loadLatest() {
   Object.keys(snapshots).forEach(k => delete snapshots[k])
   await Promise.all(devices.value.map(async dev => {
     try {
-      const latest = await getLatestBatch(dev.id, siteId.value)
+      const latest = await getLatestBatch(dev.id)
       latest.forEach((s: PointSnapshot) => {
         if (!snapshots[dev.id]) snapshots[dev.id] = {}
         snapshots[dev.id][s.devicePointId] = {
@@ -165,9 +153,6 @@ onMounted(async () => {
 
   conn = createLiveConnection()
   conn.on('Measurement', (data: any[]) => {
-    // ADR-035 第 1 步：SignalR payload 无 site 字段，选中具体站点时忽略实时推送，
-    // 防止跨站点数据串台；切回「全部站点」恢复实时更新
-    if (siteId.value) return
     (Array.isArray(data) ? data : [data]).forEach((m: any) => {
       if (!snapshots[m.deviceId]) snapshots[m.deviceId] = {}
       snapshots[m.deviceId][m.devicePointId] = {
@@ -200,8 +185,6 @@ onMounted(async () => {
   window.addEventListener('resize', onChartResize)
 })
 
-watch(siteId, () => { loadLatest() })
-
 onUnmounted(() => {
   conn?.stop()
   if (staleTimer) clearInterval(staleTimer)
@@ -233,7 +216,7 @@ async function loadChartHistory() {
   const to = new Date().toISOString()
   chartSeries.value = []
   try {
-    const rows = await getHistory(chartDeviceId.value, chartPointId.value, from, to, siteId.value, 1000)
+    const rows = await getHistory(chartDeviceId.value, chartPointId.value, from, to, 1000)
     chartSeries.value = rows
       .map(s => ({ time: s.timestamp, value: toNum(s.value) }))
       .filter((p): p is { time: string; value: number } => p.value !== null)

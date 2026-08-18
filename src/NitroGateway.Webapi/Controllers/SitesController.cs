@@ -9,6 +9,9 @@ namespace NitroGateway.Webapi.Controllers;
 /// <summary>
 /// 站点目录 API（ADR-035 第 1 步 Web 维度 + ADR-036 中心站点管理）。
 /// 返回中心库中实际出现过数据的 siteId 列表，供前端站点下拉；设备/点位是共享配置不归属站点。
+/// ADR-054：web 收敛为纯边缘单一身份后，多现场「站点目录/站点管理」已无前端消费方，
+/// 本控制器随中心/站点基础设施一并「归档暂不删」——待定是否需要多现场中心；若要则独立建项目，
+/// 不复用 webapi 双模式。Storage/ISiteCatalog 纯接口只增不删，保持可用。
 /// </summary>
 [ApiController, Route("api/[controller]")]
 [Authorize(Roles = Roles.AllRoles)]

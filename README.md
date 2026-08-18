@@ -29,36 +29,25 @@ docker compose up -d --build
 # 前端: http://localhost:5170
 ```
 
-## 部署形态（单现场 vs 中心，B 方案）
+## 部署形态（边缘网关，ADR-054：web 纯边缘化）
 
-数据流分两段，各有独立部署单元：
+web 与桌面端是同一套引擎的两个自包含边缘壳：**web = Linux 网关管理端**（Vue 管理面板），**桌面端 = Windows 边缘**（WPF）。二者定位对等，互不依赖。
 
-```
-现场（每现场一台）                        中心（一套）
-桌面端 / 边缘网关                          中心 Webapi(读 center.db) + Vue
-  采集 → 本机 SQLite → MQTT 发布 ──► broker ──► ingest(订阅入库) → center.db
-```
+边缘网关数据流：本机采集 → 本地 SQLite → MQTT 发布到 broker，谁订阅谁消费（不依赖中心/Ingest）。
 
-现场本机 SQLite 与中心库 center.db 是两个不同库：MQTT 只负责传输，中心库的唯一写点是 `ingest`。
-
-**形态 1 · 单现场一体机**（`docker-compose.yml`）：采集 + 本地库 + 展示装在一台机器，适合单点演示/出厂验证。
+**形态 1 · 现场边缘网关 · Linux（`docker-compose.yml`）**：采集 + 本地库 + web 管理面板装在同一台机器（边缘盒子/工控机），适合单点演示/出厂验证/现场运维。
 ```bash
 docker compose up -d --build
 ```
 
-**形态 2 · 中心**（`docker-compose.center.yml`）：broker + ingest（写 center.db）+ 中心 Webapi（读 center.db）+ Vue，接收任意现场上行。
-```bash
-docker compose -f docker-compose.center.yml up -d --build
-```
+**形态 2 · 现场边缘网关 · Windows（`src/NitroGateway.Desktop`）**：本机采集 + 本地库 + 本地 UI，MQTT 发布到配置的 broker
+（默认 `MQTT:Host=localhost`；对接远端 broker 时用环境变量 `MQTT__Host`/`MQTT__Port` 覆盖）。
 
-**形态 3 · 现场桌面端**（`src/NitroGateway.Desktop`，Windows）：本机采集 + 本地库 + 本地 UI，MQTT 指向中心 broker 即完成上报
-（默认 `MQTT:Host=localhost`；对接远端中心时用环境变量 `MQTT__Host`/`MQTT__Port` 覆盖）。
+**中心（如需，待独立项目，ADR-054）**：web 已不再承担中心库角色；多现场中心如需，另立独立项目（中心 webapi + Ingest）。
+`docker-compose.center.yml`、`ingest`、`center.db`、sites 表暂归档不删，需要时再启用。
 
 > 两个 compose 栈使用同一套宿主端口（1883/5100/5200/5170），正常运行二选一；
-> 需同时跑（例如「桌面端 + 中心」不需要，中心栈单独即可）时用 `-p` 区分项目并覆盖端口：
-> `docker compose -p center -f docker-compose.center.yml up -d`（再按需改 mqtt/gateway/web 的宿主端口）。
-
-端到端验证流程见 `FACTORY-TEST.md` 第 10 节（T7 中心形态端到端）。
+> 需同时跑时用 `-p` 区分项目并覆盖端口：`docker compose -p center -f docker-compose.center.yml up -d`（再按需改 mqtt/gateway/web 的宿主端口）。
 
 ---
 

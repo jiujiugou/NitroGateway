@@ -1,5 +1,5 @@
-﻿# ── NitroGateway 后端 ──
-# 构建参数：默认构建 Webapi；中心 Ingest 由 compose 传 APP_PROJECT 切换发布目标（ADR-025 D1 独立容器）
+# ── NitroGateway 后端 ──
+# 构建参数：默认构建 Webapi；中心 Ingest 由 compose 传 APP_PROJECT 切换发布目标（ADR-025 D1 独立容器；ADR-054 归档暂不删，若独立建中心项目可继续用）
 ARG APP_PROJECT=src/NitroGateway.Webapi/NitroGateway.Webapi.csproj
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -51,7 +51,7 @@ COPY --from=build /app .
 RUN mkdir -p /app/data /app/logs
 ENV DOTNET_ENVIRONMENT=Production
 # ADR-022 P1-4：容器内必须监听 0.0.0.0，否则 appsettings 的 Urls=localhost 使宿主机/前端容器无法访问 API
-#（默认 Webapi 5100；ingest 服务在 docker-compose.yml 用 environment 覆盖为 5200）
+#（默认 Webapi 5100；中心 Ingest 在 docker-compose.center.yml 用 environment 覆盖为 5200，ADR-054 归档暂不删）
 ENV ASPNETCORE_URLS=http://0.0.0.0:5100
 EXPOSE 5100
 

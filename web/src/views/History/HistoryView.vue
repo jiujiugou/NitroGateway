@@ -1,9 +1,7 @@
-﻿<template>
+<template>
   <h2 class="page-title">历史数据</h2>
   <div class="card" style="padding:20px;margin-bottom:16px">
     <div class="query-bar">
-      <!-- ADR-035 第 1 步：按站点过滤历史数据（空 = 全部站点） -->
-      <SiteFilter v-model="siteId" />
       <el-select v-model="q.deviceId" @change="loadPts" placeholder="选择设备" style="width:200px"><el-option v-for="d in devices" :key="d.id" :label="d.name" :value="d.id" /></el-select>
       <el-select v-model="q.pointId" placeholder="选择点位" style="width:220px"><el-option v-for="p in ptOptions" :key="p.id" :label="`${p.name} (${p.address})`" :value="p.id" /></el-select>
       <el-date-picker v-model="range" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" style="width:340px" />
@@ -32,17 +30,16 @@ echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, CanvasR
 import { getDevices, getPoints } from '../../api/devices'
 import { getHistory } from '../../api/measurements'
 import type { Device, DevicePoint, PointSnapshot } from '../../api/types'
-import SiteFilter from '../../components/SiteFilter.vue'
 const devices = ref<Device[]>([]); const ptOptions = ref<DevicePoint[]>([]); const history = ref<PointSnapshot[]>([]); const chartData = ref<{time:string;value:number|null}[]>([]); const chartRef = ref<HTMLElement>()
 let chart: ReturnType<typeof echarts.init> | null = null
-const q = ref({deviceId:'',pointId:''}); const range = ref<[Date,Date]>([new Date(Date.now()-3600000), new Date()]); const siteId = ref('')
+const q = ref({deviceId:'',pointId:''}); const range = ref<[Date,Date]>([new Date(Date.now()-3600000), new Date()]); 
 onMounted(async () => { try { devices.value = await getDevices() } catch {} })
 onUnmounted(() => chart?.dispose())
 async function loadPts() { if(q.value.deviceId) try { ptOptions.value = await getPoints(q.value.deviceId) } catch {} }
 async function search() {
   if(!q.value.deviceId||!q.value.pointId) return
   const from=range.value[0].toISOString(); const to=range.value[1].toISOString()
-  try { history.value = await getHistory(q.value.deviceId,q.value.pointId,from,to,siteId.value); chartData.value = history.value.map(s=>({time:s.timestamp,value:typeof s.value==='number'?s.value:null})) } catch {}
+  try { history.value = await getHistory(q.value.deviceId,q.value.pointId,from,to); chartData.value = history.value.map(s=>({time:s.timestamp,value:typeof s.value==='number'?s.value:null})) } catch {}
   await nextTick()
   renderChart()
 }

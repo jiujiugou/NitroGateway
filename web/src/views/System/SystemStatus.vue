@@ -4,16 +4,20 @@
 
     <!-- 核心指标 -->
     <div class="stat-grid">
-      <!-- ADR-044：MQTT/缓冲积压/节流器是转发侧指标，Center 形态无数据来源，隐藏 -->
-      <div v-if="mode !== 'Center'" class="stat-card" :class="mqtt.connected ? 'ok' : 'err'">
+      <!-- ADR-054：web 收敛为纯边缘（Linux 网关管理端），单一站点，本站点 ID 并入系统状态 -->
+      <div class="stat-card">
+        <div class="stat-label">本站点</div>
+        <div class="stat-value stat-value-site">{{ siteId || '-' }}</div>
+      </div>
+      <div class="stat-card" :class="mqtt.connected ? 'ok' : 'err'">
         <div class="stat-label">MQTT</div>
         <div class="stat-value">{{ mqtt.state }}</div>
       </div>
-      <div v-if="mode !== 'Center'" class="stat-card" :class="backlog > 100 ? 'warn' : 'ok'">
+      <div class="stat-card" :class="backlog > 100 ? 'warn' : 'ok'">
         <div class="stat-label">缓冲积压</div>
         <div class="stat-value">{{ backlog }}</div>
       </div>
-      <div v-if="mode !== 'Center'" class="stat-card">
+      <div class="stat-card">
         <div class="stat-label">节流器</div>
         <div class="stat-value">{{ throttle.batch }} / {{ throttle.delay }}ms</div>
       </div>
@@ -23,8 +27,8 @@
       </div>
     </div>
 
-    <!-- 熔断器状态（ADR-044：Center 形态不采集，无熔断器，隐藏） -->
-    <div v-if="mode !== 'Center'" class="card" style="margin-top:20px">
+    <!-- 设备熔断器状态（ADR-054：纯边缘形态恒展示） -->
+    <div class="card" style="margin-top:20px">
       <h3 style="margin:0 0 16px">设备熔断器</h3>
       <el-table :data="breakers" size="small" empty-text="暂无设备">
         <el-table-column prop="deviceId" label="设备 ID" :formatter="shortId" />
@@ -55,8 +59,8 @@
       </el-table>
     </div>
 
-    <!-- 串口状态（ADR-044：Center 形态无现场串口，隐藏） -->
-    <div v-if="mode !== 'Center'" class="card" style="margin-top:20px">
+    <!-- 串口状态（ADR-054：纯边缘形态恒展示） -->
+    <div class="card" style="margin-top:20px">
       <h3 style="margin:0 0 16px">串口状态</h3>
       <el-table :data="serialPorts" size="small" empty-text="暂无已打开的串口">
         <el-table-column prop="portName" label="端口" width="140" />
@@ -82,8 +86,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import client from '../../api/client'
 import { getSerialPorts, getSerialPortStatus } from '../../api/devices'
-import { mode } from '../../deployment'
 
+const siteId = ref('')
 const mqtt = ref({ state: '-', connected: false })
 const backlog = ref(0)
 const throttle = ref({ batch: 1000, delay: 0 })
@@ -97,6 +101,7 @@ async function refresh() {
   try {
     const { data: sys } = await client.get('/status/system')
     if (sys.data) {
+      siteId.value = sys.data.siteId ?? ''
       mqtt.value = { state: sys.data.mqttState, connected: sys.data.mqttState === 'Connected' }
       backlog.value = sys.data.bufferBacklog
       throttle.value = { batch: sys.data.throttleBatchSize, delay: sys.data.throttleDelayMs }
@@ -105,11 +110,8 @@ async function refresh() {
     }
     const { data: h } = await client.get('/status/devices/health')
     if (h.data) health.value = h.data
-    // ADR-044：Center 形态串口端点返回 400，跳过拉取（不再每次轮询刷错误）
-    if (mode.value !== 'Center') {
-      availablePorts.value = await getSerialPorts()
-      serialPorts.value = await getSerialPortStatus()
-    }
+    availablePorts.value = await getSerialPorts()
+    serialPorts.value = await getSerialPortStatus()
   } catch {}
 }
 
@@ -141,5 +143,6 @@ function fmtTime(t: string): string {
 .stat-card.err { border-color:#f56c6c33; }
 .stat-label { font-size:13px; color:var(--text-dim,#909399); margin-bottom:4px; }
 .stat-value { font-size:24px; font-weight:700; }
+.stat-value-site { font-size:15px; word-break:break-all; line-height:1.3; }
 .card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:20px; }
 </style>

@@ -1,15 +1,9 @@
-﻿<template>
+<template>
   <h2 class="page-title" style="margin-bottom:20px">{{ isEdit ? '编辑设备' : '添加设备' }}</h2>
   <div class="card"><div style="padding:24px">
     <el-form :model="f" label-position="top">
       <div class="form-row">
         <el-form-item label="设备名称"><el-input v-model="f.name" placeholder="例如：一号车间 PLC" /></el-form-item>
-        <el-form-item label="所属站点">
-          <!-- ADR-035 方案 A：设备归属站点（留空=暂不归属，无法下发到现场） -->
-          <el-select v-model="f.siteId" style="width:100%" clearable placeholder="未标注">
-            <el-option v-for="s in sites" :key="s" :label="s" :value="s" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="协议">
           <el-select v-model="f.protocol.name" style="width:100%" @change="onProtocolChange">
             <!-- ADR-007 P2-2：后端 ProtocolDriverFactory 仅注册 Modbus+S7；OPC UA 未接入，Mitsubishi 待 slnx 启用后再放回 -->
@@ -110,8 +104,7 @@
       <el-form-item label="描述"><el-input v-model="f.description" type="textarea" rows="2" /></el-form-item>
       <div style="display:flex;gap:12px;margin-top:8px">
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-        <!-- ADR-044：连接测试是边缘物理操作，Center 形态到不了现场 PLC，入口迁移到桌面端 -->
-        <el-button v-if="mode !== 'Center'" :loading="testing" @click="testConn">🔌 测试连接</el-button>
+        <el-button :loading="testing" @click="testConn">🔌 测试连接</el-button>
         <el-button @click="$router.back()">取消</el-button>
       </div>
       <div v-if="testResult !== null" :class="['test-result', testResult.success ? 'test-ok' : 'test-fail']" style="margin-top:12px">
@@ -125,8 +118,6 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getDevice, createDevice, updateDevice, testConnection, getSerialPorts } from '../../api/devices'
-import { getSites } from '../../api/sites'
-import { mode } from '../../deployment'
 
 const route = useRoute(); const router = useRouter()
 const isEdit = ref(!!route.params.id)
@@ -134,7 +125,6 @@ const saving = ref(false)
 const testing = ref(false)
 const testResult = ref<{ success: boolean; latencyMs: number; error?: string } | null>(null)
 const availablePorts = ref<string[]>([])
-const sites = ref<string[]>([])
 
 const baudRates = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
 const parities = ['None', 'Even', 'Odd', 'Mark', 'Space']
@@ -147,7 +137,7 @@ const dataFormats = [
 ]
 
 const f = ref({
-  name: '', description: '', siteId: '',
+  name: '', description: '',
   protocol: { name: 'Modbus', dialect: 'TCP' },
   connection: { endpoint: '127.0.0.1:502', connectTimeoutMs: 3000, requestTimeoutMs: 5000, retryCount: 3, retryIntervalMs: 1000, parameters: {} as Record<string, any> },
   status: 'Online'
@@ -240,11 +230,7 @@ function onDialectChange() {
 }
 
 onMounted(async () => {
-  // ADR-044：Center 形态无现场串口（后端返回 400），不加载串口列表，允许手填
-  if (mode.value !== 'Center') {
-    try { availablePorts.value = await getSerialPorts() } catch { /* 忽略 */ }
-  }
-  try { sites.value = await getSites() } catch { /* 忽略 */ }
+  try { availablePorts.value = await getSerialPorts() } catch { /* 忽略 */ }
   if (isEdit.value) {
     const d = await getDevice(route.params.id as string)
     if (d) {

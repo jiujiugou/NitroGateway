@@ -1,8 +1,9 @@
-﻿import client from './client'
+import client from './client'
 import type { ApiResponse, Device, DevicePoint } from './types'
 
-export async function getDevices(siteId?: string): Promise<Device[]> {
-  const { data } = await client.get<ApiResponse<Device[]>>('/devices', { params: { siteId } })
+// ADR-054：web 收敛为纯边缘（Linux 网关管理端），单一站点，设备列表不再按站点过滤
+export async function getDevices(): Promise<Device[]> {
+  const { data } = await client.get<ApiResponse<Device[]>>('/devices')
   return data.data ?? []
 }
 

@@ -13,7 +13,6 @@ using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.TimeSeries;
 using NitroGateway.Webapi.Controllers;
 using NitroGateway.Webapi.Models;
-using NitroGateway.Webapi.Deployment;
 using Xunit;
 using AlarmRuleDomain = NitroGateway.Alarm.Domain.AlarmRule;
 
@@ -49,7 +48,7 @@ public class WebapiControllerTests
     public async Task Devices_Create_IgnoresClientProvidedId()
     {
         var devices = new FakeDeviceManager();
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
         var clientId = Guid.NewGuid();
         var dto = new DeviceDto
         {
@@ -71,7 +70,7 @@ public class WebapiControllerTests
     public async Task Devices_Create_NullProtocolAndConnection_DoesNotThrow()
     {
         var devices = new FakeDeviceManager();
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
         var dto = new DeviceDto { Id = "", Name = "dev", Protocol = null!, Connection = null!, Status = "Online" };
 
         var result = await ctrl.Create(dto);
@@ -90,7 +89,7 @@ public class WebapiControllerTests
         var device = TestDevices.Device("1号车间 PLC");
         device.AddPoint(TestDevices.Point("炉温"));
         devices.AllDevices = new[] { device };
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
 
         var result = await ctrl.Export();
 
@@ -109,7 +108,7 @@ public class WebapiControllerTests
     {
         // ADR-035 方案 A：Web 建设备可指定站点归属，落库保留
         var devices = new FakeDeviceManager();
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
         var dto = new DeviceDto
         {
             Name = "dev",
@@ -217,7 +216,7 @@ public class WebapiControllerTests
     [Fact]
     public async Task Devices_UpdateStatus_InvalidEnum_ReturnsBadRequest()
     {
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
 
         var result = await ctrl.UpdateStatus(Guid.NewGuid(), "BogusStatus");
 
@@ -227,7 +226,7 @@ public class WebapiControllerTests
     [Fact]
     public async Task Devices_AddPoint_InvalidDataType_ReturnsBadRequest()
     {
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
         var dto = new PointDto { DataType = "Bogus", Access = "ReadOnly" };
 
         var result = await ctrl.AddPoint(Guid.NewGuid(), dto);
@@ -239,7 +238,7 @@ public class WebapiControllerTests
     public async Task Devices_AddPoint_IgnoresClientProvidedId()
     {
         var points = new FakePointManager();
-        var ctrl = new DevicesController(new FakeDeviceManager(), points, new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(new FakeDeviceManager(), points, new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
         var clientPointId = Guid.NewGuid();
         var dto = new PointDto { Id = clientPointId.ToString(), Name = "p", Address = "1", DataType = "Float", Access = "ReadOnly" };
 
@@ -256,7 +255,7 @@ public class WebapiControllerTests
     public async Task Devices_TestConnection_ConnectAndPingOk_ReturnsSuccess()
     {
         var driver = new FakeProtocolDriver(OperationResult.Success(), OperationResult.Success());
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
         var dto = TestConnectionDto();
 
         var result = await ctrl.TestConnection(dto);
@@ -270,7 +269,7 @@ public class WebapiControllerTests
     public async Task Devices_TestConnection_ConnectOk_PingFail_ReturnsFailure()
     {
         var driver = new FakeProtocolDriver(OperationResult.Success(), OperationalError.Timeout("Ping 失败: 从站无响应"));
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
         var dto = TestConnectionDto();
 
         var result = await ctrl.TestConnection(dto);
@@ -284,7 +283,7 @@ public class WebapiControllerTests
     public async Task Devices_TestConnection_ConnectFail_ReturnsFailure()
     {
         var driver = new FakeProtocolDriver(OperationalError.Communication("Modbus 连接失败: 拒绝连接"), OperationResult.Success());
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts(), DeploymentMode.Gateway);
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
         var dto = TestConnectionDto();
 
         var result = await ctrl.TestConnection(dto);
@@ -315,64 +314,7 @@ public class WebapiControllerTests
         Connection = new ConnectionDto { Endpoint = "127.0.0.1:502", Parameters = new Dictionary<string, object> { ["UnitId"] = 11 } }
     };
 
-    // ────── ADR-044：center 形态边缘能力显式拒绝 ──────
 
-    [Fact]
-    public async Task Devices_TestConnection_CenterMode_ReturnsBadRequest()
-    {
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Center);
-
-        var result = await ctrl.TestConnection(TestConnectionDto());
-
-        var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<object>>(bad.Value);
-        Assert.Contains("桌面端", body.Error?.Message);
-    }
-
-    [Fact]
-    public void Devices_GetSerialPorts_CenterMode_ReturnsBadRequest()
-    {
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), DeploymentMode.Center);
-
-        var result = ctrl.GetSerialPorts();
-
-        Assert.IsType<BadRequestObjectResult>(result.Result);
-    }
-
-    [Fact]
-    public async Task StatusController_System_CenterMode_NullDeps_DoesNotThrow()
-    {
-        // ADR-044：center 模式不注册 Forwarder/MQTT/Collection，采集侧依赖为 null；
-        // /status/system 必须返回中心侧信息（mode）而不 DI 500。
-        var ctrl = new StatusController(
-            new FakeDeviceManager(), new FakeHealthMonitor(),
-            buffer: null, mqtt: null, throttle: null, breakers: null,
-            deploymentMode: DeploymentMode.Center);
-
-        var result = await ctrl.SystemStatus();
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<object>>(ok.Value);
-        var json = System.Text.Json.JsonSerializer.Serialize(body.Data);
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        Assert.Equal("Center", doc.RootElement.GetProperty("Mode").GetString());
-        Assert.Equal(0, doc.RootElement.GetProperty("BufferBacklog").GetInt32());
-    }
-
-    [Fact]
-    public void StatusController_Info_ReturnsDeploymentMode()
-    {
-        var ctrl = new StatusController(
-            new FakeDeviceManager(), new FakeHealthMonitor(),
-            buffer: null, mqtt: null, throttle: null, breakers: null,
-            deploymentMode: DeploymentMode.Gateway);
-
-        var result = ctrl.Info();
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<object>>(ok.Value);
-        var json = System.Text.Json.JsonSerializer.Serialize(body.Data);
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        Assert.Equal("Gateway", doc.RootElement.GetProperty("mode").GetString());
-    }
     // ── AlarmRulesController：P2-1 非法 Guid/枚举 400 ──
 
     [Fact]
