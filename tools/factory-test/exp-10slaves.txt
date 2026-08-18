@@ -1,0 +1,61 @@
+﻿set Connection = 1 ok
+set Mode = 1 ok
+set IPAddress = 127.0.0.1 ok
+set ServerPort = 502 ok
+set IPVersion = 4 ok
+slave=1 show=[] HR=1 IR=1 COIL=1 DI=1 docs=1
+slave=2 show=[] HR=1 IR=1 COIL=1 DI=1 docs=2
+slave=3 show=[] HR=1 IR=1 COIL=1 DI=1 docs=3
+slave=4 show=[] HR=1 IR=1 COIL=1 DI=1 docs=4
+slave=5 show=[] HR=1 IR=1 COIL=1 DI=1 docs=5
+slave=6 show=[] HR=1 IR=1 COIL=1 DI=1 docs=6
+slave=7 show=[] HR=1 IR=1 COIL=1 DI=1 docs=7
+slave=8 show=[] HR=1 IR=1 COIL=1 DI=1 docs=8
+slave=9 show=[] HR=1 IR=1 COIL=1 DI=1 docs=9
+slave=10 show=[] HR=1 IR=1 COIL=1 DI=1 docs=10
+OpenConnection() = 0
+PROBE:
+u1 FC3 s0 q90 -> TIMEOUT/short(0)
+u1 FC4 s0 q6 -> TIMEOUT/short(0)
+u1 FC1 s0 q2 -> TIMEOUT/short(0)
+u1 FC2 s0 q2 -> TIMEOUT/short(0)
+u2 FC3 s0 q90 -> TIMEOUT/short(0)
+u2 FC4 s0 q6 -> TIMEOUT/short(0)
+u2 FC1 s0 q2 -> TIMEOUT/short(0)
+u2 FC2 s0 q2 -> TIMEOUT/short(0)
+u3 FC3 s0 q90 -> TIMEOUT/short(0)
+u3 FC4 s0 q6 -> TIMEOUT/short(0)
+u3 FC1 s0 q2 -> TIMEOUT/short(0)
+u3 FC2 s0 q2 -> TIMEOUT/short(0)
+u4 FC3 s0 q90 -> TIMEOUT/short(0)
+u4 FC4 s0 q6 -> TIMEOUT/short(0)
+u4 FC1 s0 q2 -> TIMEOUT/short(0)
+u4 FC2 s0 q2 -> TIMEOUT/short(0)
+u5 FC3 s0 q90 -> TIMEOUT/short(0)
+u5 FC4 s0 q6 -> TIMEOUT/short(0)
+u5 FC1 s0 q2 -> TIMEOUT/short(0)
+u5 FC2 s0 q2 -> TIMEOUT/short(0)
+u6 FC3 s0 q90 -> TIMEOUT/short(0)
+u6 FC4 s0 q6 -> TIMEOUT/short(0)
+u6 FC1 s0 q2 -> TIMEOUT/short(0)
+u6 FC2 s0 q2 -> TIMEOUT/short(0)
+u7 FC3 s0 q90 -> TIMEOUT/short(0)
+u7 FC4 s0 q6 -> TIMEOUT/short(0)
+u7 FC1 s0 q2 -> TIMEOUT/short(0)
+u7 FC2 s0 q2 -> TIMEOUT/short(0)
+u8 FC3 s0 q90 -> TIMEOUT/short(0)
+u8 FC4 s0 q6 -> TIMEOUT/short(0)
+u8 FC1 s0 q2 -> TIMEOUT/short(0)
+u8 FC2 s0 q2 -> TIMEOUT/short(0)
+u9 FC3 s0 q90 -> TIMEOUT/short(0)
+u9 FC4 s0 q6 -> TIMEOUT/short(0)
+u9 FC1 s0 q2 -> TIMEOUT/short(0)
+u9 FC2 s0 q2 -> TIMEOUT/short(0)
+u10 FC3 s0 q90 -> TIMEOUT/short(0)
+u10 FC4 s0 q6 -> TIMEOUT/short(0)
+u10 FC1 s0 q2 -> TIMEOUT/short(0)
+u10 FC2 s0 q2 -> TIMEOUT/short(0)
+--- held sequential (unit=1) ---
+fc3 qty4 -> TIMEOUT/short(0)
+fc3 qty90 -> TIMEOUT/short(0)
+CloseConnection ok

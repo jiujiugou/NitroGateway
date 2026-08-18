@@ -1,0 +1,46 @@
+unit=1 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=2 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=3 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=4 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=5 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=6 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=7 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=8 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=9 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=10 FC3(HR) qty90 -> TIMEOUT/short(0)
+unit=1 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=2 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=3 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=4 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=5 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=6 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=7 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=8 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=9 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=10 FC4(IR) qty6  -> TIMEOUT/short(0)
+unit=1 FC1(Coil) qty2 -> TIMEOUT/short(0)
+unit=2 FC1(Coil) qty2 -> TIMEOUT/short(0)
+unit=3 FC1(Coil) qty2 -> TIMEOUT/short(0)
+unit=4 FC1(Coil) qty2 -> TIMEOUT/short(0)
+unit=5 FC1(Coil) qty2 -> TIMEOUT/short(0)
+unit=6 FC1(Coil) qty2 -> TIMEOUT/short(0)
+unit=7 FC1(Coil) qty2 -> ERR timed out
+unit=8 FC1(Coil) qty2 -> ERR timed out
+unit=9 FC1(Coil) qty2 -> ERR timed out
+unit=10 FC1(Coil) qty2 -> ERR timed out
+unit=1 FC2(DI) qty2  -> ERR timed out
+unit=2 FC2(DI) qty2  -> ERR timed out
+unit=3 FC2(DI) qty2  -> ERR timed out
+unit=4 FC2(DI) qty2  -> ERR timed out
+unit=5 FC2(DI) qty2  -> TIMEOUT/short(0)
+unit=6 FC2(DI) qty2  -> TIMEOUT/short(0)
+unit=7 FC2(DI) qty2  -> TIMEOUT/short(0)
+unit=8 FC2(DI) qty2  -> TIMEOUT/short(0)
+unit=9 FC2(DI) qty2  -> TIMEOUT/short(0)
+unit=10 FC2(DI) qty2  -> TIMEOUT/short(0)
+unit=1 FC3 start=89 qty=1 -> TIMEOUT/short(0)
+unit=1 FC3 start=90 qty=1 -> TIMEOUT/short(0)
+unit=1 FC4 start=5 qty=1  -> TIMEOUT/short(0)
+unit=1 FC1 start=1 qty=1  -> TIMEOUT/short(0)
+unit=1 FC2 start=1 qty=1  -> TIMEOUT/short(0)
+unit=2 FC3 start=0 qty=91 -> TIMEOUT/short(0)

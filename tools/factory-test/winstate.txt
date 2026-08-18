@@ -1,0 +1,9 @@
+﻿ROOT: Modbus Slave - Mbslave1 | Afx:0000000140000000:8:0000000000010003:0000000000000000:0000000000E10AB3
+ControlType.Window | name='Modbus Slave - Mbslave1' | class=Afx:0000000140000000:8:0000000000010003:0000000000000000:0000000000E10AB3 | aid= | rect=411,422,912,431
+  ControlType.Pane | name='' | class=MDIClient | aid=59648 | rect=420,510,894,312
+    ControlType.Window | name='Mbslave1' | class=Afx:0000000140000000:b:0000000000010003:0000000000000006:00000000036905F9 | aid=65280 | rect=422,512,794,212
+      ControlType.Pane | name='' | class=AfxFrameOrView140su | aid=59648 | rect=431,550,776,165
+        ControlType.Pane | name='' | class=MFCGridCtrl | aid=100 | rect=433,594,772,119
+  ControlType.Pane | name='For Help, press F1.' | class=msctls_statusbar32 | aid=59393 | rect=420,822,894,22
+  ControlType.Pane | name='' | class=AfxControlBar140su | aid=59419 | rect=420,485,894,25
+    ControlType.Pane | name='' | class=ToolbarWindow32 | aid=59392 | rect=418,485,236,27

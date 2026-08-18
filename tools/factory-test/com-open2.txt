@@ -1,0 +1,12 @@
+﻿Connection set to 1 (TCP)
+IP/Port set
+FC03 slave1 qty90: show= setup=1
+FC04 slave1 qty6: show= setup=1
+FC01 slave1 qty2: show= setup=1
+OpenConnection() = 255
+PROBE:
+unit=1 FC2 start=0 qty=2 -> TIMEOUT/short(0)
+unit=1 FC3 start=0 qty=90 -> TIMEOUT/short(0)
+unit=1 FC4 start=0 qty=6 -> TIMEOUT/short(0)
+unit=1 FC1 start=0 qty=2 -> TIMEOUT/short(0)
+CloseConnection ok

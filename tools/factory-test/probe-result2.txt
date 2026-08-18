@@ -1,0 +1,4 @@
+unit=1 FC2 start=0 qty=2 -> TIMEOUT/short(0)
+unit=1 FC3 start=0 qty=90 -> TIMEOUT/short(0)
+unit=1 FC4 start=0 qty=6 -> TIMEOUT/short(0)
+unit=1 FC1 start=0 qty=2 -> TIMEOUT/short(0)

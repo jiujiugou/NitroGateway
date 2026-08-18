@@ -1,0 +1,128 @@
+﻿olevba 0.60.2 on Python 3.12.3 - http://decalage.info/python/oletools
+===============================================================================
+FILE: D:\Modbus Slave\example.xlsm
+Type: OpenXML
+WARNING  For now, VBA stomping cannot be detected for files in memory
+-------------------------------------------------------------------------------
+VBA MACRO Sheet1.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet1'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+Public doc As Object
+Public app As Object
+Dim status As Integer
+Dim n As Integer
+
+Private Sub StartModbusSlave_Click()
+   ' Create an application object. You can only create 1 application object
+   Set app = CreateObject("Mbslave.Application")
+   
+   ' Create a new Modbus Slave document (Data Window)
+   ' This is the same as open a new data window in Modbus Slave
+   ' You can create up to 50 Modbus Slave documents (Data Window)
+   Set doc = CreateObject("Mbslave.Document")
+   
+   ' Show Modbus Slave
+    res = doc.ShowWindow()
+   
+   ' Create doc2 if needed.
+   ' Set doc2 = CreateObject("Mbslave.Document")
+End Sub
+Private Sub OpenConnection_Click()
+Dim res As Integer
+
+If app Is Nothing Then
+   res = MsgBox("Modbus Slave is not started", vbOKOnly, "Excel example")
+   Exit Sub
+End If
+
+   ' Set one of  5 connection types.
+   app.Connection = Range("F10").Value
+   
+   ' Serial port settings.
+   app.SerialPort = Range("B2").Value
+   app.BaudRate = Range("B3").Value
+   app.DataBits = Range("B4").Value
+   app.Parity = Range("B5").Value
+   app.StopBits = Range("B6").Value
+   app.Mode = Range("B10").Value
+   
+   ' TCP/IP settings.
+   app.IPAddress = Range("F2").Value
+   app.ServerPort = Range("F3").Value
+   app.IPVersion = Range("F4").Value
+   
+   ' Open the connection.
+   res = app.OpenConnection()
+   Range("D17").Value = res
+   
+End Sub
+
+
+Private Sub CloseConnection_Click()
+   status = app.CloseConnection()
+End Sub
+
+Private Sub SetupHoldingRegisters_Click()
+   If doc Is Nothing Then
+      res = MsgBox("Modbus Slave is not started", vbOKOnly, "Excel example")
+      Exit Sub
+   End If
+   ' Setup 10 holding registers, slave ID 1, address 0 (40001)
+   res = doc.SetupHoldingRegisters(1, 0, 10)
+End Sub
+
+Private Sub UpdateCells_Click()
+   If doc Is Nothing Then
+      res = MsgBox("Modbus Slave is not started", vbOKOnly, "Excel example")
+      Exit Sub
+   End If
+
+
+   ' Get the 10 signed registers that Modbus Slave.
+   For n = 0 To 9
+      ' Note that the index always starts from 0 no matter what address you read from.
+      Cells(21 + n, 2) = doc.SRegisters(n)
+   Next n
+
+End Sub
+
+Private Sub WriteRegisters_Click()
+   If doc Is Nothing Then
+      res = MsgBox("Modbus Slave is not started", vbOKOnly, "Excel example")
+      Exit Sub
+   End If
+   For n = 0 To 9
+      doc.SRegisters(n) = Cells(21 + n, 8)
+   Next n
+
+End Sub
+-------------------------------------------------------------------------------
+VBA MACRO Sheet2.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet2'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO Sheet3.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/Sheet3'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO ThisWorkbook.cls 
+in file: xl/vbaProject.bin - OLE stream: 'VBA/ThisWorkbook'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+(empty macro)
++----------+--------------------+---------------------------------------------+
+|Type      |Keyword             |Description                                  |
++----------+--------------------+---------------------------------------------+
+|AutoExec  |StartModbusSlave_Cli|Runs when the file is opened and ActiveX     |
+|          |ck                  |objects trigger events                       |
+|Suspicious|open                |May open a file                              |
+|Suspicious|Create              |May execute file or a system command through |
+|          |                    |WMI                                          |
+|Suspicious|ShowWindow          |May hide the application                     |
+|Suspicious|CreateObject        |May create an OLE object                     |
+|Suspicious|Hex Strings         |Hex-encoded strings were detected, may be    |
+|          |                    |used to obfuscate strings (option --decode to|
+|          |                    |see all)                                     |
++----------+--------------------+---------------------------------------------+
+

@@ -1,0 +1,26 @@
+﻿app type = System.__ComObject
+read  Connection = 1
+read  IPAddress = 127.0.0.1
+read  ServerPort = 502
+read  IPVersion = 4
+read  Mode = 0
+read  SerialPort = 2
+read  BaudRate = 9600
+read  DataBits = 8
+read  StopBits = 1
+read  Parity = 0
+set   Connection = 1 -> ok
+set   Mode = 1 -> ok
+set   IPAddress = 127.0.0.1 -> ok
+set   ServerPort = 502 -> ok
+after Connection = 1
+after Mode = 1
+after IPAddress = 127.0.0.1
+after ServerPort = 502
+OpenConnection() = 255
+PROBE:
+unit=1 FC2 start=0 qty=2 -> TIMEOUT/short(0)
+unit=1 FC3 start=0 qty=90 -> TIMEOUT/short(0)
+unit=1 FC4 start=0 qty=6 -> TIMEOUT/short(0)
+unit=1 FC1 start=0 qty=2 -> TIMEOUT/short(0)
+CloseConnection() ok
