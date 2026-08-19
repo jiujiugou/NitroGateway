@@ -4,7 +4,10 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Infrastructure;
+using NitroGateway.Desktop.Services.Settings;
+using NitroGateway.Desktop.Services.Sync;
+
 using NitroGateway.DeviceManagement;
 using NitroGateway.Forwarder;
 using NitroGateway.Host;

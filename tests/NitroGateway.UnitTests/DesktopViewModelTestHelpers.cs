@@ -1,5 +1,5 @@
 using NitroGateway.DeviceManagement;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Infrastructure;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Shared;

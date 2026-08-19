@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Configuration;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Sync;
 using NitroGateway.Shared;
 using Xunit;
 

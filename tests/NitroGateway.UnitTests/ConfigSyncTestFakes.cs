@@ -1,4 +1,5 @@
-﻿using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Sync;
+
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 

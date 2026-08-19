@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Sync;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;

@@ -1,5 +1,6 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
-using NitroGateway.Desktop.Services;
+using Microsoft.Extensions.Logging.Abstractions;
+using NitroGateway.Desktop.Services.Infrastructure;
+
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;

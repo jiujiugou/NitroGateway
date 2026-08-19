@@ -1,8 +1,8 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Globalization;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Sync;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 using Xunit;

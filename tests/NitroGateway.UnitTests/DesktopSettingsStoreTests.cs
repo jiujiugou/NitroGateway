@@ -1,5 +1,5 @@
 using System.IO;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Settings;
 using Xunit;
 
 namespace NitroGateway.UnitTests;

@@ -1,6 +1,7 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Sync;
+
 using Xunit;
 
 namespace NitroGateway.UnitTests;

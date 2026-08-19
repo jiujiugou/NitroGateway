@@ -2,7 +2,7 @@ using System.Collections;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Connectivity;
 using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Desktop.ViewModels;

@@ -1,4 +1,5 @@
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Connectivity;
+using NitroGateway.Desktop.Services.Dialogs;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.DeviceManagement;
 using NitroGateway.DeviceManagement.Events;

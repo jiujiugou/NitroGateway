@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Dialogs;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 

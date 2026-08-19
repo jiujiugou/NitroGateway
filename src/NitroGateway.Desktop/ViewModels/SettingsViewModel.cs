@@ -4,7 +4,11 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Configuration;
 using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Hosting;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Dialogs;
+using NitroGateway.Desktop.Services.Infrastructure;
+using NitroGateway.Desktop.Services.Settings;
+using NitroGateway.Desktop.Services.Sync;
+
 using NitroGateway.Transport.MQTT;
 using NitroGateway.Shared;
 

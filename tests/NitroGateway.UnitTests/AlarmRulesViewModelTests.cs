@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Dialogs;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;

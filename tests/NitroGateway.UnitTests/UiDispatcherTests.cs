@@ -1,5 +1,5 @@
-﻿using System.Windows.Threading;
-using NitroGateway.Desktop.Services;
+using System.Windows.Threading;
+using NitroGateway.Desktop.Services.Infrastructure;
 using Xunit;
 
 namespace NitroGateway.UnitTests;

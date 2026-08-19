@@ -1,8 +1,9 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Infrastructure;
+
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Views;
 using NitroGateway.DeviceManagement;

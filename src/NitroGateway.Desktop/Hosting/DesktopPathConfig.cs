@@ -1,6 +1,6 @@
-﻿using System.IO;
+using System.IO;
 using Microsoft.Extensions.Configuration;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Settings;
 
 namespace NitroGateway.Desktop.Hosting;
 

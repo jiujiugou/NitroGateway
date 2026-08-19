@@ -4,7 +4,10 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Desktop.Messaging;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Dialogs;
+using NitroGateway.Desktop.Services.Infrastructure;
+using NitroGateway.Desktop.Services.Sync;
+
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;

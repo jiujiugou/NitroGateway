@@ -1,8 +1,9 @@
-﻿using Xunit;
+using Xunit;
 using System.IO;
 using Microsoft.Extensions.Configuration;
 using NitroGateway.Desktop.Hosting;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Settings;
+
 
 namespace NitroGateway.UnitTests;
 

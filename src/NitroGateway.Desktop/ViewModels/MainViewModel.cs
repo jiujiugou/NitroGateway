@@ -1,7 +1,7 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using NitroGateway.Desktop.Messaging;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Infrastructure;
 using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Desktop.ViewModels;

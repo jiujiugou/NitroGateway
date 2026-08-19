@@ -6,7 +6,7 @@ using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Desktop.Messaging;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Infrastructure;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Storage.TimeSeries;

@@ -4,7 +4,7 @@ using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
 // 命名空间 NitroGateway.Alarm 与告警实体同名冲突，实体类型用别名引用
 using AlarmEntity = NitroGateway.Alarm.Domain.Alarm;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Infrastructure;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Shared;
 using Xunit;

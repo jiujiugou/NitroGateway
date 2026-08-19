@@ -1,5 +1,5 @@
 using NitroGateway.Desktop.ViewModels;
-using NitroGateway.Desktop.Services;
+using NitroGateway.Desktop.Services.Connectivity;
 using NitroGateway.Domain.Devices;
 using Xunit;
 
