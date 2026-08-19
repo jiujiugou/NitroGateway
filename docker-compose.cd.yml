@@ -1,0 +1,18 @@
+# NitroGateway CD 覆盖（部署机用，ADR-058）：gateway/web 镜像改用 GHCR 发布产物，不再本地构建。
+# 前提：镜像已由 CI/CD 流水线推送到 ghcr.io（见 .github/workflows/ci.yml 的 build-images job）。
+#
+# 部署机（边缘网关）用法：
+#   docker compose -f docker-compose.yml -f docker-compose.cd.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.cd.yml up -d
+#
+# 本文件不替换 docker-compose.yml（mqtt + 运行时环境/卷/端口仍由其定义），
+# 仅覆盖镜像来源；本地开发仍可直接 `docker compose up -d`（build 路径不变）。
+services:
+  gateway:
+    image: ghcr.io/jiujiugou/nitrogateway-gateway:latest
+    build: !reset
+    pull_policy: always
+  web:
+    image: ghcr.io/jiujiugou/nitrogateway-web:latest
+    build: !reset
+    pull_policy: always

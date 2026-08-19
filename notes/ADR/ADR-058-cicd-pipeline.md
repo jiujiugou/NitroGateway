@@ -1,0 +1,19 @@
+# ADR-058: CI/CD 流水线（CD 扩展，GHCR 镜像发布）
+
+- 日期: 2026-08-19 | 状态: 已实施
+- 背景: ADR-010 已落地 CI（push/PR 的 build+test）。2026-08-19 Docker 部署实机验证通过后，用户问「如何构建 CI/CD 流水线」——需要把「构建镜像 + 推送 GHCR」也接进流水线，让边缘网关部署机直接 `pull` 发布产物，不再现场构建，消除「本地能跑、部署机编译环境不一致」风险。
+- 方案: 在 `ci.yml` 上扩展为 CI/CD（不改名，触发仍统一入口）：
+  - 触发: `push: [master]` + `tags: ['v*']` + `pull_request`（PR 只跑 CI，不发布镜像）。
+  - 新增 `validate-compose` job（CI 占位环境变量下 `docker compose config -q` 校验 `docker-compose.yml` / `+cd` / `center` / `monitoring` 4 种形态，仅校验不运行）。
+  - 新增 `build-images` job（CD）: `if: push && (refs/heads/master || refs/tags/v*)`，`needs: [validate-compose, build-server, build-windows]`（测试全绿才发布）；Buildx + `type=gha` 缓存 + `docker/login-action@v3` 用 `secrets.GITHUB_TOKEN`（默认可用，无需额外 PAT）登录 GHCR。
+  - 镜像与 tag: `gateway`（根 `Dockerfile`）+ `web`（`web/Dockerfile`）→ `ghcr.io/jiujiugou/nitrogateway-{gateway,web}`；master → `latest` + `sha-<7>`，`vX.Y.Z` tag → `vX.Y.Z` + `sha-<7>`（tag 即版本，发布可追溯）。
+  - 新增 `docker-compose.cd.yml`（部署机覆盖文件）: 仅覆盖 `image:` + `build: !reset` + `pull_policy: always`（Compose v5.1.1 支持 `!reset`，已实测合并通过）；mqtt/端口/卷/环境变量仍由 `docker-compose.yml` 定义；本地开发仍 `docker compose up -d`（构建路径不变）。
+- 改动文件:
+  - `.github/workflows/ci.yml`（CI → CI/CD）
+  - `docker-compose.cd.yml`（新）
+  - `README.md`（CI/CD 章节 + badge + 测试计数 115→645 修正）
+- 验证:
+  - YAML: PyYAML safe_load 通过（`!reset` 为 Compose 自定义 tag，PyYAML 不识别属预期，真实校验以 `docker compose config -q` 为准）。
+  - `docker compose -f docker-compose.yml -f docker-compose.cd.yml config -q` EXIT=0，合并后 gateway/web 无 `build:`、`image:` 指向 GHCR、`pull_policy: always`。
+  - workflow 首次 push 后到 GitHub Actions 观察：`build-images` 应只在 master push / v* tag 触发；PR 仅跑 CI 三档。若 GitHub 对 YAML 有异议会标红（本地语法已验证合法）。
+- 后续: 发布版本以 `git tag vX.Y.Z` 触发（tag 与镜像 tag 同名）；回滚 = 部署机 `pull` 上一版本 tag 或 `sha-<7>`。

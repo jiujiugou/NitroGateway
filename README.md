@@ -1,5 +1,7 @@
 # NitroGateway — 工业物联网边缘网关
 
+![CI/CD](https://github.com/jiujiugou/NitroGateway/actions/workflows/ci.yml/badge.svg)
+
 ## 一句话
 
 运行在工控机或边缘盒子上的工业协议网关。从 PLC 采集数据 → 本地 SQLite 存储 → MQTT 转发到云端 → Vue 3 管理面板。
@@ -48,6 +50,25 @@ docker compose up -d --build
 
 > 两个 compose 栈使用同一套宿主端口（1883/5100/5200/5170），正常运行二选一；
 > 需同时跑时用 `-p` 区分项目并覆盖端口：`docker compose -p center -f docker-compose.center.yml up -d`（再按需改 mqtt/gateway/web 的宿主端口）。
+
+---
+
+## CI/CD（GitHub Actions + GHCR，ADR-010/058）
+
+流水线定义在 `.github/workflows/ci.yml`，分三档：
+
+- **CI（每次 push / PR）**：`validate-compose`（校验 4 种 compose 形态）+ `build-server`（ubuntu 服务端 + 集成测试）+ `build-windows`（全量含 WPF Desktop + 全部单测）。
+- **CD（仅 push master / `v*` tag 且前置 job 全绿）**：`build-images` 用 Buildx 构建 `gateway`（根 `Dockerfile`）与 `web`（`web/Dockerfile`）两个镜像，推送到 **GHCR**（`ghcr.io/jiujiugou/nitrogateway-gateway` / `nitrogateway-web`）。
+- **镜像 tag 策略**：`master` → `latest` + `sha-<7>`；`vX.Y.Z` tag → `vX.Y.Z` + `sha-<7>`。
+
+边缘网关部署机从 GHCR 拉取发布产物（不再现场构建）：
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cd.yml pull
+docker compose -f docker-compose.yml -f docker-compose.cd.yml up -d
+```
+`docker-compose.cd.yml` 仅覆盖镜像来源（`image:` + `build: !reset` + `pull_policy: always`），mqtt/端口/卷/环境变量仍由 `docker-compose.yml` 定义；本地开发仍可直接 `docker compose up -d`（现场构建路径不变）。
+
+> 部署机需先配置 `.env`：`JWT_SECRET` / `ADMIN_PASSWORD` / `OPERATOR_PASSWORD` / `VIEWER_PASSWORD` 必填，生产禁用仓库内测试账号与开发密钥。
 
 ---
 
@@ -213,7 +234,7 @@ Web API → DeviceManager → DB 保存 → StatusChanged 事件
 ## 测试
 
 ```bash
-dotnet test  # 115 个单元测试
+dotnet test  # 645 个单元测试
 
 # 核心覆盖:
 # - PointValuePipeline: 缩放/死区/类型转换
@@ -265,7 +286,7 @@ src/
 └── NitroGateway.Webapi/       ASP.NET Core Host
 
 tests/
-└── NitroGateway.UnitTests/    115 个单元测试
+└── NitroGateway.UnitTests/    645 个单元测试
 
 web/
 └── src/                       Vue 3 前端
