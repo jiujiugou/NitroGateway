@@ -14,6 +14,7 @@ using NitroGateway.Protocols;
 using NitroGateway.Security;
 using NitroGateway.Security.Audit;
 using NitroGateway.Security.Auth;
+using NitroGateway.Storage.Buffer;
 using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 using NitroGateway.Webapi;
@@ -131,6 +132,14 @@ var app = builder.Build();
 
 // ── 建表 ──
 app.InitializeDatabase();
+
+// ADR-059：MQTT 转发总开关——迁移完成后把持久值（app_meta）加载进内存，
+// 供 DataDispatcher 采集热路径与 ForwarderController 读取；缺省/失败按启用处理，不阻断启动。
+await using (var toggleScope = app.Services.CreateAsyncScope())
+{
+    var toggle = toggleScope.ServiceProvider.GetRequiredService<IForwardMqttToggle>();
+    await toggle.InitializeAsync();
+}
 
 // ADR-022 P3-6：Swagger 仅开发环境暴露；生产 API 面不对外展示（本地开发由 launchSettings 驱动）
 if (app.Environment.IsDevelopment())

@@ -103,6 +103,21 @@ public class DataDispatcherTests
         public event Action<DiskLevel>? Changed;
     }
 
+    /// <summary>ADR-059 测试替身：MQTT 转发总开关（内存态，可编程）。</summary>
+    private sealed class FakeForwardMqttToggle : IForwardMqttToggle
+    {
+        public bool IsEnabled { get; set; } = true;
+
+        public Task<OperationResult> SetEnabledAsync(bool enabled, CancellationToken ct = default)
+        {
+            IsEnabled = enabled;
+            return Task.FromResult(OperationResult.Success());
+        }
+
+        public Task<OperationResult> InitializeAsync(CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
+    }
+
     /// <summary>ADR-053 测试用事件接收替身：捕获 SinkDispatcher 推送的事件（FIFO 队列 + 计数）。</summary>
     private sealed class FakeSink : IPointStoredSink
     {
@@ -218,6 +233,120 @@ public class DataDispatcherTests
         Assert.NotEqual(
             buffer.EnqueuedWithChannel[0].Batch.Id,
             buffer.EnqueuedWithChannel[1].Batch.Id);
+    }
+
+    /// <summary>
+    /// ADR-059：关闭 MQTT 转发总开关时，both 通道中 mqtt 跳过入转发缓冲、http 照常；
+    /// 本地时序库写入不受影响（照常落库）。恢复后 mqtt 重新入队。
+    /// </summary>
+    [Fact]
+    public async Task DispatchAsync_ToggleDisabled_SkipsMqttButKeepsHttpAndLocalStore()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+
+        var store = new FakeStore();
+        var buffer = new FakeBuffer();
+        var toggle = new FakeForwardMqttToggle { IsEnabled = false };
+        var writeHost = new MeasurementWriteHost(store, NullLogger<MeasurementWriteHost>.Instance);
+        var dispatcher = new DataDispatcher(
+            writeHost,
+            buffer,
+            new SinkDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<SinkDispatcher>.Instance),
+            NullLogger<DataDispatcher>.Instance,
+            forwardChannels: [IForwardBuffer.MqttChannel, IForwardBuffer.HttpChannel],
+            forwardMqttToggle: toggle);
+
+        try
+        {
+            await writeHost.StartAsync(CancellationToken.None);
+
+            var deviceId = Guid.NewGuid();
+            var result = await dispatcher.DispatchAsync(
+                deviceId,
+                [new PointSnapshot
+                {
+                    DeviceId = deviceId,
+                    DevicePointId = Guid.NewGuid(),
+                    PointName = "P1",
+                    Value = 1.0,
+                    DataType = DataType.Float,
+                    Timestamp = DateTime.UtcNow,
+                    Quality = QualityCode.Good
+                }],
+                CancellationToken.None);
+
+            Assert.True(result.IsSuccess);
+            // ADR-059: closed -> mqtt skipped, http enqueued
+            var channel = Assert.Single(buffer.EnqueuedWithChannel).Channel;
+            Assert.Equal(IForwardBuffer.HttpChannel, channel);
+            // local time-series store still written (toggle does not affect persistence)
+            await WaitUntilAsync(() => store.Written.Count >= 1);
+
+            // after re-enable, both channels enqueued
+            toggle.IsEnabled = true;
+            await dispatcher.DispatchAsync(
+                deviceId,
+                [new PointSnapshot
+                {
+                    DeviceId = deviceId,
+                    DevicePointId = Guid.NewGuid(),
+                    PointName = "P2",
+                    Value = 2.0,
+                    DataType = DataType.Float,
+                    Timestamp = DateTime.UtcNow,
+                    Quality = QualityCode.Good
+                }],
+                CancellationToken.None);
+
+            Assert.Equal(
+                [IForwardBuffer.HttpChannel, IForwardBuffer.MqttChannel, IForwardBuffer.HttpChannel],
+                buffer.EnqueuedWithChannel.Select(e => e.Channel));
+        }
+        finally
+        {
+            await writeHost.StopAsync(CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// ADR-059：开启开关（含未注册开关的默认兼容路径）时 mqtt 照常入队——
+    /// 未传 toggle（旧调用方）独立测试按恒启用处理，不改变既有行为。
+    /// </summary>
+    [Fact]
+    public async Task DispatchAsync_ToggleEnabled_EnqueuesMqtt()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+
+        var buffer = new FakeBuffer();
+        var dispatcher = new DataDispatcher(
+            new MeasurementWriteHost(new FakeStore(), NullLogger<MeasurementWriteHost>.Instance),
+            buffer,
+            new SinkDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<SinkDispatcher>.Instance),
+            NullLogger<DataDispatcher>.Instance,
+            forwardChannels: [IForwardBuffer.MqttChannel],
+            forwardMqttToggle: new FakeForwardMqttToggle { IsEnabled = true });
+
+        var deviceId = Guid.NewGuid();
+        await dispatcher.DispatchAsync(
+            deviceId,
+            [new PointSnapshot
+            {
+                DeviceId = deviceId,
+                DevicePointId = Guid.NewGuid(),
+                PointName = "P1",
+                Value = 1.0,
+                DataType = DataType.Float,
+                Timestamp = DateTime.UtcNow,
+                Quality = QualityCode.Good
+            }],
+            CancellationToken.None);
+
+        var channel = Assert.Single(buffer.EnqueuedWithChannel).Channel;
+        Assert.Equal(IForwardBuffer.MqttChannel, channel);
     }
 
     [Fact]

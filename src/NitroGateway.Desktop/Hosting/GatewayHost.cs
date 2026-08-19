@@ -14,6 +14,7 @@ using NitroGateway.Host;
 using NitroGateway.Persistence;
 using NitroGateway.Persistence.Sqlite;
 using NitroGateway.Protocols;
+using NitroGateway.Storage.Buffer;
 using NitroGateway.Transport.MQTT;
 using Serilog;
 
@@ -89,6 +90,11 @@ public sealed class GatewayHost : IAsyncDisposable
         var logger = _host.Services.GetRequiredService<ILoggerFactory>()
             .CreateLogger("NitroGateway.Persistence.MigrationRunner");
         MigrationRunner.Run(connectionString, logger);
+
+        // ADR-059：MQTT 转发总开关——迁移完成后把持久值（desktop-settings.json）加载进内存，
+        // 供 DataDispatcher 采集热路径与设置页读取；缺省/失败按启用处理，不阻断启动。
+        var toggle = _host.Services.GetRequiredService<IForwardMqttToggle>();
+        await toggle.InitializeAsync(ct);
 
         await _host.StartAsync(ct);
     }

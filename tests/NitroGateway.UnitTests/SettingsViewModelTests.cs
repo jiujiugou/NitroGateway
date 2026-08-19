@@ -7,6 +7,7 @@ using NitroGateway.Desktop.ViewModels;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
+using NitroGateway.Storage.Buffer;
 using NitroGateway.Transport.MQTT;
 using Xunit;
 
@@ -27,6 +28,7 @@ public sealed class SettingsViewModelTests : IDisposable
     private readonly StubCenterConfigImporter _importer = new();
     private readonly StubDeviceDialogService _dialogs = new();
     private readonly StubConfigSyncOutboxStore _outbox = new();
+    private readonly StubForwardMqttToggle _forwardMqttToggle = new();
 
     public SettingsViewModelTests()
     {
@@ -221,6 +223,64 @@ public sealed class SettingsViewModelTests : IDisposable
         Assert.Equal("", new DesktopSettingsStore(_settingsFile).Load().LogDirectory);
     }
 
+    [Fact]
+    public void SaveLogDirectory_preserves_forward_mqtt_toggle_in_file()
+    {
+        // 先持久化开关=false，再保存日志目录：字段合并写，避免互相覆盖（ADR-059）
+        new DesktopSettingsStore(_settingsFile).Save(new DesktopSettings { ForwarderMqttEnabled = false });
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        var customDir = Path.Combine(Path.GetTempPath(), "nitrogateway-tests", $"custom-logs-{Guid.NewGuid():N}");
+        try
+        {
+            vm.LogDirectory = customDir;
+            vm.SaveLogDirectoryCommand.Execute(null);
+
+            var saved = new DesktopSettingsStore(_settingsFile).Load();
+            Assert.Equal(customDir, saved.LogDirectory);
+            Assert.False(saved.ForwarderMqttEnabled);
+        }
+        finally
+        {
+            try { Directory.Delete(customDir, recursive: true); } catch { /* 清理失败可忽略 */ }
+        }
+    }
+
+    [Fact]
+    public void Constructor_loads_forward_mqtt_toggle_state()
+    {
+        _forwardMqttToggle.IsEnabled = false;
+
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+
+        Assert.False(vm.ForwardMqttEnabled);
+    }
+
+    [Fact]
+    public async Task ToggleForwardMqtt_persists_and_shows_status()
+    {
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+
+        await vm.ToggleForwardMqttCommand.ExecuteAsync(false);
+
+        Assert.Equal(1, _forwardMqttToggle.SetCalls);
+        Assert.False(_forwardMqttToggle.LastEnabled);
+        Assert.False(vm.ForwardMqttEnabled);
+        Assert.Contains("已关闭", vm.ForwardMqttStatus);
+    }
+
+    [Fact]
+    public async Task ToggleForwardMqtt_failure_rolls_back_and_shows_error()
+    {
+        _forwardMqttToggle.IsEnabled = true;
+        _forwardMqttToggle.NextSetResult = OperationResult.Failure(OperationalError.Storage("写入失败"));
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+
+        await vm.ToggleForwardMqttCommand.ExecuteAsync(false);
+
+        Assert.True(vm.ForwardMqttEnabled); // 回滚到持久值
+        Assert.Contains("保存失败", vm.ForwardMqttStatus);
+    }
+
     private SettingsViewModel CreateVm(ICenterSyncSettingsStore store, ISiteIdProvider? siteIdProvider = null) => new(
         new MqttConnectionOptions { Host = "localhost", Port = 1883 },
         new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(),
@@ -232,7 +292,8 @@ public sealed class SettingsViewModelTests : IDisposable
         _outbox,
         _dialogs,
         siteIdProvider ?? new StubSiteIdProvider(),
-        new DesktopSettingsStore(_settingsFile));
+        new DesktopSettingsStore(_settingsFile),
+        _forwardMqttToggle);
 
     /// <summary>ADR-036 测试替身：站点标识提供者（记录调用，可编程校验失败）。</summary>
     private sealed class StubSiteIdProvider : ISiteIdProvider
@@ -259,6 +320,32 @@ public sealed class SettingsViewModelTests : IDisposable
             return Current;
         }
     }
+}
+
+/// <summary>ADR-059 测试替身：MQTT 转发总开关（可编程结果，记录调用）。</summary>
+internal sealed class StubForwardMqttToggle : IForwardMqttToggle
+{
+    public bool IsEnabled { get; set; } = true;
+
+    /// <summary>下一次 SetEnabledAsync 的返回结果；null 表示成功并同步更新 IsEnabled。</summary>
+    public OperationResult? NextSetResult { get; set; }
+
+    public int SetCalls { get; private set; }
+
+    public bool? LastEnabled { get; private set; }
+
+    public Task<OperationResult> SetEnabledAsync(bool enabled, CancellationToken ct = default)
+    {
+        SetCalls++;
+        LastEnabled = enabled;
+        if (NextSetResult is not null)
+            return Task.FromResult(NextSetResult);
+        IsEnabled = enabled;
+        return Task.FromResult(OperationResult.Success());
+    }
+
+    public Task<OperationResult> InitializeAsync(CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
 }
 
 /// <summary>ADR-033 测试替身：中心快照客户端（可编程结果 + 记录调用）。</summary>

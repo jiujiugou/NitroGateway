@@ -27,6 +27,22 @@
       </div>
     </div>
 
+    <!-- ADR-059：MQTT 上云转发总开关——运行期启停，无需改配置重启 -->
+    <div class="card" style="margin-top:20px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <el-switch v-model="forwardMqttEnabled" :loading="forwardMqttLoading"
+                   @change="toggleForwardMqtt" />
+        <div>
+          <h3 style="margin:0;font-size:15px">MQTT 上云转发</h3>
+          <div style="font-size:12px;color:var(--text-dim,#909399);margin-top:3px">
+            {{ forwardMqttEnabled
+                ? '已开启：采集/本地存储/告警不受影响，数据继续 MQTT 上云。'
+                : '已关闭：照常采集与本地存储，仅暂停 MQTT 上云；恢复后从关闭时刻续传。' }}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 设备熔断器状态（ADR-054：纯边缘形态恒展示） -->
     <div class="card" style="margin-top:20px">
       <h3 style="margin:0 0 16px">设备熔断器</h3>
@@ -84,8 +100,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import client from '../../api/client'
 import { getSerialPorts, getSerialPortStatus } from '../../api/devices'
+import { getForwarderEnabled, setForwarderEnabled } from '../../api/forwarder'
 
 const siteId = ref('')
 const mqtt = ref({ state: '-', connected: false })
@@ -96,6 +114,23 @@ const breakers = ref<any[]>([])
 const health = ref<any[]>([])
 const serialPorts = ref<any[]>([])
 const availablePorts = ref<string[]>([])
+// ADR-059：MQTT 上云转发开关（缺省启用；仅在首载与切换成功后更新，避免 3s 轮询覆盖用户操作）
+const forwardMqttEnabled = ref(true)
+const forwardMqttLoading = ref(false)
+
+/// ADR-059：切换开关——即时生效并持久化（重启保持）；失败回滚到服务端当前值并提示。
+async function toggleForwardMqtt(value: boolean) {
+  forwardMqttLoading.value = true
+  try {
+    forwardMqttEnabled.value = await setForwarderEnabled(value)
+    ElMessage.success(forwardMqttEnabled.value ? '已开启 MQTT 上云转发' : '已暂停 MQTT 上云转发')
+  } catch (err: any) {
+    try { forwardMqttEnabled.value = await getForwarderEnabled() } catch { /* 回滚读取失败则保持乐观值 */ }
+    ElMessage.error(`切换失败: ${err?.response?.data?.error?.message ?? err?.message ?? '未知错误'}`)
+  } finally {
+    forwardMqttLoading.value = false
+  }
+}
 
 async function refresh() {
   try {
@@ -117,7 +152,11 @@ async function refresh() {
 
 // ADR-007 P3-2：setInterval 需在 onUnmounted 清理，避免离开页面后继续轮询
 let timer: number | undefined
-onMounted(() => { refresh(); timer = window.setInterval(refresh, 3000) })
+onMounted(async () => {
+  try { forwardMqttEnabled.value = await getForwarderEnabled() } catch { /* 保持缺省启用 */ }
+  refresh()
+  timer = window.setInterval(refresh, 3000)
+})
 onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 
 // ADR-007 P1-2：修复占位符恒返回 '-'；el-table formatter 签名 (row, column, cellValue, index)，多余参数忽略

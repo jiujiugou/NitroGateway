@@ -68,7 +68,9 @@ public static class CollectionServiceCollectionExtensions
             // ADR-035 第 1 步：站点标识随负载上行（Site:Id，缺省 default）
             NitroGateway.Shared.SiteOptions.Resolve(configuration["Site:Id"]),
             // ADR-053：注入死区变化抑制器，Dispatcher 层统一计算三处消费的放行子集
-            sp.GetRequiredService<ChangeDetector>()));
+            sp.GetRequiredService<ChangeDetector>(),
+            // ADR-059：MQTT 转发总开关——未注册（旧宿主/独立测试）时 null → DataDispatcher 恒启用
+            sp.GetService<IForwardMqttToggle>()));
         services.AddSingleton<MeasurementWriteHost>();
         services.AddHostedService(sp => sp.GetRequiredService<MeasurementWriteHost>());
         services.AddSingleton<SinkDispatcher>();

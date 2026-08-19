@@ -10,6 +10,7 @@ using NitroGateway.Desktop.Services.Sync;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Events;
+using NitroGateway.Storage.Buffer;
 using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Desktop;
@@ -63,6 +64,10 @@ public static class DesktopServiceCollectionExtensions
 
         // 桌面端本地设置：日志目录（设置页可改，保存后重启生效；环境变量仍优先）
         services.AddSingleton<IDesktopSettingsStore>(_ => new DesktopSettingsStore());
+
+        // ADR-059：MQTT 转发总开关——desktop-settings.json 持久化（重启保持）；
+        // 宿主启动（迁移完成后）调用 IForwardMqttToggle.InitializeAsync 加载持久值到内存
+        services.AddSingleton<IForwardMqttToggle, DesktopForwardMqttToggle>();
 
         // ADR-036 站点标识：site.json 存储 + 提供者（设置页展示/编辑/重新生成）
         services.AddSingleton<ISiteSettingsStore>(_ => new SiteSettingsStore());

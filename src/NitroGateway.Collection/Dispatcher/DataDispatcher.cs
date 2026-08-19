@@ -25,6 +25,7 @@ public sealed class DataDispatcher : IDataDispatcher
     private readonly IReadOnlyList<string> _forwardChannels;
     private readonly string _siteId;
     private readonly ChangeDetector? _changeDetector;
+    private readonly IForwardMqttToggle? _forwardMqttToggle;
 
     private readonly ILogger<DataDispatcher> _logger;
 
@@ -37,6 +38,7 @@ public sealed class DataDispatcher : IDataDispatcher
     /// <param name="forwardChannels">北向通道列表（ADR-011 P3）；缺省或空时仅 mqtt</param>
     /// <param name="siteId">站点标识（ADR-035 第 1 步）；随 BatchMeasurements 负载上行，缺省空串</param>
     /// <param name="changeDetector">死区变化抑制器（ADR-053）；null 表示不抑制（兼容旧调用方/独立测试）</param>
+    /// <param name="forwardMqttToggle">MQTT 转发总开关（ADR-059）；null 表示恒启用（兼容旧调用方/独立测试）</param>
     public DataDispatcher(
         MeasurementWriteHost measurement,
         IForwardBuffer buffer,
@@ -45,7 +47,8 @@ public sealed class DataDispatcher : IDataDispatcher
         IDiskStatus? diskStatus = null,
         IReadOnlyList<string>? forwardChannels = null,
         string? siteId = null,
-        ChangeDetector? changeDetector = null)
+        ChangeDetector? changeDetector = null,
+        IForwardMqttToggle? forwardMqttToggle = null)
     {
         _measurement = measurement;
         _buffer = buffer;
@@ -56,6 +59,7 @@ public sealed class DataDispatcher : IDataDispatcher
             ? forwardChannels
             : [IForwardBuffer.MqttChannel];
         _siteId = siteId ?? "";
+        _forwardMqttToggle = forwardMqttToggle;
         _logger = logger;
     }
 
@@ -106,6 +110,12 @@ public sealed class DataDispatcher : IDataDispatcher
             // 避免缓冲表以 batchId 为主键时 same Id 冲突；各通道引擎按通道隔离出队互不争抢。
             foreach (var channel in _forwardChannels)
             {
+                // ADR-059：MQTT 转发总开关——关闭时跳过 mqtt 通道入转发缓冲（http 照常、落库照常）。
+                // 语义：无缓冲堆积、不触发死信；恢复后从关闭时刻起续传，不补发关闭期数据。
+                // 未注册开关（独立测试/旧宿主）视为恒启用。
+                if (channel == IForwardBuffer.MqttChannel && _forwardMqttToggle is { IsEnabled: false })
+                    continue;
+
                 var channelBatch = _forwardChannels.Count > 1
                     ? batch with { Id = Guid.NewGuid() }
                     : batch;

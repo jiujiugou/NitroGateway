@@ -47,6 +47,12 @@ public static class SqliteServiceCollectionExtensions
             maxRetries: 5,
             maxPending: configuration.GetValue("Persistence:ForwardBufferMaxPending", 100_000)));
 
+        // ADR-059：MQTT 转发总开关——app_meta 键值持久化（不改库结构、不加迁移，M006 已建表）。
+        // 宿主启动（迁移完成后）调用 IForwardMqttToggle.InitializeAsync 把持久值加载进内存，
+        // DataDispatcher 采集热路径同步读 IsEnabled，不落库。
+        services.AddSingleton<IAppMetaStore>(_ => new SqliteAppMetaStore(connectionString));
+        services.AddSingleton<IForwardMqttToggle, SqliteForwardMqttToggle>();
+
         // ADR-002 P1-2：measurements 保留任务（后台周期清理，防止时序表无限增长）
         services.AddHostedService(sp => new MeasurementRetentionService(
             sp.GetRequiredService<IMeasurementStore>(),

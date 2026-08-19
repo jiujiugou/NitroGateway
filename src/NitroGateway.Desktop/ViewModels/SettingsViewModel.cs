@@ -11,6 +11,7 @@ using NitroGateway.Desktop.Services.Sync;
 
 using NitroGateway.Transport.MQTT;
 using NitroGateway.Shared;
+using NitroGateway.Storage.Buffer;
 
 namespace NitroGateway.Desktop.ViewModels;
 
@@ -30,6 +31,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly IConfiguration _configuration;
     private readonly ISiteIdProvider _siteIdProvider;
     private readonly IDesktopSettingsStore _logSettingsStore;
+    private readonly IForwardMqttToggle _forwardMqttToggle;
 
     [ObservableProperty] private string _mqttBroker = "";
     [ObservableProperty] private string _mqttClientId = "";
@@ -40,6 +42,17 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _logDirectoryStatus = "";
     [ObservableProperty] private string _collectionInterval = "";
     [ObservableProperty] private string _forwarderInterval = "";
+
+    /// <summary>MQTT 上云转发开关（ADR-059）：即时生效并持久化，重启保持。</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ToggleForwardMqttCommand))]
+    private bool _forwardMqttEnabled = true;
+
+    /// <summary>MQTT 上云转发开关保存状态提示</summary>
+    [ObservableProperty] private string _forwardMqttStatus = "";
+
+    /// <summary>MQTT 上云转发开关保存进行中：期间禁用开关，防重复点击</summary>
+    [ObservableProperty] private bool _isSavingForwardMqtt;
 
     /// <summary>站点标识（ADR-036）：生效值展示，可编辑/重新生成；保存后重启生效</summary>
     [ObservableProperty] private string _siteId = "";
@@ -76,7 +89,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         IConfigSyncOutboxStore outbox,
         IDeviceDialogService dialogs,
         ISiteIdProvider siteIdProvider,
-        IDesktopSettingsStore logSettingsStore)
+        IDesktopSettingsStore logSettingsStore,
+        IForwardMqttToggle forwardMqttToggle)
     {
         _bridge = bridge;
         _ui = ui;
@@ -87,6 +101,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _dialogs = dialogs;
         _siteIdProvider = siteIdProvider;
         _logSettingsStore = logSettingsStore;
+        _forwardMqttToggle = forwardMqttToggle;
         _configuration = configuration;
 
         MqttBroker = $"{mqtt.Host}:{mqtt.Port}" + (mqtt.UseTls ? " (TLS)" : "");
@@ -103,8 +118,46 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         CenterToken = saved.CenterToken;
 
         SiteId = siteIdProvider.Current;
+        ForwardMqttEnabled = _forwardMqttToggle.IsEnabled;
 
         _bridge.FrameReady += OnFrame;
+    }
+
+    private bool CanToggleForwardMqtt => !IsSavingForwardMqtt;
+
+    /// <summary>
+    /// 切换 MQTT 上云转发开关（ADR-059）：立即持久化（desktop-settings.json），
+    /// 成功更新状态提示；失败回滚开关到持久值并提示。关闭仅暂停 MQTT 上云，采集/本地存储/告警不受影响。
+    /// </summary>
+    /// <param name="enabled">目标状态（ToggleButton 的 IsChecked 透传）</param>
+    [RelayCommand(CanExecute = nameof(CanToggleForwardMqtt))]
+    private async Task ToggleForwardMqttAsync(bool enabled)
+    {
+        IsSavingForwardMqtt = true;
+        ToggleForwardMqttCommand.NotifyCanExecuteChanged();
+        try
+        {
+            ForwardMqttStatus = "正在保存…";
+            var result = await _forwardMqttToggle.SetEnabledAsync(enabled);
+            if (result.IsSuccess)
+            {
+                // 成功后显式同步 VM 状态（不依赖 UI 双向绑定已先翻转，命令被程序化调用时也自洽）
+                ForwardMqttEnabled = enabled;
+                ForwardMqttStatus = enabled
+                    ? "已开启：采集/本地存储/告警不受影响，数据继续 MQTT 上云。"
+                    : "已关闭：照常采集与本地存储，仅暂停 MQTT 上云；恢复后从关闭时刻续传。";
+            }
+            else
+            {
+                ForwardMqttStatus = $"保存失败：{result.Error!.Message}";
+                ForwardMqttEnabled = _forwardMqttToggle.IsEnabled;
+            }
+        }
+        finally
+        {
+            IsSavingForwardMqtt = false;
+            ToggleForwardMqttCommand.NotifyCanExecuteChanged();
+        }
     }
 
     /// <summary>保存站点标识：校验后持久化；运行中采集/转发仍用旧值，重启后生效。</summary>
@@ -136,9 +189,11 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         var directory = LogDirectory?.Trim() ?? "";
         if (directory.Length == 0)
         {
-            _logSettingsStore.Save(new DesktopSettings { LogDirectory = "" });
-            LogDirectoryStatus = "已清除自定义日志目录，重启后恢复默认位置";
-            return;
+        var cleared = _logSettingsStore.Load();
+        cleared.LogDirectory = "";
+        _logSettingsStore.Save(cleared);
+        LogDirectoryStatus = "已清除自定义日志目录，重启后恢复默认位置";
+        return;
         }
 
         if (!Path.IsPathRooted(directory))
@@ -157,7 +212,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             return;
         }
 
-        _logSettingsStore.Save(new DesktopSettings { LogDirectory = directory });
+        // ADR-059：加载→改字段→保存（保留 ForwarderMqttEnabled，避免与 MQTT 开关互相覆盖）
+        var saved = _logSettingsStore.Load();
+        saved.LogDirectory = directory;
+        _logSettingsStore.Save(saved);
         LogDirectoryStatus = $"已保存：{directory}（重启后生效）";
     }
 

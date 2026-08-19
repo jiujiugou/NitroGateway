@@ -12,6 +12,12 @@ public sealed class DesktopSettings
     /// （%LocalAppData%\NitroGateway\logs，ADR-026 D4）。
     /// </summary>
     public string LogDirectory { get; set; } = "";
+
+    /// <summary>
+    /// MQTT 上云转发开关（ADR-059）：false=仅暂停 MQTT 上云（采集/本地存储/告警不受影响），
+    /// 缺省 true（启用）。由 <see cref="DesktopForwardMqttToggle"/> 读写，设置页开关即时生效、重启保持。
+    /// </summary>
+    public bool ForwarderMqttEnabled { get; set; } = true;
 }
 
 /// <summary>桌面端本地设置存储接口（可测试替身）。</summary>
