@@ -110,6 +110,62 @@ public class SecurityConfigValidationTests
         Assert.Null(ex);
     }
 
+    [Fact]
+    public void PlaintextDefaultPassword_UnderProductionEnv_Throws()
+    {
+        // compose/.env 以明文覆盖默认测试密码（admin123）→ 生产拒绝启动（ADR-052 同思路）
+        var config = BuildConfig(
+            ("Security:JwtSecretKey", StrongKey),
+            ("Security:ExpireHours", "8"),
+            ("Security:Users:0:Username", "admin"),
+            ("Security:Users:0:Password", "admin123"),
+            ("Security:Users:0:Role", "Admin"),
+            ("DOTNET_ENVIRONMENT", "Production"));
+
+        Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddNitroSecurity(config));
+    }
+
+    [Fact]
+    public void PlaintextStrongPassword_UnderProductionEnv_IsHashedOnRegistration()
+    {
+        // compose/.env 以明文强密码覆盖 → 启动通过，且注册的 JwtConfig 已归一化为哈希，
+        // TokenGenerator 可正常校验（修复前明文直接登录 500：Base-64 解析异常）。
+        var config = BuildConfig(
+            ("Security:JwtSecretKey", StrongKey),
+            ("Security:ExpireHours", "8"),
+            ("Security:Users:0:Username", "admin"),
+            ("Security:Users:0:Password", "A-Strong-P@ssw0rd!"),
+            ("Security:Users:0:Role", "Admin"),
+            ("DOTNET_ENVIRONMENT", "Production"));
+
+        var services = new ServiceCollection();
+        services.AddNitroSecurity(config);
+        var jwtConfig = services.BuildServiceProvider().GetRequiredService<JwtConfig>();
+
+        var user = Assert.Single(jwtConfig.Users);
+        Assert.Equal("admin", user.Username);
+        var hasher = new PasswordHasher<UserConfig>();
+        Assert.NotEqual(
+            PasswordVerificationResult.Failed,
+            hasher.VerifyHashedPassword(user, user.Password, "A-Strong-P@ssw0rd!"));
+    }
+
+    [Fact]
+    public void PlaintextDefaultPassword_UnderDevelopmentEnv_DoesNotThrow()
+    {
+        // 开发环境保留明文默认密码，仅归一化哈希，不影响本地调试
+        var config = BuildConfig(
+            ("Security:JwtSecretKey", StrongKey),
+            ("Security:ExpireHours", "8"),
+            ("Security:Users:0:Username", "admin"),
+            ("Security:Users:0:Password", "admin123"),
+            ("Security:Users:0:Role", "Admin"),
+            ("ASPNETCORE_ENVIRONMENT", "Development"));
+
+        var ex = Record.Exception(() => new ServiceCollection().AddNitroSecurity(config));
+        Assert.Null(ex);
+    }
+
     private static string HashPassword(string plain)
         => new PasswordHasher<UserConfig>().HashPassword(
             new UserConfig { Username = "admin", Password = "", Role = "Admin" }, plain);

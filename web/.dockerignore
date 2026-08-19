@@ -1,0 +1,5 @@
+# NitroGateway 前端镜像构建上下文忽略（node_modules 由 npm ci 重建，dist 由 build 重建）
+node_modules
+dist
+*.log
+.vite

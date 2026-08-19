@@ -13,6 +13,7 @@
 - 问题 2（中，安全）: 两个 compose 均新增 `Security__Users__0__Password=${ADMIN_PASSWORD:?}` 强制覆盖内置 admin 密码（未设置直接拒绝启动）；新增 `.env.example` 模板（JWT_SECRET + ADMIN_PASSWORD，`.env` 已 gitignore）。
   - 代码侧: `src/NitroGateway.Security/SecurityServiceCollectionExtensions.cs` 非 Development 环境启动校验，逐个用户用 `PasswordHasher` 比对 `DefaultTestPasswords = ["admin123", "oper123", "view123"]`，命中即抛 `InvalidOperationException` 拒启；`FormatException`（非标准哈希）跳过。
   - 已验证: 三个内置哈希实测分别匹配 admin123/oper123/view123；新增 3 单测，全量 612/612 通过；`docker compose config` 两种形态均解析通过（缺变量时报错符合预期）。
+  - 补充（2026-08-19 容器实机验证，问题 2 补完）: 原修复有两处缺口——(a) 仅强制覆盖 admin，operator/viewer 仍默认测试密码 → 生产拒启崩溃循环；`docker-compose.yml`/`docker-compose.center.yml`/`.env.example` 新增必填 `OPERATOR_PASSWORD`/`VIEWER_PASSWORD`（`Security__Users__1/2__Password`）。(b) compose/.env 传明文密码而代码只认 PasswordHasher 哈希，登录直接 500（`FormatException: not a valid Base-64 string`，`TokenGenerator.IssueToken`→`VerifyHashedPassword`）；`AddNitroSecurity` 配置加载阶段新增明文归一化（`IsHashedPassword` 按版本字节判定，非哈希一律按明文；生产先拒绝默认测试密码再 `HashPassword` 写回，TokenGenerator 不变）。新增 3 单测，全量 645/645 通过；容器 build+up 后 healthz/readyz 200、`nitro_mqtt_state=2`、admin/operator/viewer 明文登录 200、token 调 `GET /api/devices` 200、经 web 5170 代理登录 200。
 
 ## 问题 3（中，观察）：中心库 center.db 被 ingest 与 gateway(Center) 双进程迁移+保留
 - 位置: `src/NitroGateway.Ingest/Program.cs` 与 `src/NitroGateway.Webapi/Program.cs`（Center 模式）均调 AddNitroSqlite + InitializeDatabase

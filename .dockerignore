@@ -1,0 +1,19 @@
+# NitroGateway 后端镜像构建上下文忽略（减少上下文体积，避免把 bin/obj/日志/数据库打进镜像）
+**/bin
+**/obj
+**/logs
+**/node_modules
+**/dist
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.db-journal
+**/*.log
+.git
+.vs
+.idea
+notes
+tools
+web
+.env
+*.user

@@ -54,6 +54,9 @@ services:
       - Security__JwtSecretKey=${JWT_SECRET:?JWT_SECRET 环境变量必须设置（生产强密钥，禁止使用仓库内占位符）}
       # ADR-052 问题2：生产强制覆盖内置测试账号 admin 密码，未设置直接拒绝启动（与单现场形态一致）
       - Security__Users__0__Password=${ADMIN_PASSWORD:?ADMIN_PASSWORD 环境变量必须设置（生产禁用默认测试账号 admin/admin123）}
+      # ADR-052 问题2（补）：operator/viewer 账号同样必须覆盖默认测试密码（oper123/view123），与单现场形态一致
+      - Security__Users__1__Password=${OPERATOR_PASSWORD:?OPERATOR_PASSWORD 环境变量必须设置（生产禁用默认测试账号 operator/oper123）}
+      - Security__Users__2__Password=${VIEWER_PASSWORD:?VIEWER_PASSWORD 环境变量必须设置（生产禁用默认测试账号 viewer/view123）}
     depends_on:
       - ingest
     restart: unless-stopped

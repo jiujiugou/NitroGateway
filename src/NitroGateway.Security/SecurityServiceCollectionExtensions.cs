@@ -51,26 +51,50 @@ public static class SecurityServiceCollectionExtensions
                 throw new InvalidOperationException($"Security:Users 角色无效: {user.Username} → {user.Role}（允许 Admin/Operator/Viewer）");
         }
 
-        // ADR-052 问题2：非开发环境拒绝仍使用默认测试账号密码（admin/admin123）启动，
-        // 与 JWT 的 ChangeMe 拒绝同思路——防止 appsettings 内置测试账号直接带上生产；
-        // 生产请用环境变量 Security__Users__N__Password 覆盖（compose 已强制 ADMIN_PASSWORD）。
+        // —— 密码归一化：环境变量常以明文覆盖 Security__Users__N__Password ——
+        // TokenGenerator 只认 PasswordHasher 哈希（ADR-004 P1-2 已移除明文 Equals 回退），
+        // 明文若直接交给登录会 500（VerifyHashedPassword 抛 Base-64 解析异常）。
+        // 这里在配置加载阶段统一处理：非 PasswordHasher 哈希一律按明文 → 生产拒绝默认测试密码 → 哈希化写回，登录逻辑不变。
+        // （2026-08-19 容器实测：修复前 compose 明文覆盖后登录 500；修复后明文密码可正常登录。）
+        var hasher = new PasswordHasher<UserConfig>();
+        for (var i = 0; i < jwtConfig.Users.Count; i++)
+        {
+            var user = jwtConfig.Users[i];
+            if (IsHashedPassword(user.Password))
+                continue; // 已是 PasswordHasher 哈希，交给下方生产默认密码守卫
+
+            if (!IsDevelopment(configuration))
+            {
+                foreach (var defaultPwd in DefaultTestPasswords)
+                {
+                    if (string.Equals(user.Password, defaultPwd, StringComparison.Ordinal))
+                        throw new InvalidOperationException(
+                            $"Security:Users 账号 {user.Username} 仍使用默认测试密码（{defaultPwd}），禁止用于生产：请通过环境变量 Security__Users__N__Password 覆盖");
+                }
+            }
+
+            // 明文强密码（或外部非 PasswordHasher 格式）→ 哈希化写回，登录按哈希校验
+            jwtConfig.Users[i] = new UserConfig
+            {
+                Username = user.Username,
+                Password = hasher.HashPassword(user, user.Password),
+                Role = user.Role
+            };
+        }
+
+        // ADR-052 问题2：非开发环境拒绝仍使用默认测试账号密码（admin/admin123 等）启动，
+        // 与 JWT 的 ChangeMe 拒绝同思路——防止 appsettings 内置测试账号直接带上生产。
+        // 生产请用环境变量 Security__Users__N__Password 覆盖（compose 已强制 ADMIN/OPERATOR/VIEWER_PASSWORD）。
+        // 此处所有 Password 均已归一化为哈希；明文默认密码已在上方拒绝。
         if (!IsDevelopment(configuration))
         {
-            var hasher = new PasswordHasher<UserConfig>();
             foreach (var user in jwtConfig.Users)
             {
                 foreach (var defaultPwd in DefaultTestPasswords)
                 {
-                    try
-                    {
-                        if (hasher.VerifyHashedPassword(user, user.Password, defaultPwd) != PasswordVerificationResult.Failed)
-                            throw new InvalidOperationException(
-                                $"Security:Users 账号 {user.Username} 仍使用默认测试密码（{defaultPwd}），禁止用于生产：请通过环境变量 Security__Users__N__Password 覆盖");
-                    }
-                    catch (FormatException)
-                    {
-                        // 非 PasswordHasher 标准哈希（如外部迁移哈希），跳过默认密码比对，登录时自行校验
-                    }
+                    if (hasher.VerifyHashedPassword(user, user.Password, defaultPwd) != PasswordVerificationResult.Failed)
+                        throw new InvalidOperationException(
+                            $"Security:Users 账号 {user.Username} 仍使用默认测试密码（{defaultPwd}），禁止用于生产：请通过环境变量 Security__Users__N__Password 覆盖");
                 }
             }
         }
@@ -146,4 +170,24 @@ public static class SecurityServiceCollectionExtensions
     private static bool IsDevelopment(IConfiguration configuration)
         => string.Equals(configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase)
            || string.Equals(configuration["DOTNET_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 是否为 PasswordHasher 标准哈希：Base64 可解析且首字节为版本标记（0x00 V2 / 0x01 V3）。
+    /// 非 Base64（明文密码）或版本标记不符（外部哈希）一律视为明文，交由上层归一化哈希化，
+    /// 因为 TokenGenerator 仅支持 PasswordHasher 校验（ADR-004 P1-2）。
+    /// </summary>
+    private static bool IsHashedPassword(string password)
+    {
+        if (string.IsNullOrEmpty(password))
+            return false;
+        try
+        {
+            var bytes = Convert.FromBase64String(password);
+            return bytes.Length > 0 && (bytes[0] == 0x00 || bytes[0] == 0x01);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
 }
