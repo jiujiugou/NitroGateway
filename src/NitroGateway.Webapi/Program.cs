@@ -67,7 +67,9 @@ builder.Services.AddNitroForwarder(builder.Configuration);
 builder.Services.AddNitroCollection(builder.Configuration);
 builder.Services.AddNitroMqtt(builder.Configuration);
 
-builder.Services.AddNitroTelemetry();
+// ADR-056：启用 OpenTelemetry 追踪（OTLP/Console 导出），service.name=nitrogateway-webapi；
+// 配置见 appsettings Telemetry:Tracing，可用环境变量覆盖（Endpoint 空时走 OTEL_EXPORTER_OTLP_ENDPOINT）。
+builder.Services.AddNitroTelemetry(builder.Configuration, "nitrogateway-webapi");
 
 // ── 健康检查 ──
 var healthChecks = builder.Services.AddHealthChecks()

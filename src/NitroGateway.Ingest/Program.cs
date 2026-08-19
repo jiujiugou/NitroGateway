@@ -30,7 +30,8 @@ builder.Host.UseSerilog((context, services, configuration) =>
 builder.Services.AddNitroSqlite(builder.Configuration);
 builder.Services.AddNitroMqtt(builder.Configuration);
 // ADR-049：运行时指标（dotnet_*）与 ingest_* 业务指标统一进 /metrics，供 Prometheus 采集
-builder.Services.AddNitroTelemetry();
+// ADR-056：同时启用 OpenTelemetry 追踪（OTLP/Console 导出），service.name=nitrogateway-ingest
+builder.Services.AddNitroTelemetry(builder.Configuration, "nitrogateway-ingest");
 builder.Services.AddSingleton<IIngestStore>(_ => new SqliteIngestStore(connectionString));
 builder.Services.AddHostedService<IngestService>();
 

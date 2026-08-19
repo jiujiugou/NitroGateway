@@ -1,15 +1,15 @@
 # Telemetry 模块面试题
 
 > 难度：★ 基础 · ★★ 进阶 · ★★★ 深水。每题附「代码定位」，答不出先看代码再看答案。
-> 共 9 组 46 题；参考答案见 `answers.md`。
+> 共 9 组 47 题；参考答案见 `answers.md`。
 
 ---
 
 ## 一、模块定位与整体架构
 
-**Q1.1 ★** Telemetry 模块只有 4 个源文件，它的职责边界是什么？哪些事明确不在它范围内（HTTP 暴露 / 日志 / 健康检查）？
+**Q1.1 ★** Telemetry 模块只有 6 个源文件，它的职责边界是什么？哪些事明确不在它范围内（HTTP 暴露 / 日志 / 健康检查）？
 
-**Q1.2 ★★** `AddNitroTelemetry` 是空实现（直接 `return services`），为什么注册后指标依然能工作？prometheus-net 的"默认注册表"藏在哪？
+**Q1.2 ★★** `AddNitroTelemetry` 有两层注册：指标为何不用 DI 也能工作（prometheus-net 的"默认注册表"藏在哪）？带 IConfiguration 的重载又做了什么（ADR-056）？
 代码定位：`TelemetryServiceCollectionExtensions.cs`；`Webapi/Program.cs:116`。
 
 **Q1.3 ★** `/metrics` 端点由谁、在哪一行暴露？Telemetry 模块自身为什么不暴露 HTTP？
@@ -21,7 +21,7 @@
 **Q1.5 ★★** 指标定义为什么用静态类静态字段，而不是 DI 单例注入？这种设计的优点和坑分别是什么？
 代码定位：`NitroMetrics.cs` 类注释；`TelemetryServiceCollectionExtensions.cs`。
 
-**Q1.6 ★★★** `NitroGateway.Telemetry.csproj` 引用了 `OpenTelemetry` 两次，且所有包都是 `Version="*"`。这有什么问题？当前 `OpenTelemetry` 包真的被用到了吗？
+**Q1.6 ★★★** `NitroGateway.Telemetry.csproj` 曾重复引用 `OpenTelemetry`，且大量包是 `Version="*"`。这有什么问题？当前 `OpenTelemetry` 包被用在哪（追踪执行层）？新增的 3 个导出/托管包为什么锁 1.17.0？
 代码定位：`NitroGateway.Telemetry.csproj:10-13`；全仓库搜索 `OpenTelemetry` 的使用。
 
 ---
@@ -98,7 +98,7 @@
 **Q5.3 ★★** `GatewayActivityTags` 统一了 9 个 Tag Key。为什么用常量而不是各模块写字符串？`error.message` 与 `db.table` 的约定用法？
 代码定位：`GatewayActivityTags.cs`。
 
-**Q5.4 ★★★** `Source.StartActivity(...)` 在什么情况下返回 null？所有代码都写 `activity?.` 是为了防什么？现在生产环境这个调用实际返回 null 还是 Activity？（全仓库搜 `AddOpenTelemetry` / `ActivityListener`）
+**Q5.4 ★★★** `Source.StartActivity(...)` 在什么情况下返回 null？所有代码都写 `activity?.` 是为了防什么？现在生产环境这个调用实际返回 null 还是 Activity？（ADR-056 后默认返回 Activity；`Exporter=None`/`Enabled=false` 时返回 null——全仓库搜 `AddOpenTelemetry` / `ActivityListener`）
 代码定位：`GatewayActivitySource.cs`；`rg "AddOpenTelemetry|ActivityListener" src tests`。
 
 **Q5.5 ★★★** 测试里是怎么"捕获" Activity 的？`ForwarderActivityTests.StartListener` 做了什么？为什么收集的是 `ActivityStopped`？
@@ -142,6 +142,9 @@
 **Q7.4 ★★★** 要让这些 Span 出现在 Jaeger / Grafana Tempo 里，需要补什么？逐条列出从"定义 Activity"到"后端可见"的完整链路（SDK、AddSource、exporter、协议、配置）。
 代码定位：`GatewayActivitySource.cs`；`NitroGateway.Telemetry.csproj:12-13`。
 
+**Q7.5 ★★** 本机没部署 OTLP collector 时，span 能去哪里看？三种导出器（Otlp / Console / File）各自的观察点是什么？"日志里看不到 span"最可能的原因是什么？
+代码定位：`TelemetryServiceCollectionExtensions.cs` Exporter switch；`Tracing/FileActivityExporter.cs`；`TelemetryTracingOptions.cs`。
+
 ---
 
 ## 八、测试与验证
@@ -174,5 +177,5 @@
 **Q9.4 ★★★** 可观测性三大支柱（logging / metrics / tracing）在本仓库的现状各是什么水平？缺口分别在哪？如果要给生产环境上线可观测性，第一刀砍在哪？
 代码定位：`Webapi/Program.cs` Serilog；`NitroMetrics.cs`；`GatewayActivitySource.cs`。
 
-**Q9.5 ★★★** 陷阱复盘：把本模块所有"定义与实现不一致"的点列全（哑火指标、deadletter 标签、help 文本、F-23、csproj 重复引用、无监听器），并说出每题在面试中如何展开讲。
+**Q9.5 ★★★** 陷阱复盘：把本模块所有"定义与实现不一致"的点列全（哑火指标、deadletter 标签、help 文本、F-23、csproj 重复引用、无监听器——均已修复），并说出每题修在哪、面试中如何展开讲。
 代码定位：见各题。

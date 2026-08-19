@@ -14,8 +14,8 @@
 
 **Q1.2 空注册为什么还能工作**
 - `Metrics.CreateCounter(...)` 等全部走 prometheus-net 的**静态默认注册表**（`Metrics.DefaultRegistry`），不依赖 DI 容器。
-- `AddNitroTelemetry` 只是占位：为将来接 OpenTelemetry SDK / 自定义注册表预留入口；prometheus-net.AspNetCore 的 `MapMetrics()` 抓的就是默认注册表。
-- 相关测试：无（指标无单测，见 Q8.1）。
+- `AddNitroTelemetry()`（无参）仍只注册指标：prometheus-net 静态注册表无需 DI，`MapMetrics()` 抓的就是默认注册表；`AddNitroTelemetry(IConfiguration, serviceName)` 重载（ADR-056）额外启用 OpenTelemetry 追踪执行层。
+- 相关测试：`TelemetryServiceCollectionExtensionsTests`（TracerProvider 注册 / dormant 行为）、`TelemetryTracingOptionsTests`（配置解析）。
 
 **Q1.3 /metrics 暴露点**
 - `src/NitroGateway.Webapi/Program.cs:116` 的 `app.MapMetrics()`（来自 prometheus-net.AspNetCore）。
@@ -32,9 +32,9 @@
 - 坑：全局可变状态 → 单测互相污染（Q8.1）；无法按实例隔离（多租户/多注册表场景要改造成 `WithCustomRegistry`）；隐藏依赖（不通过构造函数体现）。
 
 **Q1.6 csproj 问题**
-- `NitroGateway.Telemetry.csproj:12-13` 的 `OpenTelemetry` 引用重复两遍（笔误）。
-- `Version="*"` 浮动版本：每次 restore 可能拉到不同版本，构建不可复现（全仓库多处也这么用，但此处有重复引用叠加）。
-- 当前 `OpenTelemetry` 包**没有被用到**：全仓库没有 `AddOpenTelemetry`、`WithTracing`、OTLP exporter、`ActivityListener`（测试除外）→ 包是"挂着的依赖"，追踪实际未启用（见 Q5.4）。
+- 重复引用已在 ADR-009 P2-4 去重；遗留 `Version="*"` 浮动版本：每次 restore 可能拉到不同版本，构建不可复现（全仓库多处也这么用）。
+- 追踪执行层已落地（ADR-056）：新增 `OpenTelemetry.Extensions.Hosting` + `Exporter.Console` + `Exporter.OpenTelemetryProtocol`（锁 1.17.0，与既有核心解析版本对齐），`AddOpenTelemetry().WithTracing(...)` 已接线、默认 Otlp 导出 → 裸 `OpenTelemetry` 核心包**已被用到**；建议核心包同样锁版。
+- File 导出器（ADR-057）：`Tracing/FileActivityExporter.cs` 把 span 落盘 `{LogDirectory}/traces-yyyyMMdd.jsonl`（默认 `logs/traces`），无需 collector，解决"没后端看不到 span"的本地观察。
 
 ---
 
@@ -151,8 +151,8 @@
 
 **Q5.4 StartActivity 返回 null 的条件**
 - `ActivitySource.StartActivity` 在**没有任何监听者**（`ActivityListener` / OpenTelemetry SDK）时返回 null；`activity?.` 就是防这个。
-- 现状：生产代码无 `AddOpenTelemetry`、无 `ActivityListener` → **返回 null，追踪实际未启用**（成本几乎为零，但后端看不到 span）。
-- 只有测试（`ForwarderActivityTests`）注册了 `ActivityListener` 才能捕获。
+- 现状（ADR-056/057）：Webapi/Ingest 已注册 `AddOpenTelemetry().WithTracing(...)`（导出器 Otlp/Console/File 三选一）→ **返回真实 Activity 并导出**；`activity?.` 仍防"Enabled=false / Exporter=None 回到 dormant"时返回 null。
+- 测试（`ForwarderActivityTests`）仍用 `ActivityListener` 捕获，不依赖生产 TracerProvider。
 
 **Q5.5 测试捕获方式**
 - `ForwarderActivityTests.cs:119-137`：`ShouldListenTo` 按 `source.Name == GatewayActivitySource.Name` 过滤；`Sample` 返回 `AllDataAndRecorded`（全量记录）；在 `ActivityStopped` 里收集（span 结束时状态/标签才完整，且 `using` 释放才触发）。
@@ -215,7 +215,15 @@
 2. `builder.Services.AddOpenTelemetry().WithTracing(b => b.AddSource(GatewayActivitySource.Name).AddOtlpExporter(o => o.Endpoint = ...))`。
 3. 配置 OTLP endpoint（jaeger/tempo/otel-collector）。
 4. 启动后 `StartActivity` 返回真实 Activity，span 才落盘。
-- 现状缺口：1/2/3 全缺 → 追踪"定义完整、运行空转"（ADR-009 相关，未登记为条目，见 Q9.4）。
+- 现状（ADR-056/057 已完成）：1/2/3/4 全部落地——SDK+导出器包已加、`WithTracing` 已接（`TelemetryServiceCollectionExtensions`）、`Telemetry:Tracing` 配置段已写（默认 Otlp；`Exporter=None`/`Enabled=false` 回落到 dormant）、`StartActivity` 返回真实 Activity 并导出（冒烟在 Console/File 导出下可见全部 8 个 span）。
+
+**Q7.5 没有 collector 时，span 去哪里观察**
+- 三种导出器对应三种观察点：
+  1. `Exporter=Otlp`：发往 `Telemetry:Tracing:Endpoint`（默认 localhost:4317）的 jaeger/tempo/otel-collector，在对应 UI 按 service.name / trace_id 查。本机没 collector 时 span 被**静默丢弃**，且 Otlp 不写 Serilog `.log`——这正是"日志里没看出来"的原因。
+  2. `Exporter=Console`：span 打印到进程 stdout（Docker 里即容器日志 `docker logs`），本地直接看控制台。
+  3. `Exporter=File`（ADR-057）：落盘 `{LogDirectory}/traces-yyyyMMdd.jsonl`（默认 `logs/traces/`），每行一个 span，直接打开或用 jq/脚本解析，无需任何后端。
+- 配置：`Telemetry__Tracing__Exporter=File`（+ 可选 `Telemetry__Tracing__LogDirectory`），appsettings 与环境变量皆可；`logs/` 已被 .gitignore，不会入库。
+- File 导出器与 Serilog 独立：span 是结构化追踪数据，写 `logs/traces/`，不混入 `logs/nitrogateway-.log`。
 
 ---
 
@@ -250,12 +258,13 @@
 - 恢复：`mqtt_state` 回 2；AIMD 从小批量逐步试，成功后 `throttle_batch_size` 回升；`buffer_backlog` 逐轮下降排空；期间可能有重复投递（QoS1 at-least-once，靠云端幂等兜底）。
 
 **Q9.2 闭环优化排序（参考答案，按影响）**
-1. 接 OTLP/OpenTelemetry（追踪从"空转"变"可用"，Q7.4）——观察性基建。
-2. 补 `devices_online` 上报（在线率是核心指标，Q4.2）。
-3. 补 `collection_duration_ms` 上报（性能回归可告警，Q4.1）。
-4. 补 deadletter 计数（数据不可达要能告警，Q3.4）。
-5. 修 help 文本 + F-23 文档 + csproj 去重（低成本一致性，Q4.4/Q4.3/Q1.6）。
-- 安全（/metrics 鉴权）视网络隔离计划排期。
+1. ~~接 OTLP/OpenTelemetry~~ **已完成（ADR-056）**：追踪从"空转"变"可用"（Q7.4）。
+2. ~~本地观察通道~~ **已完成（ADR-057）**：File 导出器落盘 JSONL，无 collector 也能看 span（Q7.5）。
+3. ~~补 `devices_online` 上报~~ **已完成（ADR-009 P1-2）**：在线率是核心指标（Q4.2）。
+4. ~~补 `collection_duration_ms` 上报~~ **已完成（ADR-009 P1-1）**：性能回归可告警（Q4.1）。
+5. ~~补 deadletter 计数~~ **已完成（ADR-009 P2-1）**：数据不可达要能告警（Q3.4）。
+6. ~~修 help 文本 + F-23 文档 + csproj 去重~~ **已完成（ADR-009 P2-2/P2-3/P2-4）**：低成本一致性（Q4.4/Q4.3/Q1.6）。
+- 剩余：/metrics 鉴权（视网络隔离计划排期）；生产 OTLP 端点接入（当前默认 localhost:4317，需指到 jaeger/tempo/otel-collector；本机排查先用 `Exporter=File`）。
 
 **Q9.3 新增指标流程**
 1. `NitroMetrics.cs` 加 `Counter AlertTotal = Metrics.CreateCounter("nitro_alarm_total", "...", new CounterConfiguration { LabelNames = ["rule", "severity"] })`（命名规范 + 低基数 label）。
@@ -266,15 +275,16 @@
 
 **Q9.4 三大支柱现状**
 - logging：Serilog（控制台+文件+结构化）——最成熟，基本可用。
-- metrics：定义 9 个、实际接线 7 个（2 个哑火）、端点无鉴权——中等偏下。
-- tracing：8 个 Span 定义完整 + 状态约定好，但**无监听者 → 生产零产出**——最弱。
-- 第一刀：接 OTLP 让 tracing 生效（改动小、收益大）；同时补哑火指标，形成"日志/指标/追踪"三件套闭环。
+- metrics：定义 9 个、实际接线 9 个（duration/online 已于 ADR-009 补上报点，Q4.1/Q4.2）、端点无鉴权——可用。
+- tracing：8 个 Span 定义完整 + 状态约定好，**已启用执行层**（Webapi/Ingest 默认 Otlp 导出，ADR-056；无 collector 本地观察用 `Exporter=File` 落盘 JSONL，ADR-057；`Exporter=None`/`Enabled=false` 可关）——从"最弱"变为可用，生产需配好 OTLP 端点。
+- 第一刀已落下：OTLP 已接、tracing 生效，形成"日志/指标/追踪"三件套闭环；下一步是端点鉴权与生产 collector 落地。
 
 **Q9.5 陷阱复盘清单**
-- 哑火指标：`collection_duration_ms`、`devices_online`（Q4.1/Q4.2）。
-- 定义未用：`forward_total` 的 deadletter label（Q3.4）。
-- 文本错误：`mqtt_state` help 顺序（Q4.4）。
-- 文档漂移：F-23 8 vs 9（Q4.3）。
-- 工程问题：csproj OpenTelemetry 重复引用、Version="*"（Q1.6）。
-- 架构半成品：无监听者 → 追踪空转（Q5.4/Q7.4）。
+- ~~哑火指标~~ 已修复：`collection_duration_ms`、`devices_online`（ADR-009 P1-1/P1-2，Q4.1/Q4.2）。
+- ~~定义未用~~ 已修复：`forward_total` 的 deadletter label（ADR-009 P2-1，Q3.4）。
+- ~~文本错误~~ 已修复：`mqtt_state` help 顺序（ADR-009 P2-2，Q4.4）。
+- ~~文档漂移~~ 已修复：F-23 8 vs 9（ADR-009 P2-3，Q4.3）。
+- ~~工程问题~~ 部分已修复：csproj 重复引用已去重（P2-4）；`Version="*"` 遗留（Q1.6）。
+- ~~架构半成品~~ 已修复：无监听者 → 追踪空转（ADR-056，Q5.4/Q7.4）。
+- ~~观察无门~~ 已修复：无 collector 时 span 无处可看（ADR-057，Q7.5）。
 - 面试展开套路：先说"定义/约定"再说"实际接线"，用"我发现 + 代码位置 + 影响 + 修复方向"四段式讲，每个缺口都能落到一行代码。

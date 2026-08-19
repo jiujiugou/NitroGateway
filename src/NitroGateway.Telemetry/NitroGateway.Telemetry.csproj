@@ -12,6 +12,11 @@
     <!-- ADR-049：自动把 System.Runtime EventCounters 汇入全局注册表（/metrics 一次暴露运行时指标，不改业务指标契约） -->
     <PackageReference Include="prometheus-net.DotNetRuntime" Version="*" />
     <PackageReference Include="OpenTelemetry" Version="*" />
+    <!-- ADR-056：启用 OpenTelemetry 追踪执行层——托管注册（AddOpenTelemetry/WithTracing） + Console/OTLP 导出器。
+         版本锁 1.17.0 与现有 OpenTelemetry 核心一致（不升级现有包，仅新增导出依赖） -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
   </ItemGroup>
 
 </Project>
