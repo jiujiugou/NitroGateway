@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -6,7 +6,7 @@ using System.Globalization;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Sync;
 
 /// <summary>中心同步快照（ADR-033 阶段 3）：全量设备（含 tombstone）+ 中心服务器时间</summary>
 public sealed record CenterSyncSnapshot(IReadOnlyList<Device> Devices, DateTime ServerTime);

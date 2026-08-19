@@ -1,6 +1,6 @@
 using NitroGateway.Desktop.ViewModels;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Dialogs;
 
 /// <summary>
 /// 设备/点位编辑对话框抽象（ADR-029 P4）。

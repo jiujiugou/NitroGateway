@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using NitroGateway.Shared;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Sync;
 
 /// <summary>站点标识提供者（ADR-036）：生效 siteId 的解析、保存与重新生成。</summary>
 public interface ISiteIdProvider

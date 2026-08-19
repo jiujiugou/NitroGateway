@@ -1,4 +1,4 @@
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Dialogs;
 
 /// <summary>
 /// 点位 CSV 文件选择/保存抽象（导入导出用，ADR-029 同款对话框模式）。

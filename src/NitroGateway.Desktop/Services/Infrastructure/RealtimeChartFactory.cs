@@ -4,7 +4,7 @@ using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
 using SkiaSharp;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Infrastructure;
 
 /// <summary>
 /// 实时曲线图表配置工厂（ADR-045 P3 表现层关注点）。

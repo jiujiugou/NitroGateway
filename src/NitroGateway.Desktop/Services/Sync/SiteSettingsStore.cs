@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using NitroGateway.Desktop.Hosting;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Sync;
 
 /// <summary>站点标识本地设置（ADR-036）。</summary>
 public sealed class SiteSettings

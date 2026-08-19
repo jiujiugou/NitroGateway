@@ -1,4 +1,4 @@
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Infrastructure;
 
 /// <summary>
 /// 周期定时器抽象（轮询节奏是 view 关注点）：让 ViewModel 不依赖 System.Windows.Threading，

@@ -4,7 +4,7 @@ using NitroGateway.Domain.Devices;
 using NitroGateway.Persistence.Sqlite;
 using NitroGateway.Shared;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Sync;
 
 /// <summary>待上报变更类型（ADR-033 阶段 4：现场改动先入 outbox，联网后按序上报中心）</summary>
 public enum ConfigSyncOutboxKind

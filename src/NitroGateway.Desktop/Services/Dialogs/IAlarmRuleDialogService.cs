@@ -1,6 +1,6 @@
 using NitroGateway.Desktop.ViewModels;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Dialogs;
 
 /// <summary>
 /// 告警规则编辑对话框抽象（ADR-043）。

@@ -1,9 +1,10 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NitroGateway.Desktop.Hosting;
+using NitroGateway.Desktop.Services.Settings;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Sync;
 
 /// <summary>
 /// 中心同步设置（ADR-033 阶段 2）：中心地址与 Token。

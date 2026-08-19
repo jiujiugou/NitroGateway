@@ -2,7 +2,7 @@ using System.Windows;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Views;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Dialogs;
 
 /// <summary>WPF 告警规则对话框实现（模态 Window，Owner 取主窗口，仿 DeviceDialogService）。</summary>
 public sealed class AlarmRuleDialogService : IAlarmRuleDialogService

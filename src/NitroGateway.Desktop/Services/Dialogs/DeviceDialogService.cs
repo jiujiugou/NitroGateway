@@ -1,8 +1,10 @@
 using System.Windows;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Views;
+using NitroGateway.Desktop.Services.Connectivity;
+using NitroGateway.Desktop.Services.Infrastructure;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Dialogs;
 
 /// <summary>WPF 对话框实现（模态 Window，Owner 取主窗口）。</summary>
 public sealed class DeviceDialogService : IDeviceDialogService

@@ -1,6 +1,6 @@
 using System.Windows.Threading;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Infrastructure;
 
 /// <summary>
 /// WPF <see cref="DispatcherTimer"/> 实现的 <see cref="IUiTimer"/>（UI 线程周期回调）。

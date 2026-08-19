@@ -1,6 +1,6 @@
 using NitroGateway.Desktop.ViewModels;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Infrastructure;
 
 /// <summary>
 /// 点位窗口 ViewModel 工厂（ADR-029 P2）：把「手工 new PointsViewModel + 逐个

@@ -1,8 +1,8 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Settings;
 
 /// <summary>
 /// ADR-037 S5：本机用户级数据保护（DPAPI CryptProtectData，CurrentUser 作用域）。

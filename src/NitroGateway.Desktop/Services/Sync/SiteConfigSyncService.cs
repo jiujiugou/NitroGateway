@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -6,7 +6,7 @@ using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Sync;
 
 /// <summary>
 /// 配置自动同步服务（ADR-033 阶段 3/4，C 模型：现场临时决定权 + 中心最终裁决权）。

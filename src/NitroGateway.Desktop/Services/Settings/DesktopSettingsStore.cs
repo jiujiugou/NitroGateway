@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using NitroGateway.Desktop.Hosting;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Settings;
 
 /// <summary>桌面端本地设置：日志目录等（设置页可自行配置）。</summary>
 public sealed class DesktopSettings

@@ -1,4 +1,4 @@
-﻿namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Sync;
 
 // ADR-033 阶段 2：中心导出快照 JSON 的解析模型（与 Webapi DeviceDto/PointDto 序列化形状对应）。
 // 桌面不引用 Webapi 项目，此处定义最小可解析子集；枚举以字符串传输，映射时容错回退默认值。

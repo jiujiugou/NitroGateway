@@ -2,7 +2,7 @@ using System.Diagnostics;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Protocols;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Connectivity;
 
 /// <summary>
 /// 桌面端连接测试实现（ADR-044/ADR-023）。

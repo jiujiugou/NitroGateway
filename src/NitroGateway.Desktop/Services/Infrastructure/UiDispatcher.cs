@@ -1,7 +1,7 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Threading;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Infrastructure;
 
 /// <summary>
 /// ADR-026 D2：Dispatcher 封装。EventBridge 帧在后台线程产生，

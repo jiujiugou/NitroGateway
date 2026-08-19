@@ -2,8 +2,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.DeviceManagement;
+using NitroGateway.Desktop.Services.Dialogs;
+using NitroGateway.Desktop.Services.Sync;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Infrastructure;
 
 /// <summary>
 /// 点位 ViewModel 工厂实现：scope 内解析 ICsvFileService / PointBatchService / 对话框，

@@ -1,7 +1,7 @@
 using System.IO;
 using Microsoft.Win32;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Dialogs;
 
 /// <summary>WPF 实现：点位 CSV 打开/保存对话框（Microsoft.Win32，无额外包依赖）。</summary>
 public sealed class CsvFileService : ICsvFileService

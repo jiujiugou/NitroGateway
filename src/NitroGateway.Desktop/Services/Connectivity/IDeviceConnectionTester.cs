@@ -1,6 +1,6 @@
 using NitroGateway.Domain.Devices;
 
-namespace NitroGateway.Desktop.Services;
+namespace NitroGateway.Desktop.Services.Connectivity;
 
 /// <summary>连接测试结果（对齐 Web ADR-023：Connect + Ping 双验）。</summary>
 public sealed record ConnectionTestResult(bool Success, long LatencyMs, string? Error, string? Ping = null);
