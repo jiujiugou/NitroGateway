@@ -49,6 +49,27 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
             return conn.ExecuteScalar<int>("SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'");
         }
     }
+    /// <summary>
+    /// 构造缓冲。启动恢复（InFlight → Pending）不再在构造器内同步执行（ADR-018 P3-5）：
+    /// 原实现在 DI 首次解析时同步打开连接，DB 锁/不可用时（busy_timeout 5s）阻塞首解析；
+    /// 改为首次被使用时经 <see cref="EnsureRecoveredAsync"/> 异步完成，恢复完成前其余操作等待同一闸门，
+    /// 保证顺序正确。恢复失败仅告警不阻断（下次操作仍会重试）。
+    /// </summary>
+    /// <param name="connectionString">SQLite 连接串</param>
+    /// <param name="logger">日志记录器</param>
+    /// <param name="maxRetries">最大重试次数，超过后移入死信队列。默认 5</param>
+    /// <param name="maxPending">Pending 入队上限，达到后拒绝入队（ADR-018 P2-3）。默认 100000</param>
+    public SqliteForwardBuffer(
+        string connectionString,
+        ILogger<SqliteForwardBuffer> logger,
+        int maxRetries = 5,
+        int maxPending = DefaultMaxPending)
+    {
+        _connectionString = connectionString;
+        _logger = logger;
+        _maxRetries = maxRetries;
+        _maxPending = Math.Max(1, maxPending);
+    }
 
     /// <summary>
     /// 异步获取待转发批次数（不含死信）。ADR-001 P3-13：async 路径不再同步 ExecuteScalar。
@@ -81,27 +102,7 @@ public sealed class SqliteForwardBuffer : IForwardBuffer
         }
     }
 
-    /// <summary>
-    /// 构造缓冲。启动恢复（InFlight → Pending）不再在构造器内同步执行（ADR-018 P3-5）：
-    /// 原实现在 DI 首次解析时同步打开连接，DB 锁/不可用时（busy_timeout 5s）阻塞首解析；
-    /// 改为首次被使用时经 <see cref="EnsureRecoveredAsync"/> 异步完成，恢复完成前其余操作等待同一闸门，
-    /// 保证顺序正确。恢复失败仅告警不阻断（下次操作仍会重试）。
-    /// </summary>
-    /// <param name="connectionString">SQLite 连接串</param>
-    /// <param name="logger">日志记录器</param>
-    /// <param name="maxRetries">最大重试次数，超过后移入死信队列。默认 5</param>
-    /// <param name="maxPending">Pending 入队上限，达到后拒绝入队（ADR-018 P2-3）。默认 100000</param>
-    public SqliteForwardBuffer(
-        string connectionString,
-        ILogger<SqliteForwardBuffer> logger,
-        int maxRetries = 5,
-        int maxPending = DefaultMaxPending)
-    {
-        _connectionString = connectionString;
-        _logger = logger;
-        _maxRetries = maxRetries;
-        _maxPending = Math.Max(1, maxPending);
-    }
+
 
     /// <summary>
     /// 确保启动恢复已完成：把上次进程异常退出遗留的 InFlight 批次全部重置为 Pending，
