@@ -160,6 +160,15 @@ public class DeviceCollectorMaintenanceTests
     {
         public List<Device> ReadDevices { get; } = [];
 
+        // ADR-062：返回非空到期子集 → 允许流走到 ReadDeviceAsync（维护模式过滤才是不采集的原因）
+        public IReadOnlyList<DevicePoint>? GetDuePoints(Device device) => [new DevicePoint
+        {
+            Id = Guid.NewGuid(),
+            Name = "p1",
+            Address = "0",
+            Enabled = true
+        }];
+
         public Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadDeviceAsync(Device device, CancellationToken ct)
         {
             ReadDevices.Add(device);

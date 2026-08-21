@@ -67,7 +67,7 @@ public sealed class DeviceReader : IDeviceReader
 | 决策 | 做法 | 原因 |
 |---|---|---|
 | 每轮一连接 | Connect → Read → Disconnect | v1 简单，v2 加连接池 |
-| 全量读 | 一次读所有 Enabled 点位 | v2 按间隔分组 |
+| 到期子集读 | 每轮只读「到期点位」子集（`ScanIntervalMs`，0=继承全局 1s） | 已实现（ADR-062） |
 | 失败即停 | 读失败直接返回 error | v1 无重试，上层决定 |
 | 空点位跳过 | points.Count == 0 直接返回 | 避免空批量请求 |
 
@@ -76,7 +76,7 @@ public sealed class DeviceReader : IDeviceReader
 ## 演进
 
 | v1 | 串行轮询，固定间隔，读全量 | **当前** |
-| v2 | 按点位 ScanIntervalMs 分组，独立采样 | 点位 > 500 |
+| v2 | 按点位 ScanIntervalMs 分组，独立采样（已实现核心：`IDeviceReader.GetDuePoints` 到期筛选，ADR-062；每点独立调度线程/更精细抖动延后） | 点位 > 500 |
 | v3 | 按协议能力分流：OPC UA 订阅 / Modbus 轮询 | 接入 OPC UA |
 | v4 | 自适应采样：变化剧烈提频，平稳降频 | 带宽瓶颈 |
 | v5 | 跨设备协调：同 485 总线避免帧碰撞 | 接入 RTU 多从站 |

@@ -73,6 +73,18 @@ internal sealed class DeviceCollector : IDeviceCollector
         // ADR-016 P2-1：1s 热路径只打 Debug，避免每设备每轮 6+ 行 Info 刷屏
         _logger.LogDebug("开始采集设备 {Device}", device.Name);
 
+        // ── 0. 点位级采样间隔调度（ADR-062）：先于熔断检查——
+        //    全部 enabled 点未到 ScanIntervalMs → 跳过本轮：不调驱动、不触发熔断
+        //    （TryEnterProbe/RecordSuccess/RecordFailure 全不碰）、不更新健康快照
+        //    （保持上次状态，既不误报在线也不误判离线）。
+        //    返回 null（无 enabled 点）→ 仍走 ADR-031 真实探活，不在此拦截。
+        var duePoints = _reader.GetDuePoints(device);
+        if (duePoints is { Count: 0 })
+        {
+            _logger.LogDebug("设备 {Device} 全部点位未到采样间隔，跳过本轮", device.Name);
+            return;
+        }
+
         // ── 熔断检查：TryEnterProbe 是命令（可能推进 Open→HalfOpen 并抢占探测名额），
         //    返回 false 表示拒绝本轮采集；诊断路径不得调用它，只能读 State ──
         var circuitBreaker = _circuitBreakerRegistry.Get(device.Id);

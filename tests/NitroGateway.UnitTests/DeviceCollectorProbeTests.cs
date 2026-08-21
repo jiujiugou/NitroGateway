@@ -120,6 +120,15 @@ public class DeviceCollectorProbeTests
 
     private sealed class ThrowingReader : IDeviceReader
     {
+        // ADR-062：返回非空到期子集 → 允许流走到 ReadDeviceAsync 并抛出
+        public IReadOnlyList<DevicePoint>? GetDuePoints(Device device) => [new DevicePoint
+        {
+            Id = Guid.NewGuid(),
+            Name = "p1",
+            Address = "40001",
+            Enabled = true
+        }];
+
         public Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadDeviceAsync(
             Device device, CancellationToken ct)
             => throw new InvalidOperationException("reader boom");
@@ -127,6 +136,15 @@ public class DeviceCollectorProbeTests
 
     private sealed class SuccessReader : IDeviceReader
     {
+        // ADR-062：返回非空到期子集 → 允许流走到 ReadDeviceAsync
+        public IReadOnlyList<DevicePoint>? GetDuePoints(Device device) => [new DevicePoint
+        {
+            Id = Guid.NewGuid(),
+            Name = "p1",
+            Address = "40001",
+            Enabled = true
+        }];
+
         public Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadDeviceAsync(
             Device device, CancellationToken ct)
             => Task.FromResult(OperationResult<IReadOnlyList<RawPointValue>>.Success(
