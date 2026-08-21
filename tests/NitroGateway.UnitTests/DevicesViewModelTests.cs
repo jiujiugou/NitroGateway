@@ -220,11 +220,12 @@ public sealed class DevicesViewModelTests : IDisposable
         var dialogs = new StubDeviceDialogService();
         var vm = CreateVm(cache, new StubDeviceManager(), dialogs);
         var deviceId = Guid.NewGuid();
-        vm.SelectedDevice = new DeviceItem { Id = deviceId, Name = "PLC-1", Protocol = "Modbus" };
+        // docs/13：点位窗口需要设备协议（点位/批量生成的地址提示按协议区分）
+        vm.SelectedDevice = new DeviceItem { Id = deviceId, Name = "PLC-1", Protocol = "Modbus (TCP)", ProtocolName = "Modbus" };
 
         vm.ManagePointsCommand.Execute(null);
 
-        Assert.Equal((deviceId, "PLC-1"), Assert.Single(dialogs.ShowPointsCalls));
+        Assert.Equal((deviceId, "PLC-1", "Modbus"), Assert.Single(dialogs.ShowPointsCalls));
     }
 
     [Fact]

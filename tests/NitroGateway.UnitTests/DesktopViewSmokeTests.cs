@@ -70,6 +70,13 @@ public sealed class DesktopViewSmokeTests
                 pointWindow.Arrange(new Rect(0, 0, 800, 600));
                 pointWindow.UpdateLayout();
 
+                // docs/13：批量生成窗口（协议感知提示），无 Application 实例时也可解析
+                var batchWindow = new PointBatchWindow(new PointBatchEditor());
+                Assert.NotNull(batchWindow);
+                batchWindow.Measure(new Size(800, 600));
+                batchWindow.Arrange(new Rect(0, 0, 800, 600));
+                batchWindow.UpdateLayout();
+
                 // ADR-043：告警规则编辑窗口（设备/点位级联表单），无 Application 实例时也可解析
                 var alarmRuleWindow = new AlarmRuleEditorWindow(new AlarmRuleEditor(Array.Empty<Device>()));
                 Assert.NotNull(alarmRuleWindow);
@@ -81,7 +88,7 @@ public sealed class DesktopViewSmokeTests
                 services.AddScoped<IPointManager>(_ => new StubPointManager());
                 using var provider = services.BuildServiceProvider();
                 var pointsVm = new PointsViewModel(
-                    Guid.NewGuid(), "测试设备",
+                    Guid.NewGuid(), "测试设备", "Modbus",
                     provider.GetRequiredService<IServiceScopeFactory>(),
                     new StubDeviceDialogService(), new StubConfigSyncOutboxStore(),
                     new StubCsvFileService(), new PointBatchService(NullLogger<PointBatchService>.Instance),

@@ -30,12 +30,16 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     /// <summary>设备名称（窗口标题用）</summary>
     public string DeviceName { get; }
 
+    /// <summary>设备协议（Modbus / S7 / OPC UA），透传给点位表单与批量生成（地址提示、递增规则，docs/13）。</summary>
+    public string ProtocolName { get; }
+
     [ObservableProperty] private PointItem? _selectedPoint;
     [ObservableProperty] private string _statusText = "";
 
     public PointsViewModel(
         Guid deviceId,
         string deviceName,
+        string protocolName,
         IServiceScopeFactory scopeFactory,
         IDeviceDialogService dialogs,
         IConfigSyncOutboxStore outbox,
@@ -45,6 +49,7 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     {
         _deviceId = deviceId;
         DeviceName = deviceName;
+        ProtocolName = protocolName;
         _scopeFactory = scopeFactory;
         _dialogs = dialogs;
         _outbox = outbox;
@@ -85,7 +90,7 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task AddAsync()
     {
-        var editor = new PointEditor { Id = Guid.NewGuid() };
+        var editor = new PointEditor { Id = Guid.NewGuid(), ProtocolName = ProtocolName };
         if (!_dialogs.EditPoint(editor))
             return;
 
@@ -111,6 +116,7 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
             return;
 
         var editor = PointEditor.FromPoint(SelectedPoint.Point);
+        editor.ProtocolName = ProtocolName; // 编辑回填不保留协议，按设备协议给地址提示
         if (!_dialogs.EditPoint(editor))
             return;
 
@@ -182,6 +188,47 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
 
         await RefreshAsync();
         StatusText = $"已导入 {result.Value!.Count} 个点位";
+    }
+
+    /// <summary>
+    /// 批量生成点位（docs/13，对齐 Web 批量生成）：表单 → PointBatchService.Generate
+    /// （按协议解释起始地址与步长）→ ImportAsync → 逐条入 outbox → 刷新。
+    /// 起始地址格式/协议不兼容由 Generate 抛 ArgumentException，捕获后仅提示不落库。
+    /// </summary>
+    [RelayCommand]
+    private async Task GenerateBatchAsync()
+    {
+        var editor = new PointBatchEditor { ProtocolName = ProtocolName };
+        if (!_dialogs.EditPointBatch(editor))
+            return;
+
+        IReadOnlyList<DevicePoint> points;
+        try
+        {
+            points = _batch.Generate(_deviceId, editor.NameTemplate, editor.StartAddress,
+                editor.Count, editor.DataType, editor.Access, editor.ProtocolName);
+        }
+        catch (ArgumentException ex)
+        {
+            StatusText = $"批量生成失败：{ex.Message}";
+            return;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IPointManager>();
+        var result = await manager.ImportAsync(_deviceId, points);
+        if (result.IsFailure)
+        {
+            StatusText = $"批量生成失败：{result.Error!.Message}";
+            return;
+        }
+
+        // ADR-033 阶段 4：批量生成点位逐条入 outbox，同步服务上报中心（与导入同语义）
+        foreach (var point in result.Value!)
+            await RecordOutboxAsync(() => _outbox.RecordPointAsync(_deviceId, point));
+
+        await RefreshAsync();
+        StatusText = $"已批量生成 {result.Value!.Count} 个点位";
     }
 
     /// <summary>导出点位 CSV：GetByDeviceAsync → ExportCsv → 保存文件。</summary>

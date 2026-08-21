@@ -180,7 +180,7 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         if (selected is null)
             return;
 
-        _dialogs.ShowPoints(selected.Id, selected.Name);
+        _dialogs.ShowPoints(selected.Id, selected.Name, selected.ProtocolName);
         _ = RefreshAsync();
     }
 
@@ -265,11 +265,26 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         return text;
     }
 
+    /// <summary>
+    /// 归一化协议名（ADR-036 同款前缀清理）：早期 ComboBoxItem 绑定把选中项 ToString 存库，
+    /// 点位/批量生成的协议感知（S7 / OPC UA 地址提示）需拿到纯协议名。
+    /// </summary>
+    private static string NormalizeProtocolName(string? name)
+    {
+        const string ComboBoxItemPrefix = "System.Windows.Controls.ComboBoxItem: ";
+        if (name is null)
+            return "Modbus";
+        return name.StartsWith(ComboBoxItemPrefix, StringComparison.Ordinal)
+            ? name[ComboBoxItemPrefix.Length..]
+            : name;
+    }
+
     /// <summary>把设备目录行 + 健康快照原位写入行模型（ADR-037 S7，属性可观察触发 UI 刷新）。</summary>
     private static void ApplySnapshot(DeviceItem item, Device device, DeviceHealthSnapshot? snapshot)
     {
         item.Name = device.Name;
         item.Protocol = BuildProtocolText(device.Protocol);
+        item.ProtocolName = NormalizeProtocolName(device.Protocol.Name);
         item.Status = snapshot?.Status ?? device.Status;
         item.LastCollectionAt = snapshot?.LastCollectionAt;
         item.LastError = snapshot?.LastError;
@@ -302,6 +317,9 @@ public sealed partial class DeviceItem : ObservableObject
 
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _protocol = "";
+
+    /// <summary>协议名（纯值，点位/批量生成协议感知用；显示用 <see cref="Protocol"/> 含方言）</summary>
+    [ObservableProperty] private string _protocolName = "Modbus";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]

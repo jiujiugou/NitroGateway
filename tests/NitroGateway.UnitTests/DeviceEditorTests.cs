@@ -117,6 +117,117 @@ public sealed class DeviceEditorTests
         Assert.False(new DeviceEditor { ProtocolName = "S7", Dialect = "RTU" }.IsRtu);
     }
 
+    // ===== docs/13：S7 / OPC UA 三协议分流与联动 =====
+
+    [Fact]
+    public void ToDevice_opcUa_writes_null_dialect_and_no_parameters()
+    {
+        // OPC UA 无方言，ToDevice 时 Dialect 置 null、Parameters 留空（三路分流，避免切换协议残留 Rack/Slot 污染）
+        var editor = new DeviceEditor
+        {
+            ProtocolName = "OPC UA",
+            Dialect = "opc.tcp",
+            Endpoint = "opc.tcp://127.0.0.1:4840",
+            Rack = 3,
+            Slot = 2,
+            UnitId = 7
+        };
+
+        var device = editor.ToDevice();
+
+        Assert.Equal("OPC UA", device.Protocol.Name);
+        Assert.Null(device.Protocol.Dialect);
+        Assert.Empty(device.Connection.Parameters);
+    }
+
+    [Fact]
+    public void FromDevice_opcUa_roundtrip_backfills_display_dialect_and_keeps_null()
+    {
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = "OPC UA 设备",
+            Protocol = new ProtocolIdentifier { Name = "OPC UA", Dialect = null },
+            Connection = new DeviceConnection { Endpoint = "opc.tcp://192.168.1.30:4840" }
+        };
+
+        var editor = DeviceEditor.FromDevice(device);
+        var roundtrip = editor.ToDevice();
+
+        Assert.True(editor.IsOpcUa);
+        Assert.Equal("opc.tcp", editor.Dialect); // 空方言回填锁定显示值
+        Assert.Null(roundtrip.Protocol.Dialect);
+        Assert.Empty(roundtrip.Connection.Parameters);
+    }
+
+    [Fact]
+    public void OnProtocolNameChanged_locks_dialect_and_swaps_default_endpoint()
+    {
+        var editor = new DeviceEditor { ProtocolName = "Modbus" };
+        Assert.Equal("127.0.0.1:502", editor.Endpoint);
+
+        editor.ProtocolName = "S7";
+        Assert.Equal("TCP", editor.Dialect);
+        Assert.Equal("127.0.0.1:102", editor.Endpoint);
+        Assert.False(editor.IsDialectEditable);
+
+        editor.ProtocolName = "OPC UA";
+        Assert.Equal("opc.tcp", editor.Dialect);
+        Assert.Equal("opc.tcp://127.0.0.1:4840", editor.Endpoint);
+        Assert.False(editor.IsDialectEditable);
+
+        editor.ProtocolName = "Modbus";
+        Assert.Equal("TCP", editor.Dialect);
+        Assert.Equal("127.0.0.1:502", editor.Endpoint);
+        Assert.True(editor.IsDialectEditable);
+    }
+
+    [Fact]
+    public void OnProtocolNameChanged_preserves_custom_endpoint()
+    {
+        var editor = new DeviceEditor { ProtocolName = "Modbus", Endpoint = "10.0.0.5:502" };
+
+        editor.ProtocolName = "S7";
+
+        // 自定义端点不是其他协议默认值，切换协议时不覆盖
+        Assert.Equal("10.0.0.5:502", editor.Endpoint);
+    }
+
+    [Fact]
+    public void DialectItems_follow_protocol()
+    {
+        Assert.Equal(new[] { "TCP", "RTU" }, new DeviceEditor { ProtocolName = "Modbus" }.DialectItems);
+        Assert.Equal(new[] { "TCP" }, new DeviceEditor { ProtocolName = "S7" }.DialectItems);
+        Assert.Equal(new[] { "opc.tcp" }, new DeviceEditor { ProtocolName = "OPC UA" }.DialectItems);
+    }
+
+    [Fact]
+    public void Validate_rejects_opcUa_endpoint_without_scheme_prefix()
+    {
+        var editor = new DeviceEditor { Name = "OPC-1", ProtocolName = "OPC UA", Endpoint = "127.0.0.1:4840" };
+
+        Assert.False(editor.Validate());
+        Assert.Contains("opc.tcp://", Assert.Single(editor.GetErrors(nameof(DeviceEditor.Endpoint)).Cast<string>()));
+    }
+
+    [Fact]
+    public void Validate_accepts_opcUa_endpoint_with_scheme_prefix()
+    {
+        var editor = new DeviceEditor { Name = "OPC-1", ProtocolName = "OPC UA", Endpoint = "opc.tcp://127.0.0.1:4840" };
+
+        Assert.True(editor.Validate());
+    }
+
+    [Fact]
+    public void Validate_rejects_s7_rack_and_slot_out_of_range()
+    {
+        var editor = new DeviceEditor { Name = "S7-1", ProtocolName = "S7", Rack = 8, Slot = 32 };
+
+        Assert.False(editor.Validate());
+        Assert.Contains("0-7", Assert.Single(editor.GetErrors(nameof(DeviceEditor.Rack)).Cast<string>()));
+        Assert.Contains("0-31", Assert.Single(editor.GetErrors(nameof(DeviceEditor.Slot)).Cast<string>()));
+    }
+
     [Fact]
     public void ToDevice_modbusRtu_maps_data_bits_and_stop_bits()
     {

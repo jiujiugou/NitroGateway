@@ -29,13 +29,13 @@ public sealed class PointsViewModelFactory : IPointsViewModelFactory
         _logger = logger;
     }
 
-    public PointsViewModel Create(Guid deviceId, string deviceName)
+    public PointsViewModel Create(Guid deviceId, string deviceName, string protocolName)
     {
         // 对话框从 scope 解析避免与 DeviceDialogService 构造期循环依赖（两者均为单例）
         using var scope = _scopeFactory.CreateScope();
         var dialogs = scope.ServiceProvider.GetRequiredService<IDeviceDialogService>();
         var csvFiles = scope.ServiceProvider.GetRequiredService<ICsvFileService>();
         var batch = scope.ServiceProvider.GetRequiredService<PointBatchService>();
-        return new PointsViewModel(deviceId, deviceName, _scopeFactory, dialogs, _outbox, csvFiles, batch, _logger);
+        return new PointsViewModel(deviceId, deviceName, protocolName, _scopeFactory, dialogs, _outbox, csvFiles, batch, _logger);
     }
 }

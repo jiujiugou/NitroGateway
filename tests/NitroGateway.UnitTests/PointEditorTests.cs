@@ -134,6 +134,25 @@ public sealed class PointEditorTests
         Assert.NotEmpty(editor.GetErrors(nameof(PointEditor.ScaleOffset)).Cast<string>());
     }
 
+    // ===== docs/13：地址提示按设备协议 =====
+
+    [Fact]
+    public void AddressHint_follows_protocol()
+    {
+        Assert.Equal("如 40001", new PointEditor { ProtocolName = "Modbus" }.AddressHint);
+        Assert.Equal("如 DB1.DBD0", new PointEditor { ProtocolName = "S7" }.AddressHint);
+        Assert.Equal("如 ns=2;i=1001", new PointEditor { ProtocolName = "OPC UA" }.AddressHint);
+    }
+
+    [Fact]
+    public void Validate_error_text_uses_protocol_hint()
+    {
+        var opcUa = new PointEditor { ProtocolName = "OPC UA", Name = "P", Address = "" };
+
+        Assert.False(opcUa.Validate());
+        Assert.Contains("ns=2;i=1001", Assert.Single(opcUa.GetErrors(nameof(PointEditor.Address)).Cast<string>()));
+    }
+
     [Fact]
     public void Validate_errors_clear_when_field_fixed()
     {

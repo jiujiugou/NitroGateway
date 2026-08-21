@@ -120,13 +120,19 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
 {
     public bool EditDeviceResult = true;
     public bool EditPointResult = true;
+    public bool EditPointBatchResult = true;
     public bool ConfirmResult = true;
     public string? EditDeviceFillName;
     public string? EditPointFillName;
+    public string? EditPointBatchFillNameTemplate;
+    public string? EditPointBatchFillStartAddress;
+    public int? EditPointBatchFillCount;
+    public string? EditPointBatchFillProtocol;
     public int EditDeviceCalls;
     public int EditPointCalls;
+    public int EditPointBatchCalls;
     public int ConfirmCalls;
-    public List<(Guid DeviceId, string DeviceName)> ShowPointsCalls { get; } = [];
+    public List<(Guid DeviceId, string DeviceName, string ProtocolName)> ShowPointsCalls { get; } = [];
 
     public bool EditDevice(DeviceEditor editor)
     {
@@ -144,13 +150,28 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
         return EditPointResult;
     }
 
+    public bool EditPointBatch(PointBatchEditor editor)
+    {
+        EditPointBatchCalls++;
+        if (EditPointBatchFillNameTemplate is not null)
+            editor.NameTemplate = EditPointBatchFillNameTemplate;
+        if (EditPointBatchFillStartAddress is not null)
+            editor.StartAddress = EditPointBatchFillStartAddress;
+        if (EditPointBatchFillCount is not null)
+            editor.Count = EditPointBatchFillCount.Value;
+        if (EditPointBatchFillProtocol is not null)
+            editor.ProtocolName = EditPointBatchFillProtocol;
+        return EditPointBatchResult;
+    }
+
     public bool Confirm(string title, string message)
     {
         ConfirmCalls++;
         return ConfirmResult;
     }
 
-    public void ShowPoints(Guid deviceId, string deviceName) => ShowPointsCalls.Add((deviceId, deviceName));
+    public void ShowPoints(Guid deviceId, string deviceName, string protocolName) =>
+        ShowPointsCalls.Add((deviceId, deviceName, protocolName));
 }
 
 /// <summary>CSV 文件服务测试替身：可编程内容/结果 + 记录调用（点位导入导出用）。</summary>

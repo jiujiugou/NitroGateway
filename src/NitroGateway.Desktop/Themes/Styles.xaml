@@ -165,6 +165,12 @@
         <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Margin" Value="0,0,0,6" />
     </Style>
+    <!-- docs/13：表单辅助提示（批量生成预览名/递增规则说明等），弱化显示、允许换行 -->
+    <Style x:Key="FormHintStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
     <Style x:Key="CardBorderStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource CardBackground}" />
         <Setter Property="BorderBrush" Value="{StaticResource BorderLight}" />

@@ -230,6 +230,80 @@ Name,Address,DataType,Access,Enabled,ScanIntervalMs,Deadband,ScaleFactor,ScaleOf
         Assert.Contains("导入失败", vm.StatusText);
     }
 
+    // ===== docs/13：批量生成（协议感知起始地址/递增规则） =====
+
+    [Fact]
+    public async Task GenerateBatch_imports_points_and_records_outbox()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService
+        {
+            EditPointBatchFillNameTemplate = "AI_{###}",
+            EditPointBatchFillStartAddress = "40001",
+            EditPointBatchFillCount = 3
+        };
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(manager, dialogs, outbox);
+
+        await vm.GenerateBatchCommand.ExecuteAsync(null);
+
+        var imported = Assert.Single(manager.Imported);
+        Assert.Equal(_deviceId, imported.DeviceId);
+        Assert.Equal(3, imported.Points.Count);
+        Assert.Equal("AI_001", imported.Points[0].Name);
+        Assert.Equal("40001", imported.Points[0].Address);
+        Assert.Equal(3, outbox.Records.Count(r => r.Kind == ConfigSyncOutboxKind.Point));
+        Assert.Contains("已批量生成 3 个点位", vm.StatusText);
+        Assert.Equal(3, vm.Items.Count);
+    }
+
+    [Fact]
+    public async Task GenerateBatch_opcUa_increments_numeric_identifier()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService
+        {
+            EditPointBatchFillProtocol = "OPC UA",
+            EditPointBatchFillStartAddress = "ns=2;i=1001",
+            EditPointBatchFillCount = 2
+        };
+        var vm = CreateVm(manager, dialogs, protocolName: "OPC UA");
+
+        await vm.GenerateBatchCommand.ExecuteAsync(null);
+
+        var imported = Assert.Single(manager.Imported);
+        Assert.Equal(new[] { "ns=2;i=1001", "ns=2;i=1002" },
+            imported.Points.Select(p => p.Address).ToArray());
+    }
+
+    [Fact]
+    public async Task GenerateBatch_cancel_does_not_generate()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService { EditPointBatchResult = false };
+        var outbox = new StubConfigSyncOutboxStore();
+        var vm = CreateVm(manager, dialogs, outbox);
+
+        await vm.GenerateBatchCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, dialogs.EditPointBatchCalls);
+        Assert.Empty(manager.Imported);
+        Assert.Empty(outbox.Rows);
+    }
+
+    [Fact]
+    public async Task GenerateBatch_invalid_start_address_reports_error_without_import()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService { EditPointBatchFillStartAddress = "不是数字" };
+        var vm = CreateVm(manager, dialogs);
+
+        await vm.GenerateBatchCommand.ExecuteAsync(null);
+
+        Assert.Empty(manager.Imported);
+        Assert.Contains("批量生成失败", vm.StatusText);
+    }
+
     [Fact]
     public async Task ExportCsv_saves_file_with_points()
     {
@@ -269,13 +343,14 @@ Name,Address,DataType,Access,Enabled,ScanIntervalMs,Deadband,ScaleFactor,ScaleOf
     private PointsViewModel CreateVm(
         StubPointManager manager, StubDeviceDialogService dialogs,
         StubConfigSyncOutboxStore? outbox = null,
-        StubCsvFileService? csvFiles = null)
+        StubCsvFileService? csvFiles = null,
+        string protocolName = "Modbus")
     {
         var services = new ServiceCollection();
         services.AddScoped<IPointManager>(_ => manager);
         _provider = services.BuildServiceProvider();
         return new PointsViewModel(
-            _deviceId, "车间 PLC",
+            _deviceId, "车间 PLC", protocolName,
             _provider.GetRequiredService<IServiceScopeFactory>(), dialogs,
             outbox ?? new StubConfigSyncOutboxStore(), csvFiles ?? new StubCsvFileService(),
             new PointBatchService(NullLogger<PointBatchService>.Instance),

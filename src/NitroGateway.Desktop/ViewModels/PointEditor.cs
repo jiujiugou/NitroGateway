@@ -5,7 +5,10 @@ using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Desktop.ViewModels;
 
-/// <summary>点位表单编辑模型（ADR-029 P3），字段与 Web PointList.vue 对齐。</summary>
+/// <summary>
+/// 点位表单编辑模型（ADR-029 P3），字段与 Web PointList.vue 对齐。
+/// 地址提示按设备协议区分（Modbus 40001 / S7 DB1.DBD0 / OPC UA ns=2;i=1001，docs/13）。
+/// </summary>
 public sealed partial class PointEditor : ObservableObject, INotifyDataErrorInfo
 {
     /// <summary>字段级错误表（属性名 -> 错误文案，由 Validate() 全量重算）。</summary>
@@ -13,6 +16,11 @@ public sealed partial class PointEditor : ObservableObject, INotifyDataErrorInfo
 
     /// <summary>点位 ID：新建由调用方生成，编辑保留原 ID</summary>
     public Guid Id { get; set; }
+
+    /// <summary>所属设备协议（Modbus / S7 / OPC UA），由设备列表透传，仅用于地址提示与校验文案。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AddressHint))]
+    private string _protocolName = "Modbus";
 
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _address = "";
@@ -33,6 +41,17 @@ public sealed partial class PointEditor : ObservableObject, INotifyDataErrorInfo
     /// <summary>是否存在校验错误（ADR-037 S4）。</summary>
     public bool HasErrors => _errors.Count > 0;
 
+    /// <summary>
+    /// 地址输入提示（按协议，docs/13）：
+    /// Modbus "如 40001"、S7 "如 DB1.DBD0"、OPC UA "如 ns=2;i=1001"。
+    /// </summary>
+    public string AddressHint => ProtocolName switch
+    {
+        "S7" => "如 DB1.DBD0",
+        "OPC UA" => "如 ns=2;i=1001",
+        _ => "如 40001"
+    };
+
     /// <summary>校验错误集合变更事件（WPF INotifyDataErrorInfo 订阅）。</summary>
     public event EventHandler<DataErrorsChangedEventArgs>? ErrorsChanged;
 
@@ -52,7 +71,7 @@ public sealed partial class PointEditor : ObservableObject, INotifyDataErrorInfo
     public bool Validate()
     {
         SetError(nameof(Name), string.IsNullOrWhiteSpace(Name) ? "点位名称不能为空" : null);
-        SetError(nameof(Address), string.IsNullOrWhiteSpace(Address) ? "点位地址不能为空（Modbus 如 40001 / S7 如 DB1.DBD0）" : null);
+        SetError(nameof(Address), string.IsNullOrWhiteSpace(Address) ? $"点位地址不能为空（{AddressHint}）" : null);
         SetError(nameof(ScanIntervalMs), ScanIntervalMs < 0 ? "采集间隔不能为负（0=继承设备默认）" : null);
         SetError(nameof(Deadband), Deadband < 0 || double.IsNaN(Deadband) ? "死区不能为负" : null);
         SetError(nameof(ScaleFactor), !IsFinite(ScaleFactor) ? "缩放系数必须为有限数值" : null);

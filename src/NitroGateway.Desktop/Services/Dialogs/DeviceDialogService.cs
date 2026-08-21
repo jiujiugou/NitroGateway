@@ -37,15 +37,22 @@ public sealed class DeviceDialogService : IDeviceDialogService
     }
 
     /// <inheritdoc />
+    public bool EditPointBatch(PointBatchEditor editor)
+    {
+        var window = new PointBatchWindow(editor) { Owner = Application.Current?.MainWindow };
+        return window.ShowDialog() == true;
+    }
+
+    /// <inheritdoc />
     public bool Confirm(string title, string message) =>
         MessageBox.Show(Application.Current?.MainWindow, message, title,
             MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
 
     /// <inheritdoc />
-    public void ShowPoints(Guid deviceId, string deviceName)
+    public void ShowPoints(Guid deviceId, string deviceName, string protocolName)
     {
         // ADR-029 P2：ViewModel 构造与 scope 依赖解析收敛到工厂，对话框只依赖工厂接口
-        var viewModel = _pointsFactory.Create(deviceId, deviceName);
+        var viewModel = _pointsFactory.Create(deviceId, deviceName, protocolName);
         var window = new PointsWindow(viewModel) { Owner = Application.Current?.MainWindow };
         window.ShowDialog();
         viewModel.Dispose();

@@ -1,9 +1,9 @@
-<Window x:Class="NitroGateway.Desktop.Views.PointEditorWindow"
+<Window x:Class="NitroGateway.Desktop.Views.PointBatchWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         xmlns:dev="clr-namespace:NitroGateway.Domain.Devices;assembly=NitroGateway.Domain"
-        Width="720" Height="560" MinWidth="560" MinHeight="420" SizeToContent="Manual"
+        Width="560" Height="460" MinWidth="480" MinHeight="380" SizeToContent="Manual"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         ShowInTaskbar="False"
         Background="{DynamicResource PageBackground}"
@@ -38,18 +38,15 @@
 
         <!-- 页头 -->
         <StackPanel Grid.Row="0">
-            <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
-                       Style="{StaticResource PageTitleStyle}" />
-            <TextBlock Text="配置点位地址、缩放与采集参数" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+            <TextBlock Text="批量生成点位" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="按名称模板与起始地址批量创建点位" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
         </StackPanel>
 
-        <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
+        <!-- docs/13：批量生成表单，字段与 Web PointList.vue 批量生成对话框对齐 -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
             <Border Style="{StaticResource CardBorderStyle}" Padding="20">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
@@ -57,57 +54,46 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <!-- 行 1：名称 / 地址 / 类型 / 权限 -->
+                    <!-- 行 1：名称模板 / 起始地址 -->
                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,14">
-                        <TextBlock Text="点位名称" Style="{StaticResource FormLabelStyle}" />
-                        <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Text="名称模板" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding NameTemplate, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="如 AI_{000} → AI_001, AI_002...（000 为零填充序号占位符）" />
+                        <TextBlock Text="{Binding PreviewName}" Style="{StaticResource FormHintStyle}"
+                                   TextTrimming="CharacterEllipsis" Margin="0,4,0,0" />
                     </StackPanel>
-                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,14">
-                        <!-- docs/13：地址提示按设备协议（Modbus 如 40001 / S7 如 DB1.DBD0 / OPC UA 如 ns=2;i=1001） -->
-                        <TextBlock Text="地址" Style="{StaticResource FormLabelStyle}" />
-                        <TextBox Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}"
+                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,14">
+                        <TextBlock Text="起始地址" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding StartAddress, UpdateSourceTrigger=PropertyChanged}"
                                  ToolTip="{Binding AddressHint}" />
                     </StackPanel>
-                    <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,12,14">
+
+                    <!-- 行 2：数量 / 数据类型 -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,14">
+                        <TextBlock Text="数量（1-5000）" Style="{StaticResource FormLabelStyle}" />
+                        <TextBox Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,14">
                         <TextBlock Text="数据类型" Style="{StaticResource FormLabelStyle}" />
                         <ComboBox ItemsSource="{Binding Source={StaticResource DataTypeValues}}"
                                   SelectedItem="{Binding DataType}" />
                     </StackPanel>
-                    <StackPanel Grid.Row="0" Grid.Column="3" Margin="0,0,0,14">
+
+                    <!-- 行 3：权限 / 提示占位 -->
+                    <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,14">
                         <TextBlock Text="权限" Style="{StaticResource FormLabelStyle}" />
                         <ComboBox ItemsSource="{Binding Source={StaticResource PointAccessValues}}"
                                   SelectedItem="{Binding Access}" />
                     </StackPanel>
 
-                    <!-- 行 2：缩放 / 死区 / 采集间隔 / 启用 -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,14">
-                        <TextBlock Text="缩放系数" Style="{StaticResource FormLabelStyle}" />
-                        <TextBox Text="{Binding ScaleFactor, UpdateSourceTrigger=PropertyChanged}" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,14">
-                        <TextBlock Text="缩放偏移" Style="{StaticResource FormLabelStyle}" />
-                        <TextBox Text="{Binding ScaleOffset, UpdateSourceTrigger=PropertyChanged}" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,12,14">
-                        <TextBlock Text="死区" Style="{StaticResource FormLabelStyle}" />
-                        <TextBox Text="{Binding Deadband, UpdateSourceTrigger=PropertyChanged}" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="3" Margin="0,0,0,14">
-                        <TextBlock Text="采集间隔(ms，0=继承)" Style="{StaticResource FormLabelStyle}" />
-                        <TextBox Text="{Binding ScanIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
-                    </StackPanel>
-
-                    <!-- 行 3：启用 + 描述 -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,14" Orientation="Horizontal">
-                        <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
-                        <TextBlock Text="启用采集" VerticalAlignment="Center" Margin="6,0,0,0" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,14">
-                        <TextBlock Text="描述" Style="{StaticResource FormLabelStyle}" />
-                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" />
-                    </StackPanel>
+                    <!-- 行 4：递增规则提示 -->
+                    <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
+                               Text="{Binding GenHint}" Style="{StaticResource FormHintStyle}"
+                               TextWrapping="Wrap" Margin="0,6,0,0" />
                 </Grid>
             </Border>
         </ScrollViewer>
@@ -115,7 +101,7 @@
         <!-- 底部按钮 -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="取消" Width="96" Margin="0,0,12,0" IsCancel="True" Click="OnCancel" />
-            <Button Content="保存" Width="96" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
+            <Button Content="生成" Width="96" IsDefault="True" Click="OnSave" Style="{StaticResource PrimaryButtonStyle}" />
         </StackPanel>
     </Grid>
 </Window>

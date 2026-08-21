@@ -66,14 +66,15 @@
                             <ComboBox SelectedItem="{Binding ProtocolName}">
                                 <sys:String>Modbus</sys:String>
                                 <sys:String>S7</sys:String>
+                                <sys:String>OPC UA</sys:String>
                             </ComboBox>
                         </StackPanel>
                         <StackPanel Style="{StaticResource FormFieldStyle}">
                             <TextBlock Text="传输方式" Style="{StaticResource FormLabelStyle}" />
-                            <ComboBox SelectedItem="{Binding Dialect}">
-                                <sys:String>TCP</sys:String>
-                                <sys:String>RTU</sys:String>
-                            </ComboBox>
+                            <!-- docs/13：传输方式按协议锁定（S7 固定 TCP、OPC UA 固定 opc.tcp），仅 Modbus 可切换 TCP/RTU -->
+                            <ComboBox ItemsSource="{Binding DialectItems}"
+                                      SelectedItem="{Binding Dialect}"
+                                      IsEnabled="{Binding IsDialectEditable}" />
                         </StackPanel>
                         <StackPanel Style="{StaticResource FormFieldStyle}">
                             <TextBlock Text="状态" Style="{StaticResource FormLabelStyle}" />
@@ -87,8 +88,9 @@
                 <GroupBox Header="连接参数" Margin="0,0,0,14">
                     <WrapPanel>
                         <StackPanel Style="{StaticResource FormFieldStyle}">
-                            <TextBlock Text="连接地址（串口填 COM3 等）" Style="{StaticResource FormLabelStyle}" />
-                            <TextBox Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Text="{Binding EndpointLabel}" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="{Binding EndpointLabel}" />
                         </StackPanel>
                         <StackPanel Style="{StaticResource FormFieldStyle}"
                                     Visibility="{Binding IsModbus, Converter={StaticResource BoolToVis}}">

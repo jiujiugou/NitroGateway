@@ -9,18 +9,19 @@ namespace NitroGateway.Desktop.ViewModels;
 
 /// <summary>
 /// 设备表单编辑模型（ADR-029 P3）。可变对象供 WPF 双向绑定；
-/// 协议/传输方式切换时联动显隐对应字段（Modbus TCP/RTU、S7）。
-/// 字段集与 Web DeviceForm.vue 对齐（含 ADR-024 P3-1 S7 参数 / P3-2 传输方式）。
+/// 协议/传输方式切换时联动显隐对应字段（Modbus TCP/RTU、S7、OPC UA）。
+/// 字段集与 Web DeviceForm.vue 对齐（含 ADR-024 P3-1 S7 参数 / P3-2 传输方式、
+/// 12-OPC-UA接入设计.md S6 三路分流；docs/13 设计文档）。
 /// </summary>
 public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInfo
 {
-    /// <summary>设备 ID：新建由调用方生成，编辑保留原 ID（RegisterAsync 按 ID upsert）</summary>
     /// <summary>RTU 允许的波特率枚举（ADR-037 S4）。</summary>
     private static readonly int[] ValidBaudRates = [9600, 19200, 38400, 57600, 115200];
 
     /// <summary>字段级错误表（属性名 -> 错误文案，由 Validate() 全量重算）。</summary>
     private readonly Dictionary<string, string> _errors = [];
 
+    /// <summary>设备 ID：新建由调用方生成，编辑保留原 ID（RegisterAsync 按 ID upsert）</summary>
     public Guid Id { get; set; }
 
     [ObservableProperty] private string _name = "";
@@ -29,7 +30,11 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsModbus))]
     [NotifyPropertyChangedFor(nameof(IsS7))]
+    [NotifyPropertyChangedFor(nameof(IsOpcUa))]
     [NotifyPropertyChangedFor(nameof(IsRtu))]
+    [NotifyPropertyChangedFor(nameof(IsDialectEditable))]
+    [NotifyPropertyChangedFor(nameof(DialectItems))]
+    [NotifyPropertyChangedFor(nameof(EndpointLabel))]
     private string _protocolName = "Modbus";
 
     [ObservableProperty]
@@ -56,8 +61,12 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     [ObservableProperty]
     private string _testResultText = "";
 
-    /// <summary>连接地址：Modbus TCP "192.168.1.100:502"、RTU 串口 "COM3"、S7 "192.168.1.100:102"</summary>
-    [ObservableProperty] private string _endpoint = "";
+    /// <summary>
+    /// 连接地址：Modbus TCP "127.0.0.1:502"、RTU 串口 "COM3"、S7 "127.0.0.1:102"、
+    /// OPC UA "opc.tcp://127.0.0.1:4840"。默认取 Modbus 端点（对齐 web DeviceForm.vue），
+    /// 切协议时 <see cref="OnProtocolNameChanged"/> 自动换成对应协议默认端点。
+    /// </summary>
+    [ObservableProperty] private string _endpoint = "127.0.0.1:502";
 
     // ── Modbus ──
     [ObservableProperty] private int _unitId = 1;
@@ -81,7 +90,26 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
 
     public bool IsModbus => ProtocolName == "Modbus";
     public bool IsS7 => ProtocolName == "S7";
+    public bool IsOpcUa => ProtocolName == "OPC UA";
     public bool IsRtu => IsModbus && Dialect == "RTU";
+
+    /// <summary>传输方式是否可编辑：仅 Modbus 可切换 TCP/RTU；S7 固定 TCP、OPC UA 固定 opc.tcp（对齐 web DeviceForm.vue）。</summary>
+    public bool IsDialectEditable => IsModbus;
+
+    /// <summary>传输方式下拉可选值：S7 只有 TCP、OPC UA 只有 opc.tcp（禁用态锁定显示）。</summary>
+    public IReadOnlyList<string> DialectItems => ProtocolName switch
+    {
+        "S7" => ["TCP"],
+        "OPC UA" => ["opc.tcp"],
+        _ => ["TCP", "RTU"]
+    };
+
+    /// <summary>连接地址字段标签（按协议给占位提示）：OPC UA 填 opc.tcp:// 端点、S7 端口 102、Modbus TCP IP:502 / RTU COM 口。</summary>
+    public string EndpointLabel => IsOpcUa
+        ? "连接地址（opc.tcp://IP:端口）"
+        : IsS7
+            ? "连接地址（IP:102）"
+            : "连接地址（串口填 COM3 等）";
 
     /// <summary>测试按钮可用性：已注入测试服务且当前未在测试。</summary>
     public bool IsTestEnabled => ConnectionTester is not null && !IsTestingConnection;
@@ -103,13 +131,20 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     /// <summary>
     /// 全表单校验（ADR-037 S4）：重算全部字段错误并通知绑定。
     /// 规则：Name/Endpoint 非空；UnitId 1-247（仅 Modbus）；超时/重试/间隔大于 0；
-    /// RTU 波特率与数据位必须为枚举值。返回是否通过（窗口保存前调用）。
+    /// RTU 波特率与数据位必须为枚举值；S7 Rack/Slot 范围；OPC UA 端点须 opc.tcp:// 前缀（docs/13）。
     /// </summary>
     public bool Validate()
     {
         SetError(nameof(Name), string.IsNullOrWhiteSpace(Name) ? "设备名称不能为空" : null);
-        SetError(nameof(Endpoint), string.IsNullOrWhiteSpace(Endpoint) ? "连接地址不能为空（TCP 填 IP:端口，RTU 填 COM 口）" : null);
+        SetError(nameof(Endpoint),
+            string.IsNullOrWhiteSpace(Endpoint)
+                ? "连接地址不能为空（TCP 填 IP:端口，RTU 填 COM 口）"
+                : IsOpcUa && !Endpoint.StartsWith("opc.tcp://", StringComparison.OrdinalIgnoreCase)
+                    ? "OPC UA 端点须以 opc.tcp:// 开头，如 opc.tcp://127.0.0.1:4840"
+                    : null);
         SetError(nameof(UnitId), IsModbus && UnitId is < 1 or > 247 ? "从站地址须在 1-247" : null);
+        SetError(nameof(Rack), IsS7 && Rack is < 0 or > 7 ? "Rack 须在 0-7" : null);
+        SetError(nameof(Slot), IsS7 && Slot is < 0 or > 31 ? "Slot 须在 0-31" : null);
         SetError(nameof(ConnectTimeoutMs), ConnectTimeoutMs <= 0 ? "连接超时须大于 0" : null);
         SetError(nameof(RequestTimeoutMs), RequestTimeoutMs <= 0 ? "请求超时须大于 0" : null);
         SetError(nameof(RetryCount), RetryCount <= 0 ? "重试次数须大于 0" : null);
@@ -142,15 +177,45 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     // 字段变更即重算全表单（字段少、全量校验开销可忽略；协议切换联动边界同步生效）
     partial void OnNameChanged(string value) => Validate();
     partial void OnEndpointChanged(string value) => Validate();
-    partial void OnProtocolNameChanged(string value) => Validate();
     partial void OnDialectChanged(string value) => Validate();
     partial void OnUnitIdChanged(int value) => Validate();
+    partial void OnRackChanged(int value) => Validate();
+    partial void OnSlotChanged(int value) => Validate();
     partial void OnConnectTimeoutMsChanged(int value) => Validate();
     partial void OnRequestTimeoutMsChanged(int value) => Validate();
     partial void OnRetryCountChanged(int value) => Validate();
     partial void OnRetryIntervalMsChanged(int value) => Validate();
     partial void OnBaudRateChanged(int value) => Validate();
     partial void OnDataBitsChanged(int value) => Validate();
+
+    /// <summary>
+    /// 协议切换联动（docs/13，对齐 web DeviceForm.vue onProtocolChange/onDialectChange）：
+    /// 传输方式按协议锁定（S7→TCP、OPC UA→opc.tcp 仅显示）、端点命中其他协议默认值或为空时
+    /// 换成本协议默认端点（保留用户自定义端点）；OPC UA 无方言，ToDevice 时不落库。
+    /// </summary>
+    partial void OnProtocolNameChanged(string value)
+    {
+        if (IsModbus)
+        {
+            if (Dialect is not ("TCP" or "RTU"))
+                Dialect = "TCP";
+            if (string.IsNullOrWhiteSpace(Endpoint) || Endpoint == "127.0.0.1:102" || Endpoint == "opc.tcp://127.0.0.1:4840")
+                Endpoint = "127.0.0.1:502";
+        }
+        else if (IsS7)
+        {
+            Dialect = "TCP";
+            if (string.IsNullOrWhiteSpace(Endpoint) || Endpoint == "127.0.0.1:502" || Endpoint == "opc.tcp://127.0.0.1:4840")
+                Endpoint = "127.0.0.1:102";
+        }
+        else // OPC UA
+        {
+            Dialect = "opc.tcp"; // 仅 UI 显示；ToDevice 时置 null（后端 ProtocolIdentifier.OpcUa 无方言）
+            if (string.IsNullOrWhiteSpace(Endpoint) || Endpoint == "127.0.0.1:502" || Endpoint == "127.0.0.1:102")
+                Endpoint = "opc.tcp://127.0.0.1:4840";
+        }
+        Validate();
+    }
 
     /// <summary>
     /// 测试连接（ADR-044/ADR-023）：由当前表单构建设备 → Connect+Ping 双验，
@@ -206,13 +271,15 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
             parameters["CpuType"] = CpuType;
             parameters["PingAddress"] = PingAddress;
         }
+        // OPC UA：无协议特有参数（对齐 web syncParams 三路分流，避免切换协议残留的 Rack/Slot 污染连接）
 
         return new Device
         {
             Id = Id,
             Name = Name,
             Description = Description,
-            Protocol = new ProtocolIdentifier { Name = ProtocolName, Dialect = Dialect },
+            // OPC UA 方言为 null：后端 ProtocolIdentifier.OpcUa 无 Dialect（web 同语义）
+            Protocol = new ProtocolIdentifier { Name = ProtocolName, Dialect = IsOpcUa ? null : Dialect },
             Connection = new DeviceConnection
             {
                 Endpoint = Endpoint,
@@ -230,6 +297,11 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     public static DeviceEditor FromDevice(Device device)
     {
         var p = device.Connection.Parameters;
+        var protocolName = Normalize(device.Protocol.Name);
+        // OPC UA 方言为 null → 显示锁定值 opc.tcp（不落库）；其余协议空方言回退 TCP（ADR-036 归一化后保存即修复）
+        var dialect = Normalize(string.IsNullOrEmpty(device.Protocol.Dialect)
+            ? protocolName == "OPC UA" ? "opc.tcp" : "TCP"
+            : device.Protocol.Dialect);
         return new DeviceEditor
         {
             Id = device.Id,
@@ -238,8 +310,8 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
             // 修复 ADR-036 后遗留：早期 ComboBoxItem 绑定把选中项 ToString 存成
             // "System.Windows.Controls.ComboBoxItem: Modbus"，回填时归一化为纯值，
             // 保证旧脏数据重编辑后保存即可恢复采集。
-            ProtocolName = Normalize(device.Protocol.Name),
-            Dialect = Normalize(string.IsNullOrEmpty(device.Protocol.Dialect) ? "TCP" : device.Protocol.Dialect),
+            ProtocolName = protocolName,
+            Dialect = dialect,
             Status = device.Status,
             Endpoint = device.Connection.Endpoint,
             ConnectTimeoutMs = device.Connection.ConnectTimeoutMs,
