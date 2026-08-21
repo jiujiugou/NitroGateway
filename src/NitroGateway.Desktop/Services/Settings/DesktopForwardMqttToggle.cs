@@ -18,6 +18,9 @@ public sealed class DesktopForwardMqttToggle : IForwardMqttToggle
     private readonly ILogger<DesktopForwardMqttToggle> _logger;
     private int _enabled = EnabledTrue; // 缺省启用
 
+    /// <inheritdoc />
+    public event Action<bool>? EnabledChanged;
+
     /// <param name="store">桌面本地设置存储（desktop-settings.json）</param>
     /// <param name="logger">日志记录器</param>
     public DesktopForwardMqttToggle(IDesktopSettingsStore store, ILogger<DesktopForwardMqttToggle> logger)
@@ -61,8 +64,12 @@ public sealed class DesktopForwardMqttToggle : IForwardMqttToggle
             var settings = _store.Load();
             settings.ForwarderMqttEnabled = enabled;
             _store.Save(settings);
+            // ADR-061：仅在实际值变化时触发事件，避免 UI 重复点同一值造成多余断开/重连
+            var changed = Volatile.Read(ref _enabled) != (enabled ? EnabledTrue : EnabledFalse);
             Volatile.Write(ref _enabled, enabled ? EnabledTrue : EnabledFalse);
             _logger.LogInformation("MQTT 转发开关已切换: {Enabled}", enabled);
+            if (changed)
+                EnabledChanged?.Invoke(enabled);
             return OperationResult.Success();
         }
         catch (Exception ex)

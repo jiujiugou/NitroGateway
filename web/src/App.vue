@@ -45,8 +45,9 @@
         <div class="topbar-title">NitroGateway 管理控制台</div>
         <!-- ADR-044：Center 形态不采集/不转发/无 MQTT，隐藏转发侧状态，避免误导 -->
         <div class="topbar-status">
-          <span :class="['status-dot', mqttConnected ? 'online' : 'offline']"></span>
-          <span>{{ mqttConnected ? 'MQTT 已连接' : 'MQTT 未连接' }}</span>
+          <!-- ADR-061：转发开关关闭时明确显示「MQTT 已关闭」，不误导为故障/未连接 -->
+          <span :class="['status-dot', mqttDisabled ? 'offline' : (mqttConnected ? 'online' : 'offline')]"></span>
+          <span>{{ mqttDisabled ? 'MQTT 已关闭' : (mqttConnected ? 'MQTT 已连接' : 'MQTT 未连接') }}</span>
           <span class="status-sep">|</span>
           <span>缓冲队列 {{ backlog }} 批</span>
         </div>
@@ -65,6 +66,7 @@ import { createLiveConnection } from './api/signalr'
 import type { HubConnection } from '@microsoft/signalr'
 
 const mqttConnected = ref(false)
+const mqttDisabled = ref(false)
 const backlog = ref(0)
 
 let conn: HubConnection | null = null
@@ -76,9 +78,15 @@ let statusTimer: number | undefined
 async function refreshStatus() {
   try {
     const s = await getSystemStatus()
-    mqttConnected.value = s.mqttConnected
+    applyMqttState(s.mqttState)
     backlog.value = s.bufferBacklog
   } catch { /* 忽略，下次轮询重试 */ }
+}
+
+// ADR-061：统一收敛 MQTT 状态 → 连接/关闭两个布尔（Disabled 与 Connected 互斥）
+function applyMqttState(state?: string) {
+  mqttDisabled.value = state === 'Disabled'
+  mqttConnected.value = state === 'Connected'
 }
 
 onMounted(async () => {
@@ -89,7 +97,7 @@ onMounted(async () => {
   conn = createLiveConnection()
 
   conn.on('MqttStateChanged', (d: { state: string }) => {
-    mqttConnected.value = d.state === 'Connected'
+    applyMqttState(d.state)
   })
 
   try {

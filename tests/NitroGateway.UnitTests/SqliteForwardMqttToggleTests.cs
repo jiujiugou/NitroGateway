@@ -158,4 +158,35 @@ public sealed class SqliteForwardMqttToggleTests : IDisposable
         Assert.True(result.IsFailure);
         Assert.True(toggle.IsEnabled);
     }
+
+    [Fact]
+    public async Task SetEnabled_raises_EnabledChanged_only_on_actual_change()
+    {
+        // ADR-061：SetEnabledAsync 持久化成功且实际值变化才触发事件；
+        // 重复设置同一值不触发（避免多余断开/重连）。
+        var toggle = NewToggle();
+        var raised = new List<bool>();
+        toggle.EnabledChanged += b => raised.Add(b);
+
+        await toggle.SetEnabledAsync(false);
+        Assert.Equal(new[] { false }, raised);
+
+        await toggle.SetEnabledAsync(false); // 值未变，不触发
+        Assert.Single(raised);
+
+        await toggle.SetEnabledAsync(true);
+        Assert.Equal(new[] { false, true }, raised);
+    }
+
+    [Fact]
+    public async Task Initialize_does_not_raise_EnabledChanged()
+    {
+        // ADR-061：启动加载持久值不触发事件（避免启动时误触发断开/重连）
+        var toggle = NewToggle();
+        var raised = new List<bool>();
+        toggle.EnabledChanged += b => raised.Add(b);
+
+        await toggle.InitializeAsync();
+        Assert.Empty(raised);
+    }
 }

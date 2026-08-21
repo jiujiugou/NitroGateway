@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NitroGateway.Storage.Buffer;
 
 namespace NitroGateway.Transport.MQTT;
 
@@ -33,7 +35,15 @@ public static class MqttServiceCollectionExtensions
             return options;
         });
 
-        services.AddSingleton<IMqttClient, MqttClientWrapper>();
+        // ADR-061：连接层注入转发总开关（关闭即断开 + 停止重连）。
+        // 用 GetService（null 安全）解析而非构造函数注入——未注册开关的宿主
+        // （如 Ingest 中心，无转发 UI）得到 null → 恒启用，行为与旧版一致；
+        // MS.DI 不按默认值回退，直接构造函数注入会在 Ingest 启动时抛解析异常。
+        services.AddSingleton<IMqttClient>(sp => new MqttClientWrapper(
+            sp.GetRequiredService<MqttConnectionOptions>(),
+            sp.GetRequiredService<ILogger<MqttClientWrapper>>(),
+            sp.GetServices<IMqttStateListener>(),
+            sp.GetService<IForwardMqttToggle>()));
         services.AddHostedService<MqttHostedService>();
         return services;
     }

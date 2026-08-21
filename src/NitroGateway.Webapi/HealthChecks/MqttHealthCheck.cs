@@ -25,6 +25,10 @@ public sealed class MqttHealthCheck : IHealthCheck
             MqttConnectionState.Connecting or MqttConnectionState.Reconnecting => Task.FromResult(
                 HealthCheckResult.Degraded($"MQTT {_mqtt.State}")),
 
+            // ADR-061：转发开关关闭是用户主动操作，非故障——报 Degraded 而非 Unhealthy
+            MqttConnectionState.Disabled => Task.FromResult(
+                HealthCheckResult.Degraded("MQTT 已关闭（转发开关关闭）")),
+
             _ => Task.FromResult(
                 HealthCheckResult.Unhealthy($"MQTT {_mqtt.State}"))
         };

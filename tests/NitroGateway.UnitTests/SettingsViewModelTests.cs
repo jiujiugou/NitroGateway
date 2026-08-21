@@ -327,6 +327,8 @@ internal sealed class StubForwardMqttToggle : IForwardMqttToggle
 {
     public bool IsEnabled { get; set; } = true;
 
+    public event Action<bool>? EnabledChanged;
+
     /// <summary>下一次 SetEnabledAsync 的返回结果；null 表示成功并同步更新 IsEnabled。</summary>
     public OperationResult? NextSetResult { get; set; }
 
@@ -341,6 +343,7 @@ internal sealed class StubForwardMqttToggle : IForwardMqttToggle
         if (NextSetResult is not null)
             return Task.FromResult(NextSetResult);
         IsEnabled = enabled;
+        EnabledChanged?.Invoke(enabled);
         return Task.FromResult(OperationResult.Success());
     }
 

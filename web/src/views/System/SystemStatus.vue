@@ -9,9 +9,10 @@
         <div class="stat-label">本站点</div>
         <div class="stat-value stat-value-site">{{ siteId || '-' }}</div>
       </div>
-      <div class="stat-card" :class="mqtt.connected ? 'ok' : 'err'">
+      <!-- ADR-061：转发开关关闭（Disabled）显示「已关闭」且按 warning 样式，不误导为故障 -->
+      <div class="stat-card" :class="mqttCardClass()">
         <div class="stat-label">MQTT</div>
-        <div class="stat-value">{{ mqtt.state }}</div>
+        <div class="stat-value">{{ mqttStateLabel() }}</div>
       </div>
       <div class="stat-card" :class="backlog > 100 ? 'warn' : 'ok'">
         <div class="stat-label">缓冲积压</div>
@@ -137,6 +138,7 @@ async function refresh() {
     const { data: sys } = await client.get('/status/system')
     if (sys.data) {
       siteId.value = sys.data.siteId ?? ''
+      // ADR-061：状态字串含 Disabled（开关关闭）——connected 仅 Connected 为真，供下方卡片映射
       mqtt.value = { state: sys.data.mqttState, connected: sys.data.mqttState === 'Connected' }
       backlog.value = sys.data.bufferBacklog
       throttle.value = { batch: sys.data.throttleBatchSize, delay: sys.data.throttleDelayMs }
@@ -170,6 +172,26 @@ function breakerTag(row: any): string {
 
 function fmtTime(t: string): string {
   return t ? new Date(t).toLocaleTimeString() : '-'
+}
+
+// ADR-061：MQTT 状态枚举 → 中文文案（Disabled=转发开关关闭，非故障）
+function mqttStateLabel(): string {
+  const map: Record<string, string> = {
+    Connected: '已连接',
+    Connecting: '连接中',
+    Reconnecting: '重连中',
+    Disconnected: '未连接',
+    Faulted: '故障',
+    Disabled: '已关闭'
+  }
+  return map[mqtt.value.state] ?? mqtt.value.state ?? '-'
+}
+
+function mqttCardClass(): string {
+  const s = mqtt.value.state
+  if (s === 'Connected') return 'ok'
+  if (s === 'Disabled' || s === 'Connecting' || s === 'Reconnecting') return 'warn'
+  return 'err'
 }
 </script>
 

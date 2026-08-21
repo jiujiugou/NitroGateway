@@ -113,6 +113,28 @@ public class MqttHostedServiceTests
     }
 
     [Fact]
+    public async Task Disabled_IsNotSupervised_NoReconnect()
+    {
+        // ADR-061：转发开关关闭（Disabled）时监督循环不得重连——关闭即彻底停连，
+        // 等待开关重开由 MqttClientWrapper 自行恢复。
+        var client = new ControllableMqttClient { State = MqttConnectionState.Disabled };
+        var svc = new MqttHostedService(client, FastSupervisionOptions(), NullLogger<MqttHostedService>.Instance);
+
+        await svc.StartAsync(CancellationToken.None);
+        try
+        {
+            // 监督周期 100ms，400ms 内若越权重连会触发 ConnectAsync
+            await Task.Delay(400);
+            Assert.Equal(0, client.ConnectCalls);
+            Assert.Equal(MqttConnectionState.Disabled, client.State);
+        }
+        finally
+        {
+            await svc.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task NoConsumerCmdSubscription_IsRemoved()
     {
         // ADR-006 P2-1：nitrogateway/+/cmd 全仓无消费者（云端指令走 HTTP），订阅已移除；

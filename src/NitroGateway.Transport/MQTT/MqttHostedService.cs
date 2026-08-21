@@ -8,6 +8,7 @@ namespace NitroGateway.Transport.MQTT;
 /// 启动时负责首连；之后按 <see cref="MqttConnectionOptions.ReconnectMaxIntervalMs"/> 周期监督，
 /// 状态为 Disconnected（首连失败）或 Faulted（快速重连放弃）时兜底重连，Broker 恢复后无需重启网关。
 /// 意外断线后的指数退避快速重连由 <see cref="MqttClientWrapper"/> 内部完成，此处不重复触发。
+/// ADR-061：Disabled（转发开关关闭）不在监督范围——关闭时不重连、不重试，等待开关重开由 wrapper 自行恢复。
 /// </summary>
 internal sealed class MqttHostedService : BackgroundService
 {
@@ -31,6 +32,7 @@ internal sealed class MqttHostedService : BackgroundService
             {
                 // ADR-006 P1-3：Faulted 时兜底重连；Disconnected 仅在配置了自动重连时兜底
                 //（MaxReconnectAttempts=0 语义为"不自动重连"，监督循环不越权）。
+                // ADR-061：Disabled 既非 Faulted 也非 Disconnected，天然不进入监督——关闭即彻底停连。
                 if (_mqtt.State is MqttConnectionState.Faulted
                     || (_mqtt.State is MqttConnectionState.Disconnected && _options.MaxReconnectAttempts > 0))
                 {
@@ -82,6 +84,10 @@ internal sealed class MqttHostedService : BackgroundService
             case MqttConnectionState.Faulted:
                 // ADR-020 P3-1：Faulted 每轮监督重连都会再触发一次，长期断线会刷屏——降 Warning 保留存在感
                 _logger.LogWarning("MQTT 重连失败，已达最大重试次数，监督循环将继续尝试");
+                break;
+            case MqttConnectionState.Disabled:
+                // ADR-061：转发开关关闭——不连接、不重试，等待开关开启后由 wrapper 恢复
+                _logger.LogInformation("MQTT 已关闭（转发开关关闭），暂停连接与重连");
                 break;
         }
     }

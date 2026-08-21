@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <!-- ADR-061：连接层订阅 IForwardMqttToggle（转发总开关，关闭即断开）——纯接口依赖，无环 -->
+    <ProjectReference Include="..\..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
     <ProjectReference Include="..\..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
   </ItemGroup>
 

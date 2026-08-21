@@ -21,6 +21,9 @@ public sealed class SqliteForwardMqttToggle : IForwardMqttToggle
     private readonly ILogger<SqliteForwardMqttToggle> _logger;
     private int _enabled = EnabledTrue; // 缺省启用
 
+    /// <inheritdoc />
+    public event Action<bool>? EnabledChanged;
+
     /// <param name="store">app_meta 键值存储</param>
     /// <param name="logger">日志记录器</param>
     public SqliteForwardMqttToggle(IAppMetaStore store, ILogger<SqliteForwardMqttToggle> logger)
@@ -64,8 +67,12 @@ public sealed class SqliteForwardMqttToggle : IForwardMqttToggle
         try
         {
             await _store.SetAsync(Key, enabled ? "true" : "false", ct);
+            // ADR-061：仅在实际值变化时触发事件，避免 UI 重复点同一值造成多余断开/重连
+            var changed = Volatile.Read(ref _enabled) != (enabled ? EnabledTrue : EnabledFalse);
             Volatile.Write(ref _enabled, enabled ? EnabledTrue : EnabledFalse);
             _logger.LogInformation("MQTT 转发开关已切换: {Enabled}", enabled);
+            if (changed)
+                EnabledChanged?.Invoke(enabled);
             return OperationResult.Success();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

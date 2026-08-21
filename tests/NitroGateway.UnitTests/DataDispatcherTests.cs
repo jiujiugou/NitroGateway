@@ -108,9 +108,12 @@ public class DataDispatcherTests
     {
         public bool IsEnabled { get; set; } = true;
 
+        public event Action<bool>? EnabledChanged;
+
         public Task<OperationResult> SetEnabledAsync(bool enabled, CancellationToken ct = default)
         {
             IsEnabled = enabled;
+            EnabledChanged?.Invoke(enabled);
             return Task.FromResult(OperationResult.Success());
         }
 

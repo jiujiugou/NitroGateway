@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Shared;
+using NitroGateway.Storage.Buffer;
 using NitroGateway.Transport.MQTT;
 using Xunit;
 
@@ -44,6 +45,24 @@ public class MqttClientWrapperTests
         }
     }
 
+    /// <summary>ADR-061 测试替身：转发总开关（内存态，SetEnabled 触发事件）。</summary>
+    private sealed class ToggleFake : IForwardMqttToggle
+    {
+        public bool IsEnabled { get; set; } = true;
+
+        public event Action<bool>? EnabledChanged;
+
+        public Task<OperationResult> SetEnabledAsync(bool enabled, CancellationToken ct = default)
+        {
+            IsEnabled = enabled;
+            EnabledChanged?.Invoke(enabled);
+            return Task.FromResult(OperationResult.Success());
+        }
+
+        public Task<OperationResult> InitializeAsync(CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
+    }
+
     [Fact]
     public void AddNitroMqtt_AutoClientId_IsUniqueAndPrefixed()
     {
@@ -72,6 +91,30 @@ public class MqttClientWrapperTests
             Assert.Equal("localhost", o1.Host);
             Assert.Equal(1883, o1.Port);
         }
+    }
+
+    [Fact]
+    public async Task AddNitroMqtt_WithoutToggle_ResolvesAsAlwaysEnabled()
+    {
+        // ADR-061：未注册 IForwardMqttToggle 的宿主（如 Ingest 中心）也能解析 IMqttClient，
+        // 且视为恒启用（GetService 返回 null → wrapper 内部跳过开关检查，行为与旧版一致）。
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MQTT:Host"] = "localhost",
+                ["MQTT:Port"] = "1883"
+            })
+            .Build();
+
+        await using var sp = new ServiceCollection()
+            .AddLogging()
+            .AddNitroMqtt(config)
+            .BuildServiceProvider();
+        var client = sp.GetRequiredService<IMqttClient>();
+
+        Assert.NotNull(client);
+        Assert.Equal(MqttConnectionState.Disconnected, client.State);
+        // 服务提供者关闭时会同步 DisposeAsync 单例客户端，此处不显式释放避免双重释放
     }
 
     [Fact]
@@ -211,5 +254,93 @@ public class MqttClientWrapperTests
         await Task.Delay(150);
         Assert.Equal(MqttConnectionState.Disconnected, wrapper.State);
         Assert.Equal(1, inner.ConnectCalls);
+    }
+
+    [Fact]
+    public async Task Disable_DisconnectsAndStopsReconnect()
+    {
+        // ADR-061：关闭开关 → 断开连接 + 置 Disabled + 意外断开不再重连
+        var inner = new FakeMqttInnerClient();
+        var toggle = new ToggleFake();
+        await using var wrapper = new MqttClientWrapper(
+            FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, [], toggle);
+
+        Assert.True((await wrapper.ConnectAsync()).IsSuccess);
+        Assert.True(inner.IsConnected);
+        await wrapper.SubscribeAsync("t", 1);
+
+        await toggle.SetEnabledAsync(false);
+        await WaitUntilAsync(() => wrapper.State == MqttConnectionState.Disabled, TimeSpan.FromSeconds(5));
+
+        Assert.False(inner.IsConnected);
+        // 已关闭状态下意外断开不触发重连
+        var calls = inner.ConnectCalls;
+        inner.SimulateDrop();
+        await Task.Delay(300);
+        Assert.Equal(calls, inner.ConnectCalls);
+        Assert.Equal(MqttConnectionState.Disabled, wrapper.State);
+    }
+
+    [Fact]
+    public async Task Enable_AfterDisable_Reconnects()
+    {
+        // ADR-061：开关重开 → 自动恢复连接（订阅由 CleanStart 重放兜底）
+        var inner = new FakeMqttInnerClient();
+        var toggle = new ToggleFake();
+        await using var wrapper = new MqttClientWrapper(
+            FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, [], toggle);
+
+        Assert.True((await wrapper.ConnectAsync()).IsSuccess);
+        await wrapper.SubscribeAsync("t", 1);
+
+        await toggle.SetEnabledAsync(false);
+        await WaitUntilAsync(() => wrapper.State == MqttConnectionState.Disabled, TimeSpan.FromSeconds(5));
+
+        await toggle.SetEnabledAsync(true);
+        await WaitUntilAsync(() => wrapper.State == MqttConnectionState.Connected, TimeSpan.FromSeconds(5));
+        Assert.True(inner.IsConnected);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WhenDisabled_ReturnsFailureAndStaysDisabled()
+    {
+        // ADR-061：开关关闭时 ConnectAsync 直接失败——不置 Connecting、不触发重连
+        var inner = new FakeMqttInnerClient();
+        var toggle = new ToggleFake { IsEnabled = false };
+        await using var wrapper = new MqttClientWrapper(
+            FastReconnectOptions(), NullLogger<MqttClientWrapper>.Instance, inner, [], toggle);
+
+        var r = await wrapper.ConnectAsync();
+
+        Assert.True(r.IsFailure);
+        Assert.Equal(MqttConnectionState.Disabled, wrapper.State);
+        Assert.Equal(0, inner.ConnectCalls);
+        await Task.Delay(200);
+        Assert.Equal(0, inner.ConnectCalls);
+        Assert.Equal(MqttConnectionState.Disabled, wrapper.State);
+    }
+
+    [Fact]
+    public async Task DisableDuringReconnect_StopsRetryingAndStaysDisabled()
+    {
+        // ADR-061：重连循环进行中关闭开关 → 取消重连 + 置 Disabled + 不再尝试连接
+        var inner = new FakeMqttInnerClient { ConnectException = new TimeoutException("broker down") };
+        var toggle = new ToggleFake();
+        await using var wrapper = new MqttClientWrapper(
+            FastReconnectOptions(maxAttempts: 10), NullLogger<MqttClientWrapper>.Instance, inner, [], toggle);
+
+        Assert.True((await wrapper.ConnectAsync()).IsFailure);
+        // 等待重连循环已跑起来（首连 + 至少一次重试）
+        await WaitUntilAsync(() => inner.ConnectCalls >= 2, TimeSpan.FromSeconds(5));
+
+        await toggle.SetEnabledAsync(false);
+        await WaitUntilAsync(() => wrapper.State == MqttConnectionState.Disabled, TimeSpan.FromSeconds(5));
+
+        // 等重连循环充分退出后再计数，避免把退出瞬间的在途连接误判为新重试
+        await Task.Delay(300);
+        var calls = inner.ConnectCalls;
+        await Task.Delay(400);
+        Assert.Equal(calls, inner.ConnectCalls);
+        Assert.Equal(MqttConnectionState.Disabled, wrapper.State);
     }
 }

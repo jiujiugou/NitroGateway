@@ -20,6 +20,14 @@ public interface IForwardMqttToggle
     bool IsEnabled { get; }
 
     /// <summary>
+    /// 开关状态变更事件（ADR-061）。<see cref="SetEnabledAsync"/> 持久化成功且实际值变化后触发一次；
+    /// <see cref="InitializeAsync"/> 加载持久值不触发（避免启动时误触发断开）。
+    /// 连接层（MqttClientWrapper，ADR-061）订阅此事件：
+    /// 关闭 → 取消重连 + 断开 + 置 <c>Disabled</c>；开启 → 自动恢复连接。
+    /// </summary>
+    event Action<bool>? EnabledChanged;
+
+    /// <summary>
     /// 设置开关并持久化（重启保持）。持久化成功后才更新内存态；失败返回失败结果且内存态不变。
     /// </summary>
     /// <param name="enabled">是否启用 MQTT 上云转发</param>

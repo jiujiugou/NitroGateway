@@ -93,6 +93,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     MqttConnectionState.Connecting => "连接中",
                     MqttConnectionState.Reconnecting => "重连中",
                     MqttConnectionState.Faulted => "故障",
+                    // ADR-061：转发开关关闭——不连接、不重连，直接显示已关闭
+                    MqttConnectionState.Disabled => "MQTT 已关闭",
                     _ => "未连接"
                 };
 
