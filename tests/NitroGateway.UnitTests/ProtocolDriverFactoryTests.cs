@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
 using NitroGateway.Protocols;
+using NitroGateway.Protocols.OpcUa;
 using NitroGateway.Shared;
 using Xunit;
 
@@ -44,6 +45,29 @@ public class ProtocolDriverFactoryTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(1, inner.ReadCalls);
+    }
+
+    /// <summary>
+    /// OPC UA 接入冒烟（12-OPC-UA接入设计.md S5）：OpcUaRegistration 注册的驱动可被复合工厂创建，
+    /// 返回 ReliableProtocolDriver 装饰器且 Capability 透传内层（批量读/订阅能力可用）。
+    /// </summary>
+    [Fact]
+    public void Create_OpcUa_Registered_ReturnsDecoratorWithCapabilities()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var provider = services.BuildServiceProvider();
+        var factory = new ProtocolDriverFactory(provider);
+        OpcUaRegistration.Register(factory);
+
+        var driver = factory.Create(
+            ProtocolIdentifier.OpcUa,
+            new DeviceConnection { Endpoint = "opc.tcp://127.0.0.1:4840", RequestTimeoutMs = 5000 });
+
+        Assert.True(driver.Capability.SupportsBatchRead);
+        Assert.True(driver.Capability.SupportsBatchWrite);
+        Assert.True(driver.Capability.SupportsSubscription);
+        Assert.Equal(DriverState.Disconnected, driver.State);
     }
 
     private static IProtocolDriverFactory BuildFactory(FailingInner inner)

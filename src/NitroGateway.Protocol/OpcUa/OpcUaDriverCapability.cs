@@ -1,6 +1,6 @@
 using NitroGateway.Domain.Protocols;
 
-namespace NitroGateway.Protocol.OpcUa;
+namespace NitroGateway.Protocols.OpcUa;
 
 /// <summary>OPC UA 驱动能力</summary>
 public static class OpcUaDriverCapability

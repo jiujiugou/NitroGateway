@@ -70,8 +70,8 @@
         <el-input v-model="gf.nameTemplate" placeholder="如 AI_{###} → AI_001, AI_002..." />
         <div class="hint">{{ previewName }}</div>
       </el-form-item>
-      <!-- ADR-024 P3-3：起始地址按协议解释（Modbus 数字 / S7 DB 区地址） -->
-      <el-form-item label="起始地址"><el-input v-model="gf.startAddress" :placeholder="deviceProtocol === 'S7' ? 'DB1.DBD0' : '40001'" style="width:100%" /></el-form-item>
+      <!-- ADR-024 P3-3：起始地址按协议解释（Modbus 数字 / S7 DB 区地址 / OPC UA NodeId） -->
+      <el-form-item label="起始地址"><el-input v-model="gf.startAddress" :placeholder="defaultStartAddress(deviceProtocol)" style="width:100%" /></el-form-item>
       <el-form-item label="数量"><el-input-number v-model="gf.count" :min="1" :max="5000" style="width:100%" /></el-form-item>
       <el-form-item label="数据类型">
         <el-select v-model="gf.dataType" style="width:100%">
@@ -83,7 +83,7 @@
           <el-option label="只读" value="ReadOnly" /><el-option label="读写" value="ReadWrite" />
         </el-select>
       </el-form-item>
-      <div class="hint">将生成 {{ gf.count }} 个点位，地址按{{ deviceProtocol === 'S7' ? '类型字节宽度' : 'Modbus 寄存器数' }}递增{{ deviceProtocol === 'S7' ? '（DB 区，不支持 Bool）' : '' }}</div>
+      <div class="hint">{{ genHint }}</div>
     </el-form>
     <template #footer><el-button @click="showGen=false">取消</el-button><el-button type="primary" @click="generate">生成</el-button></template>
   </el-dialog>
@@ -106,9 +106,26 @@ const importInputRef = ref<HTMLInputElement>()
 const types = ['Bool','Byte','Int16','UInt16','Int32','UInt32','Int64','UInt64','Float','Double','String']
 const deviceProtocol = ref('Modbus')
 
-const makeEmpty = () => ({ name:'', address: deviceProtocol.value === 'S7' ? 'DB1.DBD0' : '40001', dataType:'Float', access:'ReadOnly', scaleFactor:1, scaleOffset:0, deadband:0, scanIntervalMs:0, enabled:true })
+const makeEmpty = () => ({ name:'', address: defaultStartAddress(deviceProtocol.value), dataType:'Float', access:'ReadOnly', scaleFactor:1, scaleOffset:0, deadband:0, scanIntervalMs:0, enabled:true })
 const pf = ref<Record<string, any>>(makeEmpty())
 const gf = ref({ nameTemplate:'AI_{###}', startAddress:'40001', count:100, dataType:'Float', access:'ReadOnly' })
+
+// ADR-024 P3-3 扩展：按设备协议给出默认起始地址（Modbus 数字 / S7 DB 区 / OPC UA 数值标识符）
+function defaultStartAddress(protocol: string): string {
+  if (protocol === 'S7') return 'DB1.DBD0'
+  if (protocol === 'OPC UA') return 'ns=2;i=1001'
+  return '40001'
+}
+
+// 批量生成递增规则的提示文案（OPC UA 仅数值标识符 i= 可自动 +1；s= 字符串标识无连续编号语义）
+const genHint = computed(() => {
+  const proto = deviceProtocol.value
+  let rule = 'Modbus 寄存器数'
+  let extra = ''
+  if (proto === 'S7') { rule = '类型字节宽度'; extra = '（DB 区，不支持 Bool）' }
+  else if (proto === 'OPC UA') { rule = '数值标识（i=）'; extra = '（如 ns=2;i=1001 → 1002，仅支持数值标识符）' }
+  return `将生成 ${gf.value.count} 个点位，地址按${rule}递增${extra}`
+})
 
 const previewName = computed(() => {
   const pad = (gf.value.nameTemplate.match(/#/g) || []).length
@@ -121,7 +138,7 @@ onMounted(async () => {
   // ADR-024 P3-3：按设备协议决定默认起始地址（S7 用 DB 区地址）
   try {
     const d = await getDevice(deviceId)
-    if (d) { deviceProtocol.value = d.protocol.name; gf.value.startAddress = d.protocol.name === 'S7' ? 'DB1.DBD0' : '40001' }
+    if (d) { deviceProtocol.value = d.protocol.name; gf.value.startAddress = defaultStartAddress(d.protocol.name) }
   } catch {}
 })
 

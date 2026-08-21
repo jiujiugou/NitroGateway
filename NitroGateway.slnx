@@ -27,6 +27,9 @@
   <Folder Name="/src/NitroGateway.Protocol/Modbus/">
     <Project Path="src/NitroGateway.Protocol/Modbus/NitroGateway.Protocol.Modbus.csproj" />
   </Folder>
+  <Folder Name="/src/NitroGateway.Protocol/OpcUa/">
+    <Project Path="src/NitroGateway.Protocol/OpcUa/NitroGateway.Protocol.OpcUa.csproj" />
+  </Folder>
   <Folder Name="/src/NitroGateway.Protocol/S7/">
     <Project Path="src/NitroGateway.Protocol/S7/NitroGateway.Protocol.S7.csproj" />
   </Folder>

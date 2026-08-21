@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace NitroGateway.Protocol.OpcUa;
+namespace NitroGateway.Protocols.OpcUa;
 
 /// <summary>OPC UA 地址解析器</summary>
 public sealed class OpcUaAddressParser : IAddressParser

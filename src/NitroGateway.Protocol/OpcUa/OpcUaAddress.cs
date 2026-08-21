@@ -1,4 +1,4 @@
-namespace NitroGateway.Protocol.OpcUa;
+namespace NitroGateway.Protocols.OpcUa;
 
 /// <summary>OPC UA NodeId 地址。直接对应 OPC UA NodeId 规范，不存裸 string</summary>
 public sealed record OpcUaAddress : PointAddress

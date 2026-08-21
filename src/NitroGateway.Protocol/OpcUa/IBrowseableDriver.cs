@@ -1,6 +1,6 @@
 using NitroGateway.Shared;
 
-namespace NitroGateway.Protocol.OpcUa;
+namespace NitroGateway.Protocols.OpcUa;
 
 /// <summary>
 /// 节点 Browse 能力。和 IProtocolDriver 分离——采集引擎不调这个，配置/导入工具调。

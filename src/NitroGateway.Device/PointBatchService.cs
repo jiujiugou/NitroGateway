@@ -204,16 +204,17 @@ public sealed class PointBatchService
     /// <summary>
     /// 根据起始地址和数据量生成点位列表。Modbus 地址按 DataType.RegisterCount（寄存器）递增，
     /// S7 地址（DB{n}.DBD/DBW/DBB{offset}）按 DataType.ByteSize（字节）递增（ADR-024 P3-3）。
+    /// OPC UA 地址（ns={n};i={id}）按数值标识 +1 递增（ADR-024 P3-3 扩展，仅支持数值标识符）。
     /// 名称模板支持占位符：{name}_{###} → {name}_001, {name}_002...
     ///                               {name}_{000} → {name}_000, {name}_001... (零填充)
     /// </summary>
     /// <param name="deviceId">所属设备</param>
     /// <param name="nameTemplate">名称模板，### 替换为序号（零填充）</param>
-    /// <param name="startAddress">起始地址（Modbus 为数字如 "40001"；S7 为 "DB1.DBD0" 等）</param>
+    /// <param name="startAddress">起始地址（Modbus 为数字如 "40001"；S7 为 "DB1.DBD0"；OPC UA 为 "ns=2;i=1001"）</param>
     /// <param name="count">生成数量</param>
     /// <param name="dataType">数据类型</param>
     /// <param name="access">读写权限</param>
-    /// <param name="protocol">协议名（Modbus / S7），决定地址解释与步长</param>
+    /// <param name="protocol">协议名（Modbus / S7 / OPC UA），决定地址解释与步长</param>
     public IReadOnlyList<DevicePoint> Generate(
         Guid deviceId,
         string nameTemplate,
@@ -233,6 +234,12 @@ public sealed class PointBatchService
             var start = S7Start.Parse(startAddress, dataType);
             format = start.Format;
             step = dataType.ByteSize();
+        }
+        else if (protocol.Equals("OPC UA", StringComparison.OrdinalIgnoreCase))
+        {
+            var start = OpcUaStart.Parse(startAddress);
+            format = start.Format;
+            step = 1; // 数值标识符逐点 +1
         }
         else
         {
@@ -368,6 +375,28 @@ public sealed class PointBatchService
 
         /// <summary>第 i 个点位的地址：DB{n}.DB{T}{offset + i*字节宽}，类型保持起始地址类型</summary>
         public string Format(int index, int step) => $"DB{_db}.{_type}{_offset + index * step}";
+    }
+
+    /// <summary>
+    /// OPC UA NodeId 起始地址解析：仅支持数值标识符 ns={n};i={id}，逐点 +1。
+    /// 字符串/ GUID / Opaque 标识符无"连续编号"语义，批量生成明确拒绝（ADR-024 P3-3 扩展）。
+    /// </summary>
+    private readonly record struct OpcUaStart(ushort NamespaceIndex, uint NumericId)
+    {
+        public static OpcUaStart Parse(string raw)
+        {
+            var m = Regex.Match(raw, @"^ns=(\d+);i=(\d+)$", RegexOptions.IgnoreCase);
+            if (!m.Success)
+                throw new ArgumentException(
+                    $"无效的 OPC UA 起始地址: {raw}（批量生成仅支持数值标识符，如 ns=2;i=1001；字符串/ GUID 标识无法自动编号）");
+
+            return new OpcUaStart(
+                ushort.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture),
+                uint.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>第 i 个点位的地址：ns={n};i={起始 + i}</summary>
+        public string Format(int index, int step) => $"ns={NamespaceIndex};i={NumericId + (uint)(index * step)}";
     }
 }
 

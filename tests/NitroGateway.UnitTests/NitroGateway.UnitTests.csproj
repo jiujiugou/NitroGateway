@@ -33,6 +33,8 @@
     <!-- ADR-019：S7Driver 测试（internal 构造器注入客户端）需要引用 S7 -->
     <ProjectReference Include="..\..\src\NitroGateway.Protocol\S7\NitroGateway.Protocol.S7.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Protocol\Modbus\NitroGateway.Protocol.Modbus.csproj" />
+    <!-- OPC UA 接入（12-OPC-UA接入设计.md S5）：地址解析 + 驱动失败路径 + 工厂注册冒烟 -->
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\OpcUa\NitroGateway.Protocol.OpcUa.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Device\NitroGateway.Device.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Forwarder\NitroGateway.Forwarder.csproj" />

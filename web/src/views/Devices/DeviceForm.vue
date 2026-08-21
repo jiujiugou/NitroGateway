@@ -6,9 +6,10 @@
         <el-form-item label="设备名称"><el-input v-model="f.name" placeholder="例如：一号车间 PLC" /></el-form-item>
         <el-form-item label="协议">
           <el-select v-model="f.protocol.name" style="width:100%" @change="onProtocolChange">
-            <!-- ADR-007 P2-2：后端 ProtocolDriverFactory 仅注册 Modbus+S7；OPC UA 未接入，Mitsubishi 待 slnx 启用后再放回 -->
+            <!-- ADR-007 P2-2：后端已注册 Modbus/S7/OPC UA（OpcUaRegistration，见 12-OPC-UA接入设计.md）；Mitsubishi 待 slnx 启用后再放回 -->
             <el-option label="Modbus" value="Modbus" />
             <el-option label="S7" value="S7" />
+            <el-option label="OPC UA" value="OPC UA" />
           </el-select>
         </el-form-item>
         <el-form-item label="传输方式">
@@ -17,7 +18,9 @@
             <el-option label="RTU（串口）" value="RTU" />
           </el-select>
           <!-- ADR-024 P3-2：S7 仅 TCP（默认 102 端口），不再显示可编辑的 TCP/RTU 输入框 -->
-          <el-input v-else :model-value="'TCP'" disabled />
+          <el-input v-else-if="f.protocol.name === 'S7'" :model-value="'TCP'" disabled />
+          <!-- OPC UA 走 opc.tcp 二进制传输（12-OPC-UA接入设计.md S6） -->
+          <el-input v-else :model-value="'opc.tcp'" disabled />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="f.status" style="width:100%">
@@ -72,7 +75,7 @@
       <div v-else class="form-row">
         <el-form-item label="连接地址">
           <!-- ADR-024 P3-2：占位按协议区分，S7 默认端口 102（Modbus 502） -->
-          <el-input v-model="f.connection.endpoint" :placeholder="f.protocol.name === 'S7' ? '192.168.1.100:102' : '192.168.1.100:502'" />
+          <el-input v-model="f.connection.endpoint" :placeholder="endpointPlaceholder" />
         </el-form-item>
         <el-form-item v-if="f.protocol.name === 'Modbus'" label="从站地址">
           <!-- Modbus TCP 从站软件常在单端口上按 UnitId 区分多个窗口：同 IP:端口建多个设备、分别填 1/2/3... -->
@@ -152,6 +155,11 @@ const s7CpuTypes = [
 ]
 const s7 = ref({ rack: 0, slot: 1, cpuType: 'S-1200', pingAddress: 'DB1.DBW0' })
 const isRtu = computed(() => f.value.protocol.name === 'Modbus' && f.value.protocol.dialect === 'RTU')
+// 连接地址占位按协议区分：S7 默认 102 端口，OPC UA 走 opc.tcp:// 端点（12-OPC-UA接入设计.md S6）
+const endpointPlaceholder = computed(() =>
+  f.value.protocol.name === 'S7' ? '192.168.1.100:102'
+    : f.value.protocol.name === 'OPC UA' ? 'opc.tcp://127.0.0.1:4840'
+      : '192.168.1.100:502')
 
 function syncParams() {
   const p = f.value.connection.parameters
@@ -163,7 +171,7 @@ function syncParams() {
     delete p.Slot
     delete p.CpuType
     delete p.PingAddress
-  } else {
+  } else if (f.value.protocol.name === 'S7') {
     // ADR-024 P3-1：S7 必须落库 Rack/Slot/CpuType/PingAddress，否则后端只能用默认值（S7-300/400 必连不上）
     delete p.DataFormat
     delete p.UnitId
@@ -171,6 +179,14 @@ function syncParams() {
     p.Slot = s7.value.slot
     p.CpuType = s7.value.cpuType
     p.PingAddress = s7.value.pingAddress
+  } else {
+    // OPC UA 无协议特有参数：清掉切换协议时残留的 Modbus/S7 参数，避免 Rack/Slot 等污染连接（12-OPC-UA接入设计.md S6）
+    delete p.DataFormat
+    delete p.UnitId
+    delete p.Rack
+    delete p.Slot
+    delete p.CpuType
+    delete p.PingAddress
   }
   if (isRtu.value) {
     p.Transport = 'RTU'
@@ -210,13 +226,18 @@ function loadS7FromParams() {
 }
 
 function onProtocolChange() {
-  if (f.value.protocol.name !== 'Modbus') {
+  const ep = f.value.connection.endpoint
+  if (f.value.protocol.name === 'Modbus') {
+    if (!f.value.protocol.dialect) f.value.protocol.dialect = 'TCP'
+    if (ep === '127.0.0.1:102' || ep.startsWith('opc.tcp://')) f.value.connection.endpoint = '127.0.0.1:502'
+  } else if (f.value.protocol.name === 'S7') {
     // ADR-024 P3-2：S7 仅 TCP（102 端口）；从 Modbus 默认地址切过来时同步换端口
     f.value.protocol.dialect = 'TCP'
-    if (f.value.connection.endpoint === '127.0.0.1:502') f.value.connection.endpoint = '127.0.0.1:102'
+    if (ep === '127.0.0.1:502' || ep.startsWith('opc.tcp://')) f.value.connection.endpoint = '127.0.0.1:102'
   } else {
-    if (!f.value.protocol.dialect) f.value.protocol.dialect = 'TCP'
-    if (f.value.connection.endpoint === '127.0.0.1:102') f.value.connection.endpoint = '127.0.0.1:502'
+    // OPC UA（12-OPC-UA接入设计.md S6）：无方言（后端 ProtocolIdentifier.OpcUa 无 Dialect），默认端点 opc.tcp://127.0.0.1:4840
+    f.value.protocol.dialect = null as any
+    if (ep === '127.0.0.1:502' || ep === '127.0.0.1:102') f.value.connection.endpoint = 'opc.tcp://127.0.0.1:4840'
   }
   if (!isRtu.value && f.value.connection.endpoint.startsWith('COM')) f.value.connection.endpoint = f.value.protocol.name === 'S7' ? '127.0.0.1:102' : '127.0.0.1:502'
 }
@@ -236,7 +257,8 @@ onMounted(async () => {
     if (d) {
       f.value = { ...f.value, ...d as any, protocol: { ...(d as any).protocol }, connection: { ...(d as any).connection, parameters: (d as any).connection?.parameters ?? {} } }
       loadSerialFromParams()
-      loadS7FromParams()
+      // OPC UA 无 Rack/Slot 参数，S7 参数仅在 S7 协议下回填（12-OPC-UA接入设计.md S6）
+      if (f.value.protocol.name === 'S7') loadS7FromParams()
     }
   }
 })

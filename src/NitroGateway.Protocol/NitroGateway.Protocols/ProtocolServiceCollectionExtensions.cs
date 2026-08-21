@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Protocols.Modbus;
+using NitroGateway.Protocols.OpcUa;
 using NitroGateway.Protocols.S7;
 
 namespace NitroGateway.Protocols;
@@ -17,6 +18,7 @@ public static class ProtocolServiceCollectionExtensions
         {
             var factory = new ProtocolDriverFactory(sp);
             ModbusRegistration.Register(factory);
+            OpcUaRegistration.Register(factory);
             S7Registration.Register(factory);
             return factory;
         });

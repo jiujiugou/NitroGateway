@@ -11,7 +11,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="*" />
+    <!-- ADR 固定：Version="*" 每次还原取最新（已还原 1.5.378.156，net10.0），固定避免漂移 -->
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.156" />
   </ItemGroup>
 
 </Project>

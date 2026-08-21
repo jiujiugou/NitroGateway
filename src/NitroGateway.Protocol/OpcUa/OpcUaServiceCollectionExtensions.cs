@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace NitroGateway.Protocol.OpcUa;
+namespace NitroGateway.Protocols.OpcUa;
 
 /// <summary>OPC UA 模块 DI 注册</summary>
 public static class OpcUaServiceCollectionExtensions

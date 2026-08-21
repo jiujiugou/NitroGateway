@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
     <ProjectReference Include="..\Modbus\NitroGateway.Protocol.Modbus.csproj" />
+    <ProjectReference Include="..\OpcUa\NitroGateway.Protocol.OpcUa.csproj" />
     <ProjectReference Include="..\S7\NitroGateway.Protocol.S7.csproj" />
   </ItemGroup>
 

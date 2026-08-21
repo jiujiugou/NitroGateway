@@ -174,6 +174,60 @@ public class PointBatchServiceTests
         Assert.Contains("暂不支持 Bool", ex.Message);
     }
 
+    // ══════════════════════════════════════════════════
+    //  OPC UA 批量生成（ns={n};i={id} 数值标识符 +1 递增）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>OPC UA 数值标识符逐点 +1：ns=2;i=1001 → 1002 → 1003，NamespaceIndex 保持不变。</summary>
+    [Fact]
+    public void Generate_OpcUa_NumericId_IncrementsByOne()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "ns=2;i=1001", 3, DataType.Float, protocol: "OPC UA");
+        Assert.Equal("ns=2;i=1001", points[0].Address);
+        Assert.Equal("ns=2;i=1002", points[1].Address);
+        Assert.Equal("ns=2;i=1003", points[2].Address);
+    }
+
+    /// <summary>协议名 "OPC UA" 带空格也应识别（前端 device.protocol.name 透传）。</summary>
+    [Fact]
+    public void Generate_OpcUa_ProtocolNameWithSpace_Works()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "ns=0;i=1", 2, DataType.Int32, protocol: "OPC UA");
+        Assert.Equal("ns=0;i=1", points[0].Address);
+        Assert.Equal("ns=0;i=2", points[1].Address);
+    }
+
+    /// <summary>OPC UA 字符串标识符（s=）无连续编号语义，批量生成应明确拒绝并提示。</summary>
+    [Fact]
+    public void Generate_OpcUa_StringId_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=3;s=Temperature", 3, DataType.Float, protocol: "OPC UA"));
+        Assert.Contains("仅支持数值标识符", ex.Message);
+    }
+
+    /// <summary>OPC UA GUID 标识符（g=）与 Opaque 标识符（b=）同样不支持批量生成。</summary>
+    [Fact]
+    public void Generate_OpcUa_GuidAndOpaqueId_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=4;g=6A4E4C20-4D72-4B4C-9C8A-123456789ABC", 2, DataType.Float, protocol: "OPC UA"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=5;b=AQID", 2, DataType.Float, protocol: "OPC UA"));
+    }
+
+    /// <summary>OPC UA 非法起始地址（缺 ns 前缀 / 非 i= 形式）应显式报错。</summary>
+    [Fact]
+    public void Generate_OpcUa_InvalidAddress_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "40001", 2, DataType.Float, protocol: "OPC UA"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=2;s=Temperature", 2, DataType.Float, protocol: "OPC UA"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=2;i=abc", 2, DataType.Float, protocol: "OPC UA"));
+    }
+
     /// <summary>Modbus 起始地址含非数字内容时应显式报错（回归：int→string 后仍拒绝垃圾输入）。</summary>
     [Fact]
     public void Generate_Modbus_InvalidStartAddress_Throws()
