@@ -23,7 +23,7 @@ public static class GatewayActivities
     /// <summary>数据转发（Forwarder）</summary>
     public const string Forward = "Forward";
 
-    /// <summary>SQLite 写入操作（SqliteMeasurementStore / SqliteForwardBuffer）</summary>
+    /// <summary>SQLite 写入操作（SqliteMeasurementStore / SqliteForwardOutbox）</summary>
     public const string SqliteWrite = "SqliteWrite";
 
     /// <summary>MQTT 发布操作（MqttClientWrapper）</summary>

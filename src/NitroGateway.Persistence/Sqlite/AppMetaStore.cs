@@ -23,7 +23,7 @@ public interface IAppMetaStore
 
 /// <summary>
 /// app_meta 键值表 SQLite 实现（M006）。每次操作使用独立连接（ADR-001 P1-4：共享 Singleton
-/// 裸连接跨线程并发不安全，与 SqliteForwardBuffer 同模式）。表不存在时视为缺省（Get 返回 null）。
+/// 裸连接跨线程并发不安全，与 SqliteForwardOutbox 同模式）。表不存在时视为缺省（Get 返回 null）。
 /// </summary>
 public sealed class SqliteAppMetaStore : IAppMetaStore
 {

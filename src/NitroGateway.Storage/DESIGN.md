@@ -26,7 +26,7 @@ NitroGateway.Infrastructure.Sqlite/         ← SQLite 实现（新增）
 ├── SqliteDeviceRepository.cs
 ├── SqlitePointRepository.cs
 ├── SqliteMeasurementStore.cs
-├── SqliteForwardBuffer.cs
+├── SqliteForwardOutbox.cs
 ├── Migrations/                               FluentMigrator 迁移（TimeSeries + Buffer）
 │   ├── M001_CreateMeasurementsTable.cs
 │   └── M002_CreateForwardBufferTable.cs
@@ -276,7 +276,7 @@ services.AddNitroSqlite("Data Source=/data/nitrogateway.db");
 //   services.AddSingleton<IDeviceRepository, SqliteDeviceRepository>();
 //   services.AddSingleton<IPointRepository, SqlitePointRepository>();
 //   services.AddSingleton<IMeasurementStore, SqliteMeasurementStore>();
-//   services.AddSingleton<IForwardBuffer, SqliteForwardBuffer>();
+//   services.AddSingleton<IForwardBuffer, SqliteForwardOutbox>();
 ```
 
 ---

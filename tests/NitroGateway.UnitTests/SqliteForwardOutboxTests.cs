@@ -11,12 +11,12 @@ using Xunit;
 namespace NitroGateway.UnitTests;
 
 /// <summary>
-/// SqliteForwardBuffer 数据可靠性测试（ADR-001 P0-1/P0-2 + P1-6 补充）。
+/// SqliteForwardOutbox 数据可靠性测试（ADR-001 P0-1/P0-2 + P1-6 补充）。
 /// ADR-001 P1-4 后每个操作使用独立连接，因此用临时文件库（而非共享 :memory: 连接）承载测试。
 /// 覆盖：InFlight 启动恢复、损坏负载恢复、入队异常分类、正常往返、
 /// MarkFailed 超限死信、死信查询/重试/丢弃、Commit 删除。
 /// </summary>
-public class SqliteForwardBufferTests
+public class SqliteForwardOutboxTests
 {
     /// <summary>临时文件库：建表并在释放时删除文件；Pooling=False 避免文件句柄占用。</summary>
     private sealed class TempForwardBufferDb : IDisposable
@@ -131,7 +131,7 @@ public class SqliteForwardBufferTests
     public async Task DequeueAsync_ByChannel_IsolatesChannels()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var mqttBatch = NewBatch(Guid.NewGuid());
         var httpBatch = NewBatch(Guid.NewGuid());
@@ -154,7 +154,7 @@ public class SqliteForwardBufferTests
     public async Task EnqueueAndDequeue_WithoutChannel_DefaultsToMqtt()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var batch = NewBatch(Guid.NewGuid());
         Assert.True((await buffer.EnqueueAsync(batch)).IsSuccess);
@@ -178,7 +178,7 @@ public class SqliteForwardBufferTests
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
         InsertRow(db.ConnectionString, batchId, "{}", "InFlight");
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         Assert.Equal(0, buffer.Count);
 
@@ -195,7 +195,7 @@ public class SqliteForwardBufferTests
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
         InsertRow(db.ConnectionString, batchId, "{not-json", "Pending");
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxRetries: 3);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxRetries: 3);
 
         var result = await buffer.DequeueAsync(10);
 
@@ -216,7 +216,7 @@ public class SqliteForwardBufferTests
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
         InsertRow(db.ConnectionString, batchId, "{not-json", "Pending", retryCount: 2);
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxRetries: 2);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxRetries: 2);
 
         var result = await buffer.DequeueAsync(10);
 
@@ -237,7 +237,7 @@ public class SqliteForwardBufferTests
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
         InsertRow(db.ConnectionString, batchId, "null", "Pending");
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxRetries: 3);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxRetries: 3);
 
         var result = await buffer.DequeueAsync(10);
 
@@ -255,7 +255,7 @@ public class SqliteForwardBufferTests
     public async Task Enqueue_DuplicateBatchId_ReturnsClassifiedFailure()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var batch = NewBatch(Guid.NewGuid());
         Assert.True((await buffer.EnqueueAsync(batch)).IsSuccess);
@@ -272,7 +272,7 @@ public class SqliteForwardBufferTests
     public async Task Enqueue_ThenDequeue_Roundtrip()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var batch = NewBatch(Guid.NewGuid());
         Assert.True((await buffer.EnqueueAsync(batch)).IsSuccess);
@@ -291,7 +291,7 @@ public class SqliteForwardBufferTests
     public async Task MarkFailed_OverMaxRetries_MovesToDeadLetter()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxRetries: 2);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxRetries: 2);
         var batch = NewBatch(Guid.NewGuid());
 
         await buffer.EnqueueAsync(batch);
@@ -314,7 +314,7 @@ public class SqliteForwardBufferTests
     public async Task MarkFailed_OverMaxRetries_ReportsDeadletterMetric()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxRetries: 2);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxRetries: 2);
         var batch = NewBatch(Guid.NewGuid());
 
         await buffer.EnqueueAsync(batch);
@@ -333,7 +333,7 @@ public class SqliteForwardBufferTests
     public async Task GetCountAsync_ReturnsPendingCount_ExcludesDeadLetters()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
         await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()));
         InsertRow(db.ConnectionString, Guid.NewGuid().ToString(), "{}", "DeadLetter");
 
@@ -350,9 +350,9 @@ public class SqliteForwardBufferTests
     public async Task GetCountAsync_OnDbError_ReturnsZeroInsteadOfThrowing()
     {
         // 目录不存在的连接串：OpenAsync 必然抛 SqliteException
-        var buffer = new SqliteForwardBuffer(
+        var buffer = new SqliteForwardOutbox(
             "Data Source=C:\\no-such-dir-ntg\\no.db;Pooling=False",
-            NullLogger<SqliteForwardBuffer>.Instance);
+            NullLogger<SqliteForwardOutbox>.Instance);
 
         var count = await buffer.GetCountAsync();
 
@@ -366,7 +366,7 @@ public class SqliteForwardBufferTests
         using var db = new TempForwardBufferDb();
         var batch = NewBatch(Guid.NewGuid());
         InsertRow(db.ConnectionString, batch.Id.ToString(), Serialize(batch), "DeadLetter", retryCount: 3);
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var result = await buffer.GetDeadLettersAsync(10);
 
@@ -385,7 +385,7 @@ public class SqliteForwardBufferTests
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
         InsertRow(db.ConnectionString, batchId, "{}", "DeadLetter", retryCount: 6);
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var result = await buffer.RetryDeadLetterAsync(Guid.Parse(batchId));
 
@@ -402,7 +402,7 @@ public class SqliteForwardBufferTests
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
         InsertRow(db.ConnectionString, batchId, "{}", "DeadLetter");
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var result = await buffer.DiscardDeadLetterAsync(Guid.Parse(batchId));
 
@@ -420,7 +420,7 @@ public class SqliteForwardBufferTests
     public async Task Commit_DeletesBatches()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
         var batch = NewBatch(Guid.NewGuid());
         await buffer.EnqueueAsync(batch);
 
@@ -446,7 +446,7 @@ public class SqliteForwardBufferTests
     {
         using var db = new TempForwardBufferDb();
         DropForwardBufferTable(db.ConnectionString);
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var result = await buffer.GetDeadLettersAsync(10);
 
@@ -461,7 +461,7 @@ public class SqliteForwardBufferTests
     {
         using var db = new TempForwardBufferDb();
         DropForwardBufferTable(db.ConnectionString);
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var result = await buffer.RetryDeadLetterAsync(Guid.NewGuid());
 
@@ -476,7 +476,7 @@ public class SqliteForwardBufferTests
     {
         using var db = new TempForwardBufferDb();
         DropForwardBufferTable(db.ConnectionString);
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
 
         var result = await buffer.DiscardDeadLetterAsync(Guid.NewGuid());
 
@@ -490,8 +490,8 @@ public class SqliteForwardBufferTests
     public async Task Enqueue_WhenQueueFull_ReturnsFailure()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(
-            db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance, maxPending: 2);
+        var buffer = new SqliteForwardOutbox(
+            db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxPending: 2);
 
         Assert.True((await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()))).IsSuccess);
         Assert.True((await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()))).IsSuccess);
@@ -508,7 +508,7 @@ public class SqliteForwardBufferTests
     public async Task PurgeDeadLetters_RemovesOldKeepsRecent()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
         InsertRow(db.ConnectionString, Guid.NewGuid().ToString(), "{}", "DeadLetter");
 
         // 手动插入一条较新的死信（InsertRow 固定 2026-08-06，这里用更新时间戳）
@@ -542,7 +542,7 @@ public class SqliteForwardBufferTests
     public async Task Commit_DoesNotDeletePendingRow()
     {
         using var db = new TempForwardBufferDb();
-        var buffer = new SqliteForwardBuffer(db.ConnectionString, NullLogger<SqliteForwardBuffer>.Instance);
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
         // 先触发启动恢复完成（否则预插的 InFlight 会被当作崩溃遗留重置为 Pending）
         await buffer.DequeueAsync(10);
 
@@ -561,5 +561,51 @@ public class SqliteForwardBufferTests
         command.CommandText = "SELECT COUNT(*) FROM forward_buffer WHERE id = @id;";
         command.Parameters.AddWithValue("@id", inFlightId.ToString());
         Assert.Equal(0L, command.ExecuteScalar());
+    }
+
+    /// <summary>
+    /// 取消契约（统一 OCE）：预取消 token 调用 DequeueAsync 直接抛 OperationCanceledException，
+    /// 不吞进 OperationResult——停机路径由 Forwarder/HTTP/Collection 引擎循环层显式捕获 OCE 处理。
+    /// </summary>
+    [Fact]
+    public async Task Dequeue_Cancelled_Throws()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await buffer.DequeueAsync(10, cts.Token));
+    }
+
+    /// <summary>
+    /// 取消契约（统一 OCE）：预取消 token 调用 EnqueueAsync 抛 OCE。
+    /// 此前 Enqueue 的 catch(Exception) 会把 OCE 吞成 OperationResult 失败（契约不一致），
+    /// 重构后与其余方法一致：取消一律抛出。
+    /// </summary>
+    [Fact]
+    public async Task Enqueue_Cancelled_Throws()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()), cts.Token));
+    }
+
+    /// <summary>取消契约（统一 OCE）：预取消 token 调用 MarkFailedAsync 抛 OCE，不吞进 OperationResult。</summary>
+    [Fact]
+    public async Task MarkFailed_Cancelled_Throws()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await buffer.MarkFailedAsync(Guid.NewGuid(), "cancelled", cts.Token));
     }
 }
