@@ -247,6 +247,47 @@ public class SqliteAlarmRepositoryTests
         Assert.Empty(result.Value!);
     }
 
+    /// <summary>ADR-065 A1：今日告警 KPI——按 occurred_at 精确计数（含已恢复，时间含边界）</summary>
+    [Fact]
+    public async Task CountOccurredSinceAsync_CountsOccurrencesAtBoundary()
+    {
+        var repo = new SqliteAlarmRepository(CreateContext(), NullLogger<SqliteAlarmRepository>.Instance);
+        var deviceId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await repo.SaveAsync(NewAlarmAt(deviceId, now));
+        await repo.SaveAsync(NewAlarmAt(deviceId, now.AddHours(-2)));
+        await repo.SaveAsync(NewAlarmAt(deviceId, now.AddDays(-1)));
+
+        var withinHour = await repo.CountOccurredSinceAsync(now.AddHours(-1));
+        Assert.True(withinHour.IsSuccess);
+        Assert.Equal(1, withinHour.Value);
+
+        var twoDays = await repo.CountOccurredSinceAsync(now.AddDays(-2));
+        Assert.True(twoDays.IsSuccess);
+        Assert.Equal(3, twoDays.Value);
+
+        var future = await repo.CountOccurredSinceAsync(now.AddMinutes(1));
+        Assert.True(future.IsSuccess);
+        Assert.Equal(0, future.Value);
+    }
+
+    /// <summary>构造指定发生时间的告警（NewAlarm 的 OccurredAt 为 init，需整体初始化）</summary>
+    private static AlarmDomain.Alarm NewAlarmAt(Guid deviceId, DateTime occurredAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        RuleId = Guid.NewGuid(),
+        DeviceId = deviceId,
+        PointId = Guid.NewGuid(),
+        TriggerValue = 80.5,
+        Threshold = 70,
+        Severity = AlarmDomain.AlarmSeverity.Warning,
+        Message = "温度超限",
+        State = AlarmDomain.AlarmState.Active,
+        FirstExceededAt = occurredAt,
+        OccurredAt = occurredAt
+    };
+
     /// <summary>P1-1：仓储异常必须返回 OperationResult（不向调用方抛 SQLite 异常）</summary>
     [Fact]
     public async Task SaveAsync_TableMissing_ReturnsFailureNotException()

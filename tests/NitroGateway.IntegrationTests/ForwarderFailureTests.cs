@@ -18,7 +18,7 @@ public class ForwarderFailureTests
 {
     private static ForwarderImpl CreateForwarder(
         FakeForwardBuffer buffer, FakeMqttClient mqtt, CapturingLogger<ForwarderImpl> logger)
-        => new(buffer, new JsonMessageSerializer(), mqtt, new ForwardingThrottle(), logger);
+        => new(buffer, new JsonMessageSerializer(), mqtt, logger);
 
     private static BatchMeasurements NewBatch(Guid id) => new()
     {

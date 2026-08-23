@@ -18,8 +18,7 @@ namespace NitroGateway.IntegrationTests;
 public class ForwarderMetricsTests
 {
     private static ForwarderImpl CreateForwarder(FakeForwardBuffer buffer, FakeMqttClient mqtt)
-        => new(buffer, new JsonMessageSerializer(), mqtt, new ForwardingThrottle(),
-            NullLogger<ForwarderImpl>.Instance);
+        => new(buffer, new JsonMessageSerializer(), mqtt, NullLogger<ForwarderImpl>.Instance);
 
     [Fact]
     public async Task EmptyRound_ResetsBacklogGaugeToZero()

@@ -1,9 +1,9 @@
-# AGENTS.md — NitroGateway
+﻿# AGENTS.md — NitroGateway
 
 ## 项目
 工业物联网边缘网关（.NET 10）：PLC 采集（Modbus TCP/RTU、S7）→ 本地 SQLite → MQTT 转发云端 → Vue 3 管理面板。
 
-- 构建: `dotnet build NitroGateway.slnx`; 测试: `dotnet test tests/NitroGateway.UnitTests`（基线 130 通过）
+- 构建: `dotnet build NitroGateway.slnx`; 测试: `dotnet test tests/NitroGateway.UnitTests`（基线 726 通过，另有 51 集成）
 - 入口: `src/NitroGateway.Webapi`（端口 5100）, 前端 5173, 登录 admin/admin123
 - 技术栈: .NET 10 / ASP.NET Core / SQLite（EF Core + Dapper + FluentMigrator）/ MQTTnet / Vue 3 + Element Plus + ECharts / Docker Compose
 
@@ -39,6 +39,6 @@
 2. G1 确认：破坏性操作、接口/数据模型变更、依赖版本、行为变更、安全相关，先一句话说明再动手；其余直接做
 3. 验证：改动附测试，关键逻辑红绿对照，收尾跑构建 + 全量测试
 4. 记忆在 notes/：结论与当前目标写 `notes/worklog/YYYY-MM-DD.md`（当前目标段放最近日期文件头部），扫描/排查问题写 `notes/ADR/`，不建 spec/plan/tasks 文档
-5. 扫描/排查出的问题直接写 `notes/ADR/ADR-NNN-标题.md`（问题 + 代码位置 + 修复方向，一屏内），对话不重复罗列；修复时在代码处加注释说明，修完从 ADR 删除该条；网上搜得到的通用知识不记 ADR 每次会话都会读，保持一屏内；条目标题已含类名/唯一标识
+5. 扫描/排查出的问题直接写 `notes/ADR/<模块>/ADR-NNN-标题.md`（按模块归入对应文件夹，模块名以模块表为准，见 `notes/ADR/README.md` 约定；问题 + 代码位置 + 修复方向，一屏内），对话不重复罗列；修复时在代码处加注释说明，修完从 ADR 删除该条；网上搜得到的通用知识不记 ADR 每次会话都会读，保持一屏内；条目标题已含类名/唯一标识
 6. git 提交/推送默认由用户执行；用户明确指示时 AI 可代执行，执行后须在 `notes/worklog/YYYY-MM-DD.md` 记录提交哈希、分支/远程与结果
 7. 详情写注释：类/方法/属性的细节（含义、默认值、边界、设计意图）写进代码 XML 注释、随代码维护；

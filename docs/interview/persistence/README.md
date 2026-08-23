@@ -13,7 +13,7 @@
 
 ```
 Storage 接口（只增不删）→ SqlitePragmas（并发基础）→ SqliteMeasurementStore（时序热路径）
-→ SqliteForwardBuffer（两阶段/死信）→ MigrationRunner（迁移/备份）→ SqliteErrorClassifier（错误分类）
+→ SqliteForwardOutbox（两阶段/重试超限丢弃）→ MigrationRunner（迁移/备份）→ SqliteErrorClassifier（错误分类）
 → EF 仓储 + DomainMapper（配置 CRUD）→ MeasurementRetentionService（数据生命周期）→ 测试 → 开放题
 ```
 
@@ -25,7 +25,7 @@ Storage 接口（只增不删）→ SqlitePragmas（并发基础）→ SqliteMea
 | DI 入口 | `src/NitroGateway.Persistence/Sqlite/SqliteServiceCollectionExtensions.cs` | Scoped EF 仓储 + Singleton Dapper 存储 + HostedService |
 | 连接 PRAGMA | `src/NitroGateway.Persistence/Sqlite/SqlitePragmas.cs` | WAL + synchronous=NORMAL + busy_timeout=5000 |
 | 时序存储 | `src/NitroGateway.Persistence/Sqlite/SqliteMeasurementStore.cs` | Dapper 批量写入/范围查询/最新值/分页/清理 |
-| 转发缓冲 | `src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs` | 两阶段 FIFO + 重试 + 死信 + 启动恢复 |
+| 转发缓冲 | `src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs` | 两阶段 FIFO + 重试（超限丢弃）+ 启动恢复（2026-08-22 删死信） |
 | 保留清理 | `src/NitroGateway.Persistence/Sqlite/MeasurementRetentionService.cs` | 后台周期删除过期时序数据 |
 | 错误分类 | `src/NitroGateway.Persistence/Sqlite/SqliteErrorClassifier.cs` | SQLite 错误码 → OperationalError |
 | EF 上下文 | `src/NitroGateway.Persistence/Sqlite/NitroGatewayDbContext.cs` | devices/points + alarms/alarm_rules 映射 |
@@ -38,7 +38,7 @@ Storage 接口（只增不删）→ SqlitePragmas（并发基础）→ SqliteMea
 ## 跨模块依赖（答题时需要知道的上下文）
 
 - `IMeasurementStore`：Collection 的 `MeasurementWriteHost` 写入；Webapi 控制器查询（History / Latest / Paged）
-- `IForwardBuffer`：Collection 入队；Forwarder 出队 / 提交 / 标记失败 / 死信处理
+- `IForwardBuffer`：Collection 入队；Forwarder 出队 / 提交 / 标记失败（死信方法【停用】保留，接口只增不删）
 - `IDeviceRepository` / `IPointRepository`：Device 模块 `DeviceManager` / `PointManager` 消费
 - `IAlarmRepository` / `IAlarmRuleRepository`：Alarm 模块消费（接口定义在 `NitroGateway.Alarm.Repository`）
 - `OperationResult` / `OperationalError`：Shared 模块的返回值契约
@@ -47,5 +47,5 @@ Storage 接口（只增不删）→ SqlitePragmas（并发基础）→ SqliteMea
 ## 注意事项
 
 - **代码是唯一事实来源**。Storage 的 README/DESIGN.md 存在文档漂移（例如「仓储 Singleton 注册」「`AddNitroSqlite(连接串)`」旧签名、「Infrastructure.Sqlite 目录」旧结构），答题以代码 + XML 注释为准，题目中也埋了漂移题。
-- 测试是理解行为最快的捷径：`tests/NitroGateway.UnitTests`（SqliteMeasurementStoreTests / SqliteForwardBufferTests / SqliteErrorClassifierTests / SqliteAlarmRepositoryTests / MeasurementRetentionServiceTests / MeasurementWriteHostTests）。
-- 答完所有题目后，试着不看代码把「采集写入 → 转发出队 → 崩溃恢复 → 死信 → 迁移备份」的完整时序/状态机画出来——能画出来就是吃透了。
+- 测试是理解行为最快的捷径：`tests/NitroGateway.UnitTests`（SqliteMeasurementStoreTests / SqliteForwardOutboxTests / SqliteErrorClassifierTests / SqliteAlarmRepositoryTests / MeasurementRetentionServiceTests / MeasurementWriteHostTests）。
+- 答完所有题目后，试着不看代码把「采集写入 → 转发出队 → 崩溃恢复 → 超限丢弃 → 迁移备份」的完整时序/状态机画出来——能画出来就是吃透了。

@@ -19,7 +19,7 @@
 - 协议解析/驱动/长连接自愈：Protocol 模块（`IProtocolDriverPool`、`ReliableProtocolDriver`）
 - 健康判定（唯一决策者）：Device 模块 `DeviceHealthMonitor`
 - 存储实现：Storage 接口 + Persistence（SQLite）
-- MQTT 转发 / AIMD 节流 / 死信：Forwarder 模块
+- MQTT 转发（固定批量上限）：Forwarder 模块（2026-08-22 删 AIMD/死信）
 - 领域模型：Domain 模块
 - Collection 只做：编排调度、读→转→发→上报流水线、熔断「保护执行」、健康信号上报
 
@@ -114,7 +114,7 @@ Bool/String：直接透传，`Quality = Good`，不做缩放与死区。数值�
 容量 1000 批，`BoundedChannelFullMode.DropOldest`。选 DropOldest：数据按时间戳旧→新，**最旧数据价值最低**（丢最旧优先）；DropWrite 会丢最新数据（更差）；Wait 会阻塞采集热路径（绝对不行）。`Post` 返回 false → DataDispatcher 记 Warning「Measurement Channel 已满，丢弃数据」。单批写入异常：catch 记日志，跳过该批继续消费——落库故障不阻塞采集。
 
 **Q5.4 数据会丢吗 / 可靠性分级**
-时序库层面会丢（DropOldest），但**转发缓冲是独立同步写入**（`EnqueueAsync` 成功才继续），MQTT 转发数据不丢。可靠性分级：Buffer（SqliteForwardBuffer 两阶段出队 InFlight + 死信重试）是「可靠」主通道；时序 Channel 是「尽力而为」（本地历史/可视化用途）。若时序也不能丢：加背压（落库失败暂停采集并告警）、增大容量 + 批量合并、或时序也走持久化队列（成本高）。
+时序库层面会丢（DropOldest），但**转发缓冲是独立同步写入**（`EnqueueAsync` 成功才继续），MQTT 转发数据不丢。可靠性分级：Buffer（SqliteForwardOutbox 两阶段出队 InFlight + 重试/超限丢弃）是「可靠」主通道；时序 Channel 是「尽力而为」（本地历史/可视化用途）。若时序也不能丢：加背压（落库失败暂停采集并告警）、增大容量 + 批量合并、或时序也走持久化队列（成本高）。
 
 **Q5.5 SinkDispatcher**
 每个事件独立 scope：Sink 可注入 Scoped 依赖（如 DbContext / DeviceManager）。单 Sink 异常 catch 记日志，不影响其他 Sink 与后续事件；消费循环外层还有兜底 catch。`Dispose`：`Writer.TryComplete()` → 不再接受新事件，后台消费完剩余事件后退出（优雅排空）。Channel 1000 条 DropOldest，满时 Warning。
@@ -232,7 +232,7 @@ finally 里 `_roundCts?.Dispose(); _roundCts = null; _currentRound = null`。Sto
 方案：① 启动时从时序库读最近一条工程值初始化 `_lastValues`（简单，但依赖时序库保留策略）；② 独立状态表异步写、重启读（写放大）；③ WAL/检查点。代价：写入放大、启动延迟、且**破坏 Pipeline「无 IO 纯计算」的边界**（需抽 `ILastValueStore` 接口）。为什么可能不值得：死区只是告警 Duration 的辅助，重启后首个值即基准，影响仅一次误判窗口。
 
 **Q10.3 可靠性分级**
-Buffer（SqliteForwardBuffer 两阶段出队 Pending→InFlight→Commit/DeadLetter + 死信重试）→ 云端数据**可靠**；时序 Channel DropOldest → 本地历史**尽力而为**。原因：云上报是核心业务（监控中心），本地历史是辅助（可视化/审计可接受少量缺失）；Buffer 入队是同步成功（await EnqueueAsync），时序走内存 Channel 异步。若时序不能丢：背压（落库失败暂停采集+告警）、容量调大+批量合并、或时序也走持久化队列（成本高、与 SQLite 写放大斗争）。
+Buffer（SqliteForwardOutbox 两阶段出队 Pending→InFlight→Commit/丢弃 + 重试）→ 云端数据**可靠**；时序 Channel DropOldest → 本地历史**尽力而为**。原因：云上报是核心业务（监控中心），本地历史是辅助（可视化/审计可接受少量缺失）；Buffer 入队是同步成功（await EnqueueAsync），时序走内存 Channel 异步。若时序不能丢：背压（落库失败暂停采集+告警）、容量调大+批量合并、或时序也走持久化队列（成本高、与 SQLite 写放大斗争）。
 
 **Q10.4 慢设备影响与隔离**
 `WhenAll` 等所有设备 → 整轮被慢设备拖长；PeriodicTimer 不堆积（下一轮立即开始）但每轮都被拖；设备卡 30s → 每轮 30s，吞吐崩塌。现有保护：熔断探测 30s 超时释放（只是 HalfOpen 探测锁，**不是读超时**）；协议层驱动超时；信号量只限并发不限时长。隔离方案：每设备 `CancellationTokenSource.CancelAfter(超时)` + 超时计为失败（推进健康/熔断）；慢设备独立调度队列。

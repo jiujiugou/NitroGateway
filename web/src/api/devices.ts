@@ -52,6 +52,27 @@ export async function deletePoint(deviceId: string, pointId: string): Promise<bo
   return data.success
 }
 
+// 写功能（docs/14）：下发控制指令到点位。借用 ThingsGateway 行内就地输入，Web 端先弹就地气泡输入，确认后调用此 API。
+// 失败原因由后端 ApiResponse.Fail 携带在 err.response.data.error.message（HTTP 400）。
+export async function writePoint(
+  deviceId: string,
+  pointId: string,
+  value: unknown
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const { data } = await client.post<ApiResponse<unknown>>(
+      `/devices/${deviceId}/points/${pointId}/write`,
+      { value }
+    )
+    return { success: data.success }
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.response?.data?.error?.message ?? err?.message ?? '写入失败'
+    }
+  }
+}
+
 export async function generatePoints(deviceId: string, req: { nameTemplate: string; startAddress: string; count: number; dataType: string; access: string; protocol?: string }): Promise<number> {
   const { data } = await client.post<ApiResponse<{ count: number }>>(`/devices/${deviceId}/points/generate`, req)
   return data.data?.count ?? 0

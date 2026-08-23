@@ -67,8 +67,8 @@
 **Q4.1 ★** Roles 里 5 个常量分别是什么？`AdminOperator = "Admin,Operator"` 为什么能直接用于 `[Authorize(Roles = ...)]`？
 代码定位：`src/NitroGateway.Security/Roles.cs:15-19`。
 
-**Q4.2 ★★** 说出本项目每个受保护控制器的角色要求（查看 vs 操作），并归纳「读」和「写/变更」的角色分层规律。
-代码定位：`src/NitroGateway.Webapi/Controllers/AlarmsController.cs:13,42`、`AlarmRulesController.cs:14`、`DeadLettersController.cs:13`、`PointImportController.cs:13`、`StatusController.cs:15`、`DevicesController.cs:12`、`MeasurementsController.cs:11`。
+**Q4.2 ★★** 说出本项目每个受保护控制器的角色要求（查看 vs 操作），并归纳「读」和「写/变更」的角色分层规律。（注：DeadLettersController 已于 2026-08-22 删除）
+代码定位：`src/NitroGateway.Webapi/Controllers/AlarmsController.cs:13,42`、`AlarmRulesController.cs:14`、`PointImportController.cs:13`、`StatusController.cs:15`、`DevicesController.cs:12`、`MeasurementsController.cs:11`。
 
 **Q4.3 ★★** 为什么告警「确认」只允许 Admin/Operator，而「查看」允许 Viewer？这体现了什么安全原则？
 代码定位：`src/NitroGateway.Webapi/Controllers/AlarmsController.cs:13,42`。

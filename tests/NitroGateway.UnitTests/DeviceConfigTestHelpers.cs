@@ -121,6 +121,7 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
     public bool EditDeviceResult = true;
     public bool EditPointResult = true;
     public bool EditPointBatchResult = true;
+    public bool EditWriteResult = true;
     public bool ConfirmResult = true;
     public string? EditDeviceFillName;
     public string? EditPointFillName;
@@ -131,6 +132,7 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
     public int EditDeviceCalls;
     public int EditPointCalls;
     public int EditPointBatchCalls;
+    public int EditWriteCalls;
     public int ConfirmCalls;
     public List<(Guid DeviceId, string DeviceName, string ProtocolName)> ShowPointsCalls { get; } = [];
 
@@ -162,6 +164,12 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
         if (EditPointBatchFillProtocol is not null)
             editor.ProtocolName = EditPointBatchFillProtocol;
         return EditPointBatchResult;
+    }
+
+    public bool EditWrite(WriteValueEditor editor)
+    {
+        EditWriteCalls++;
+        return EditWriteResult;
     }
 
     public bool Confirm(string title, string message)

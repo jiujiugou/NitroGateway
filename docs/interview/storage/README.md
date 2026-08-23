@@ -16,8 +16,8 @@
 
 ## 覆盖范围（读题前先通读）
 
-- 接口层：`src/NitroGateway.Storage/`（`Configuration/`、`TimeSeries/`、`Buffer/`，共 3 个接口 + 1 个死信 DTO + README/DESIGN.md）
-- 实现层：`src/NitroGateway.Persistence/Sqlite/`（`SqliteDeviceRepository`、`SqlitePointRepository`、`SqliteMeasurementStore`、`SqliteForwardBuffer`、`SqlitePragmas`、`SqliteErrorClassifier`、`MeasurementRetentionService`）
+- 接口层：`src/NitroGateway.Storage/`（`Configuration/`、`TimeSeries/`、`Buffer/`，共 3 个接口 + 1 个死信 DTO【停用保留】+ README/DESIGN.md）
+- 实现层：`src/NitroGateway.Persistence/Sqlite/`（`SqliteDeviceRepository`、`SqlitePointRepository`、`SqliteMeasurementStore`、`SqliteForwardOutbox`、`SqlitePragmas`、`SqliteErrorClassifier`、`MeasurementRetentionService`）
 - 领域模型：`src/NitroGateway.Domain/`（`Device`、`DevicePoint`、`PointSnapshot`、`BatchMeasurements`、`MeasurementRecord`、`QualityCode`）
 - 迁移：`src/NitroGateway.Persistence/Migrations/M001~M004`
 - 测试：`tests/NitroGateway.UnitTests/Sqlite*Tests.cs`、`MeasurementRetentionServiceTests.cs`
@@ -30,7 +30,7 @@
 
 **A2.** Storage 下为什么拆成 `Buffer/`、`Configuration/`、`TimeSeries/` 三个子项目（三个独立 csproj）而不是一个？各自的核心消费者是谁？（提示：`Buffer/README.md`、`TimeSeries/README.md`、`Configuration/README.md`；`Forwarder`、`Collection`、`Device`、`Webapi` 谁用谁）
 
-**A3.** 接口方法返回值大量使用 `OperationResult` / `OperationResult<T>` 而不是抛异常。为什么？哪些错误是「业务流程的一部分」？（提示：`src/NitroGateway.Shared` 的 `OperationResult`；`SqliteForwardBuffer` 每个方法都 try/catch 归约；`DataDispatcher` 失败降级分支）
+**A3.** 接口方法返回值大量使用 `OperationResult` / `OperationResult<T>` 而不是抛异常。为什么？哪些错误是「业务流程的一部分」？（提示：`src/NitroGateway.Shared` 的 `OperationResult`；`SqliteForwardOutbox` 每个方法都 try/catch 归约；`DataDispatcher` 失败降级分支）
 
 **A4.** 「接口只增不删」是哪里的纪律？破坏它会有什么后果？（提示：`AGENTS.md` 雷区第 5 条；`IMeasurementStore.QueryLatestAsync` 就是「只增」的实例，见 ADR-002 P2-4）
 
@@ -52,7 +52,7 @@
 
 **B6.** `DeleteAsync(deviceId, pointId)` 为什么是双条件？不加 `deviceId` 条件会有什么 bug？（提示：`SqlitePointRepository.DeleteAsync` 的 SQL 条件）
 
-**B7.** 为什么 Configuration 用 EF Core，而 TimeSeries / Buffer 用裸 SQL（Dapper）？这两种存储的访问模式有什么本质区别？（提示：`src/NitroGateway.Storage/DESIGN.md` 约束 1；`SqliteMeasurementStore` 类注释；`SqliteForwardBuffer` 类注释）
+**B7.** 为什么 Configuration 用 EF Core，而 TimeSeries / Buffer 用裸 SQL（Dapper）？这两种存储的访问模式有什么本质区别？（提示：`src/NitroGateway.Storage/DESIGN.md` 约束 1；`SqliteMeasurementStore` 类注释；`SqliteForwardOutbox` 类注释）
 
 ## C. TimeSeries（时序数据存储）
 
@@ -74,27 +74,27 @@
 
 **C9.** `idx_measurements_query (device_id, point_id, timestamp)` 这个复合索引分别支撑了哪些查询？`QueryByDeviceAsync` 只用 `device_id` 时能走索引吗？（提示：M001 迁移；复合索引最左前缀原则）
 
-## D. Buffer（转发缓冲/死信）
+## D. Buffer（转发缓冲/重试超限丢弃）
 
 **D1.** `IForwardBuffer` 解决的核心问题是什么？「断电不丢」靠什么保证？（提示：`Buffer/README.md`；`IForwardBuffer` 类注释；WAL 模式）
 
-**D2.** 画出 Buffer 的状态机（含全部状态与转换），并说出每个转换对应的 SQL 操作。（提示：`SqliteForwardBuffer` 类注释：Pending → InFlight → 删除 / 失败回 Pending / 超限进 DeadLetter；M002、M004 迁移）
+**D2.** 画出 Buffer 的状态机（含全部状态与转换），并说出每个转换对应的 SQL 操作。（提示：`SqliteForwardOutbox` 类注释：Pending → InFlight → 删除 / 失败回 Pending / 超限直接 DELETE 丢弃；M002、M004 迁移）
 
-**D3.** `EnqueueAsync` 入队时存了什么？payload 是什么格式？（提示：`SqliteForwardBuffer.EnqueueAsync`：CamelCase JSON 的 `BatchMeasurements`，初始 `retry_count=0`）
+**D3.** `EnqueueAsync` 入队时存了什么？payload 是什么格式？（提示：`SqliteForwardOutbox.EnqueueAsync`：CamelCase JSON 的 `BatchMeasurements`，初始 `retry_count=0`）
 
-**D4.** 解释「两阶段提交」：`DequeueAsync` 为什么「查询但不删除」？`CommitAsync` 在什么时候被谁调用？如果不先标 `InFlight` 会怎样？（提示：`SqliteForwardBuffer.DequeueAsync`：SELECT Pending + 同事务 UPDATE InFlight；`CommitAsync`：DELETE；Forwarder 成功转发后调用；DESIGN.md 约束 5）
+**D4.** 解释「两阶段提交」：`DequeueAsync` 为什么「查询但不删除」？`CommitAsync` 在什么时候被谁调用？如果不先标 `InFlight` 会怎样？（提示：`SqliteForwardOutbox.DequeueAsync`：SELECT Pending + 同事务 UPDATE InFlight；`CommitAsync`：DELETE；Forwarder 成功转发后调用；DESIGN.md 约束 5）
 
 **D5.** `InFlight` 状态存在的意义是什么？去掉它会引入什么问题？（提示：并发/多实例重复消费、崩溃后重复转发；对比「已取出未确认」窗口）
 
-**D6.** 进程崩溃后遗留的 `InFlight` 批次会怎样？在哪个时机恢复？恢复失败会阻断启动吗？（提示：`SqliteForwardBuffer` 构造函数启动恢复：UPDATE InFlight → Pending；try/catch 仅警告）
+**D6.** 进程崩溃后遗留的 `InFlight` 批次会怎样？在哪个时机恢复？恢复失败会阻断启动吗？（提示：`SqliteForwardOutbox` 构造函数启动恢复：UPDATE InFlight → Pending；try/catch 仅警告）
 
-**D7.** `MarkFailedAsync` 的 `retry_count` 语义：一次失败如何计数？超过 `maxRetries`（默认几？）后进哪个状态？`last_error` 什么时候清空？（提示：`SqliteForwardBuffer.MarkFailedAsync`；`RetryDeadLetterAsync` 重置 `retry_count=0, last_error=NULL`）
+**D7.** `MarkFailedAsync` 的 `retry_count` 语义：一次失败如何计数？超过 `maxRetries`（默认几？）后怎么处置（2026-08-22 起直接丢弃）？`last_error` 什么时候写/清？（提示：`SqliteForwardOutbox.MarkFailedAsync` 先 DELETE 再 UPDATE 回 Pending）
 
-**D8.** 出队时发现 payload 反序列化失败（损坏行）会怎么处理？会不会把整批都卡死？（提示：`SqliteForwardBuffer.DequeueAsync` 里的 `RecoverCorruptRowAsync` → 复用 `MarkFailedAsync`；继续处理其余行）
+**D8.** 出队时发现 payload 反序列化失败（损坏行）会怎么处理？会不会把整批都卡死？（提示：`SqliteForwardOutbox.DequeueAsync` 里的 `RecoverCorruptRowAsync` → 复用 `MarkFailedAsync`；继续处理其余行）
 
-**D9.** `DeadLetterEntry` 为什么故意只带最小字段（不含设备名）？以后想展示设备名怎么办？（提示：`DeadLetterEntry.cs` 注释；ADR-005 P3-2：join devices 表或加冗余字段）
+**D9.** `DeadLetterEntry` 现在是什么状态？为什么接口里还留着？（提示：`DeadLetterEntry.cs`【停用】注释；`IForwardBuffer` 接口只增不删；原设计只带最小字段不含设备名）
 
-**D10.** `Count` 和 `GetCountAsync` 有什么区别？为什么后来新增了 `GetCountAsync`？（提示：`SqliteForwardBuffer.Count` 是同步查 DB；ADR-001 P3-13：async 路径避免同步阻塞）
+**D10.** `Count` 和 `GetCountAsync` 有什么区别？为什么后来新增了 `GetCountAsync`？（提示：`SqliteForwardOutbox.Count` 是同步查 DB；ADR-001 P3-13：async 路径避免同步阻塞）
 
 **D11.** `idx_forward_buffer_status (status, enqueued_at)` 支撑了什么？出队 SQL 的 `ORDER BY enqueued_at ASC` 为什么能保证 FIFO？（提示：M002 迁移；出队 SQL）
 
@@ -104,7 +104,7 @@
 
 **E2.** `SqliteErrorClassifier` 把哪些 SQLite 错误码映射成什么？为什么 `SQLITE_FULL(13)` 才表示磁盘满，而 `IOERR(10)`/`CORRUPT(11)` 归为通用 Storage 错误？（提示：`SqliteErrorClassifier.cs`；ADR-002 P3-4；`SqliteErrorClassifierTests.cs`）
 
-**E3.** 为什么实现层每个方法都 try/catch 归约为 `OperationResult` 而不是向上抛？对比：`SqliteDeviceRepository`（EF）为什么反而**不**捕获异常？（提示：`SqliteForwardBuffer` 各方法 vs `SqliteDeviceRepository.SaveAsync` 注释「由上层统一处理」——两种策略的适用场景）
+**E3.** 为什么实现层每个方法都 try/catch 归约为 `OperationResult` 而不是向上抛？对比：`SqliteDeviceRepository`（EF）为什么反而**不**捕获异常？（提示：`SqliteForwardOutbox` 各方法 vs `SqliteDeviceRepository.SaveAsync` 注释「由上层统一处理」——两种策略的适用场景）
 
 **E4.** 如果要把 SQLite 换成 PostgreSQL / InfluxDB / TimescaleDB：哪些文件必须改？哪些文件一行都不用动？接口为什么能保证这一点？（提示：DESIGN.md 原则；NuGet 包各实现自持；`NitroGateway.Storage` 无实现依赖）
 
@@ -112,18 +112,18 @@
 
 **E6.** 采集 1s 写、前端查询、Alarm 评估同时访问同一个 SQLite 文件，为什么不会互相卡死或报「database is locked」？（提示：WAL + busy_timeout + 每操作独立连接 + 短事务的组合拳）
 
-**E7.** Buffer 的 payload 为什么整批存 JSON，而不是把每条测量拆成行存？拆行存储会破坏什么？（提示：批量整体入队/出队/提交的原子性；死信只需摘要；`DeadLetterEntry` 从 payload 反序列化取 DeviceId/RecordCount）
+**E7.** Buffer 的 payload 为什么整批存 JSON，而不是把每条测量拆成行存？拆行存储会破坏什么？（提示：批量整体入队/出队/提交的原子性；重试/丢弃只需整批摘要；`DeadLetterEntry` 从 payload 反序列化取 DeviceId/RecordCount）
 
 **E8.** DESIGN.md 约束 4 说「单批不超过 1000 条以避免锁表」——代码里由谁保证这个约束？去 `MeasurementWriteHost` / 采集分发链路查一查：批量来自有界 Channel（容量 1000 批），写入前有没有分块？如果一批超过 1000 条会发生什么？（提示：`src/NitroGateway.Collection/Dispatcher/MeasurementWriteHost.cs`；`SqliteMeasurementStore.WriteAsync` 本身不分块——这是个值得记录的隐患还是已由上游保证？）
 
 ## F. 动手验证
 
 **F1.** 跑通与 Storage 相关的全部测试，并说出每个测试文件覆盖了什么：
-`dotnet test tests/NitroGateway.UnitTests --filter "FullyQualifiedName~Sqlite"`（含 `SqliteForwardBufferTests`、`SqliteMeasurementStoreTests`、`SqliteErrorClassifierTests`、`SqliteAlarmRepositoryTests`）
+`dotnet test tests/NitroGateway.UnitTests --filter "FullyQualifiedName~Sqlite"`（含 `SqliteForwardOutboxTests`、`SqliteMeasurementStoreTests`、`SqliteErrorClassifierTests`、`SqliteAlarmRepositoryTests`）
 
-**F2.** 用 `SqliteForwardBufferTests` 的方式写一个临时测试：入队 3 批 → 出队 2 批 → 模拟进程崩溃（直接 new 一个新 buffer 实例）→ 验证遗留 InFlight 被重置为 Pending 并仍可出队。
+**F2.** 用 `SqliteForwardOutboxTests` 的方式写一个临时测试：入队 3 批 → 出队 2 批 → 模拟进程崩溃（直接 new 一个新 buffer 实例）→ 验证遗留 InFlight 被重置为 Pending 并仍可出队。
 
-**F3.** 写一个测试走完死信全流程：入队 → 连续 `MarkFailedAsync` 超过 `maxRetries` → 断言进入 DeadLetter → `GetDeadLettersAsync` 能看到摘要 → `RetryDeadLetterAsync` 后重新出队成功。期间用 `last_error` 断言失败原因被记录。
+**F3.** 写一个测试走完「重试超限丢弃」全流程：入队 → 连续 `MarkFailedAsync` 超过 `maxRetries` → 断言行被物理删除（RowExists=false）且 `forward_total{status="dropped"}` 上报；期间用 `last_error` 断言失败原因被记录（参考 `SqliteForwardOutboxTests.MarkFailed_OverMaxRetries_Drops` / `_ReportsDroppedMetric`）。
 
 **F4.** 给 `DequeueAsync` 加断点单步走一遍：确认 SELECT 和 UPDATE 在**同一个事务**里提交，然后对比「先 SELECT 后单独 UPDATE（无事务）」会发生什么竞态。
 
@@ -166,13 +166,13 @@
 
 ### D 组
 - Buffer 解决断网/重启不丢待转发数据；WAL + 事务保证写入即持久化。
-- 状态机：`Pending → InFlight → 删除`；失败 `InFlight → Pending`（retry+1）；`retry_count ≥ maxRetries(默认5) → DeadLetter`；启动时遗留 InFlight 全部重置 Pending。
+- 状态机：`Pending → InFlight → 删除`；失败 `InFlight → Pending`（retry+1）；`retry_count ≥ maxRetries(默认5) → 直接 DELETE 丢弃`（2026-08-22 简化，原为 DeadLetter）；启动时遗留 InFlight 全部重置 Pending。
 - 入队存 CamelCase JSON 的 `BatchMeasurements`，初始 Pending、retry_count=0。
 - 两阶段提交：Dequeue 在**同一事务**内 SELECT Pending + UPDATE InFlight；Forwarder 成功后才 CommitAsync DELETE；未确认不删（DESIGN.md 约束 5）。
 - InFlight 防止并发/重复消费同一批；崩溃后由构造函数启动恢复兜底，恢复失败仅警告不阻断启动。
-- MarkFailed 单事务内一次 UPDATE 完成 retry_count+1 与状态迁移并记 last_error；RetryDeadLetter 重置计数并清空错误。
-- 损坏 payload：Dequeue 中反序列化失败的行走 `RecoverCorruptRowAsync` → 复用 MarkFailed 逻辑（重试/死信），其余行正常出队，不整批卡死。
-- DeadLetterEntry 最小字段（无设备名），死信量小、前端按 DeviceId 展示即可；需要名字后续 join devices 或加冗余列（ADR-005 P3-2）。
+- MarkFailed 先 DELETE（retry_count+1>=max，命中即丢弃）再 UPDATE（未命中回 Pending，retry_count+1、last_error）；UPDATE 必须带 `SET status='Pending'`，否则批次卡 InFlight。
+- 损坏 payload：Dequeue 中反序列化失败的行走 `RecoverCorruptRowAsync` → 复用 MarkFailed 逻辑（重试/丢弃），其余行正常出队，不整批卡死。
+- DeadLetterEntry 与死信方法【停用】保留（接口只增不删）；原最小字段设计（无设备名）供未来复用。
 - `Count` 是同步查 DB 的兼容属性；async 路径用 `GetCountAsync` 避免阻塞（ADR-001 P3-13）。
 - (status, enqueued_at) 索引支撑「按状态 + FIFO 序」出队；enqueued_at 为 O 格式字符串，升序即入队序。
 
@@ -183,10 +183,10 @@
 - 换库只改 `Persistence` 实现（新 NuGet 包），Storage 接口、Domain、所有消费者零改动；这就是纯接口层的价值。
 - Activity 追踪让每次 SQLite 写入出现在 Prometheus/追踪里（表名、快照数、错误标签），方便定位采集写库瓶颈。
 - 并发安全 = WAL（读写并行）+ busy_timeout（写锁等待）+ 独立短连接 + 短事务，四者缺一不可。
-- payload 整批 JSON 保证批量入队/出队/提交原子且转发语义完整；拆行会引入「半批」一致性问题，死信摘要也失去意义。
+- payload 整批 JSON 保证批量入队/出队/提交原子且转发语义完整；拆行会引入「半批」一致性问题，摘要/丢弃语义也失去意义。
 - E8 结论：`SqliteMeasurementStore.WriteAsync` 本身不分块；批量来自 `MeasurementWriteHost` 的有界 Channel（容量 1000 批）。若上游某批快照数量可能超 1000 条，需要确认分发链路是否分块，否则大事务会持锁更久——这正是「设计约束靠调用方保证」的典型例子，值得去 Collection 模块核实。
 
 ### F 组
 - F1 的过滤命令能跑通且全部绿，是吃透的前提；每个测试文件都对应本套题的若干条边界。
-- F2~F4 验证的是 D2/D4/D6/D7/D8 的答案，做不出来说明还没真懂状态机与事务边界。
+- F2~F4 验证的是 D2/D4/D6/D7/D8 的答案，做不出来说明还没真懂状态机与事务边界（F3 已随死信删除改为「丢弃」流程）。
 - F5 是最终验收：默写对不上，就把 B/C/D 组的题重做一遍。

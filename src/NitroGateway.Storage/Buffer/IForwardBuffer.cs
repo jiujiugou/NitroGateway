@@ -6,7 +6,7 @@ namespace NitroGateway.Storage.Buffer;
 /// <summary>
 /// 转发缓冲接口。FIFO 队列，断电不丢。
 /// Collection 写入 → Forwarder 取出 → 确认成功 → 提交删除。
-/// 转发失败的消息经过重试后移入死信队列 (DeadLetter)。
+/// 转发失败的消息重试超限后直接丢弃（普通遥测旧值不值钱，简化 2026-08-22；死信方法保留仅因接口只增不删）。
 /// </summary>
 public interface IForwardBuffer
 {
@@ -49,7 +49,7 @@ public interface IForwardBuffer
     Task<OperationResult> CommitAsync(IReadOnlyList<Guid> batchIds, CancellationToken ct = default);
 
     /// <summary>
-    /// 标记一次转发失败。内部累加重试计数，超过上限后自动移入死信队列。
+    /// 标记一次转发失败。内部累加重试计数，超过上限后自动丢弃。
     /// </summary>
     /// <param name="batchId">失败的批次 ID</param>
     /// <param name="reason">失败原因</param>

@@ -119,7 +119,7 @@ public class DevicesController : ControllerBase
             return BadRequest(ApiResponse<PointDto>.Fail("AddPoint", $"无效的 DataType: {d.DataType}"));
         if (!Enum.TryParse<PointAccess>(d.Access, out var access))
             return BadRequest(ApiResponse<PointDto>.Fail("AddPoint", $"无效的 Access: {d.Access}"));
-        var p = new DevicePoint { Id = Guid.NewGuid(), Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset };
+        var p = new DevicePoint { Id = Guid.NewGuid(), Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset, MinLimit = d.MinLimit, MaxLimit = d.MaxLimit };
         var r = await _points.AddAsync(deviceId, p);
         return r.IsSuccess ? Ok(ApiResponse<PointDto>.Ok(MapPoint(r.Value!))) : BadRequest(ApiResponse<PointDto>.Fail("AddPoint", r.Error!.Message));
     }
@@ -133,7 +133,7 @@ public class DevicesController : ControllerBase
             return BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", $"无效的 DataType: {d.DataType}"));
         if (!Enum.TryParse<PointAccess>(d.Access, out var access))
             return BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", $"无效的 Access: {d.Access}"));
-        var p = new DevicePoint { Id = pointId, Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset };
+        var p = new DevicePoint { Id = pointId, Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset, MinLimit = d.MinLimit, MaxLimit = d.MaxLimit };
         var r = await _points.UpdateAsync(deviceId, p);
         return r.IsSuccess ? Ok(ApiResponse<PointDto>.Ok(MapPoint(p))) : BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", r.Error!.Message));
     }
@@ -215,7 +215,7 @@ public class DevicesController : ControllerBase
         UpdatedAt = d.UpdatedAt == default ? "" : d.UpdatedAt.ToUniversalTime().ToString("O"),
         IsDeleted = d.IsDeleted
     };
-    static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset, UpdatedAt = p.UpdatedAt == default ? "" : p.UpdatedAt.ToUniversalTime().ToString("O"), IsDeleted = p.IsDeleted };
+    static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset, MinLimit = p.MinLimit, MaxLimit = p.MaxLimit, UpdatedAt = p.UpdatedAt == default ? "" : p.UpdatedAt.ToUniversalTime().ToString("O"), IsDeleted = p.IsDeleted };
     // ADR-022 P2-4：创建路径一律服务端生成新 ID，忽略客户端传入的 Id（仓储 SaveAsync 为 upsert，防 POST 覆盖既有设备）
     static Device ToDomain(DeviceDto d) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), SiteId = d.SiteId ?? "", Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
 

@@ -43,7 +43,7 @@ public static class NitroMetrics
     //  转发
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>转发次数。label: status (success|failure|deadletter)</summary>
+    /// <summary>转发次数。label: status (success|failure|dropped)。dropped = 重试超限丢弃（普通遥测旧值不值钱，简化 2026-08-22）。</summary>
     public static readonly Counter ForwardTotal = Metrics.CreateCounter(
         "nitro_forward_total",
         "转发总次数",
@@ -56,11 +56,6 @@ public static class NitroMetrics
     public static readonly Gauge BufferBacklog = Metrics.CreateGauge(
         "nitro_buffer_backlog",
         "转发缓冲中待处理的批次数");
-
-    /// <summary>当前节流批量大小（反映 MQTT 健康度）</summary>
-    public static readonly Gauge ThrottleBatchSize = Metrics.CreateGauge(
-        "nitro_throttle_batch_size",
-        "自适应节流器当前批量大小");
 
     /// <summary>HTTP 北向通道转发次数（ADR-011）。label: status (success|failure)</summary>
     public static readonly Counter HttpForwardTotal = Metrics.CreateCounter(

@@ -58,6 +58,8 @@ public class SqliteDeviceRepositoryTests
                     Deadband REAL NOT NULL DEFAULT 0,
                     ScaleFactor REAL NOT NULL DEFAULT 1.0,
                     ScaleOffset REAL NOT NULL DEFAULT 0,
+                    MinLimit REAL NULL,
+                    MaxLimit REAL NULL,
                     UpdatedAt TEXT NOT NULL DEFAULT '',
                     IsDeleted INTEGER NOT NULL DEFAULT 0
                 );

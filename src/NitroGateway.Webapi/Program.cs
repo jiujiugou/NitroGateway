@@ -95,7 +95,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "NitroGateway API",
         Version = "v1",
-        Description = "工业协议边缘网关 REST API — 设备管理、点位采集、告警、死信"
+        Description = "工业协议边缘网关 REST API — 设备管理、点位采集、告警、MQTT 转发"
     });
 
     // JWT Bearer 认证
@@ -139,6 +139,15 @@ await using (var toggleScope = app.Services.CreateAsyncScope())
 {
     var toggle = toggleScope.ServiceProvider.GetRequiredService<IForwardMqttToggle>();
     await toggle.InitializeAsync();
+}
+
+// ADR-066：首启种子——users 表为空时从配置用户（Security:Users，已在 AddNitroSecurity 归一化为哈希）灌入，
+// 保住 admin/admin123 开发登录；表非空则跳过（配置仅引导，运行时账号全部落库、由 UserController 管理）。
+await using (var userScope = app.Services.CreateAsyncScope())
+{
+    var userStore = userScope.ServiceProvider.GetRequiredService<IUserStore>();
+    var configUsers = userScope.ServiceProvider.GetRequiredService<IReadOnlyList<UserConfig>>();
+    await userStore.SeedIfEmptyAsync(configUsers);
 }
 
 // ADR-022 P3-6：Swagger 仅开发环境暴露；生产 API 面不对外展示（本地开发由 launchSettings 驱动）

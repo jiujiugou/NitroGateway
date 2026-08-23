@@ -56,6 +56,6 @@
 
 ## 注意事项
 
-- **代码是唯一事实来源**。README 与部分 XML 注释存在漂移（README「不依赖任何项目」、`DevicePoint.Deadband`「不触发上报」），已登记 `notes/ADR/ADR-008-domain-doc-drift.md`，答题以代码 + XML 注释为准，题目中也埋了漂移题。
+- **代码是唯一事实来源**。README 与部分 XML 注释存在漂移（README「不依赖任何项目」、`DevicePoint.Deadband`「不触发上报」），已登记 `notes/ADR/misc/ADR-008-domain-doc-drift.md`，答题以代码 + XML 注释为准，题目中也埋了漂移题。
 - **预留未接线模型**：`AggregateKind`、`ConnectionField`、`Alarm.Events.PointStoredEvent`（重复模型）目前无消费方，题目要求你搜索证据后自己下结论。
 - Domain 没有独立测试工程——它的行为由消费者模块的测试覆盖（Pipeline/Dispatcher/OperationalError 等）。答完所有题目后，试着不看代码把「设备定义 → 驱动解码 → 快照 → 记录 → 事件」的完整数据形态变化画出来——能画出来就是吃透了。

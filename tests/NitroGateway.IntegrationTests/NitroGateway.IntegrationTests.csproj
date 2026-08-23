@@ -11,9 +11,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="*" />
     <PackageReference Include="xunit" Version="*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="*" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
-    <!-- 版本随 OPC Server 传递依赖对齐（Core 1.5.378.156 要求 Logging >= 10.0.8），与 OpcUa 驱动解析版本一致 -->
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.8" />
+    <!-- 与 Logging 同步对齐 10.0.11（Identity.Core 链要求 DI >= 10.0.11），避免 NU1605 降级 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <!-- 版本随 OPC Server 传递依赖对齐（Core 1.5.378.156 要求 Logging >= 10.0.8），与 OpcUa 驱动解析版本一致。
+         10.0.11：写功能（docs/14）使 Device → Security（Identity.Core 10.0.11 要求 Logging >= 10.0.11）进入本图，直接引用对齐避免 NU1605 降级。 -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.11" />
     <!-- ADR-019：进程内 OPC UA Server（冒烟替代 Prosys）。版本 1.5.378.145 与客户端 1.5.378.156 同源，
          NuGet 向上统一 Core/Types/Configuration 到 1.5.378.156，Server 程序集加载仍兼容。 -->
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="1.5.378.145" />

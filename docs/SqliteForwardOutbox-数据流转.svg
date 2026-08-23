@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="1260" viewBox="0 0 1660 1260" font-family="'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+    <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+    <marker id="arrRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ef4444"/></marker>
+    <marker id="arrCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#06b6d4"/></marker>
+    <marker id="arrPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+    <marker id="arrSlate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+  </defs>
+  <rect width="1660" height="1260" fill="#ffffff"/>
+
+  <!-- ===== 标题 ===== -->
+  <text x="830" y="40" text-anchor="middle" font-size="24" font-weight="bold" fill="#0f172a">SqliteForwardOutbox 数据流转图（事务性 Outbox：forward_buffer）</text>
+  <text x="830" y="66" text-anchor="middle" font-size="13.5" fill="#475569">采集侧同步写入 → 转发侧异步消费；状态机 Pending → InFlight → 删除 / DeadLetter；至少一次投递，消费端需幂等</text>
+
+  <!-- ===== ① 生产侧 · 入队 ===== -->
+  <rect x="60" y="88" width="1540" height="28" rx="6" fill="#eef2ff"/>
+  <text x="72" y="107" font-size="15" font-weight="bold" fill="#3730a3">① 生产侧 · 入队（DataDispatcher → EnqueueAsync → INSERT）</text>
+
+  <rect x="60" y="128" width="320" height="115" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="76" y="152" font-size="15" font-weight="bold" fill="#1d4ed8">DataDispatcher（Collection）</text>
+  <text x="76" y="176" font-size="12.5" fill="#334155">每采集周期生成 BatchMeasurements</text>
+  <text x="76" y="196" font-size="12.5" fill="#334155">按配置通道 mqtt / http</text>
+  <text x="76" y="216" font-size="12.5" fill="#334155">每通道一行，独立 batchId</text>
+
+  <line x1="380" y1="190" x2="498" y2="190" stroke="#64748b" stroke-width="1.8" marker-end="url(#arr)"/>
+  <text x="439" y="182" text-anchor="middle" font-size="11.5" fill="#64748b">入队调用</text>
+
+  <rect x="500" y="128" width="470" height="115" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="516" y="152" font-size="15" font-weight="bold" fill="#1d4ed8">EnqueueAsync(batch, channel)</text>
+  <text x="516" y="176" font-size="12.5" fill="#334155">① 上限检查：COUNT(Pending) ≥ maxPending(10万)</text>
+  <text x="516" y="196" font-size="12.5" fill="#334155">→ 拒绝入队（Storage 失败，DataDispatcher 记 Error）</text>
+  <text x="516" y="216" font-size="12.5" fill="#334155">② INSERT：id / payload(JSON) / status='Pending'</text>
+  <text x="516" y="234" font-size="12.5" fill="#334155">retry_count=0 / enqueued_at / channel</text>
+
+  <line x1="735" y1="243" x2="735" y2="318" stroke="#64748b" stroke-width="1.8" marker-end="url(#arr)"/>
+  <text x="745" y="282" font-size="11.5" fill="#64748b">写入一行</text>
+
+  <!-- ===== ② 核心：forward_buffer 表 + 状态机 ===== -->
+  <rect x="60" y="283" width="1540" height="28" rx="6" fill="#eef2ff"/>
+  <text x="72" y="302" font-size="15" font-weight="bold" fill="#3730a3">② 核心：SQLite forward_buffer 表 + 状态机（每次状态转换 = 一处 SQL 操作）</text>
+
+  <rect x="60" y="320" width="1540" height="34" rx="8" fill="#334155"/>
+  <rect x="60" y="347" width="1540" height="91" fill="#f8fafc" stroke="#64748b" stroke-width="1"/>
+  <text x="76" y="342" font-size="13.5" font-weight="bold" fill="#ffffff">forward_buffer（SQLite，WAL；索引 idx_forward_buffer_status(status, enqueued_at)）— 持久化 Outbox 表</text>
+  <text x="76" y="372" font-size="12" font-weight="bold" fill="#475569">列：id(PK) ｜ payload：BatchMeasurements 的 CamelCase JSON ｜ status：Pending / InFlight / DeadLetter ｜ retry_count ｜ last_error ｜ enqueued_at ｜ channel</text>
+  <text x="76" y="394" font-size="11.5" fill="#64748b">语义：每行 = 一批待转发数据；多通道(mqtt/http) 各一行且独立 batchId，出队按 channel 隔离</text>
+  <text x="76" y="412" font-size="11.5" fill="#64748b">异常契约：DB/IO 错误 → OperationResult 失败返回（不抛出）；取消 → 抛 OperationCanceledException（调用方按停机处理）</text>
+
+  <!-- 新行 → Pending -->
+  <line x1="200" y1="456" x2="200" y2="470" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="212" y="463" font-size="11.5" fill="#64748b">新行（INSERT）→ Pending</text>
+
+  <!-- Commit 标签 -->
+  <line x1="700" y1="456" x2="700" y2="470" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+  <text x="712" y="463" font-size="11.5" font-weight="bold" fill="#047857">成功 → CommitAsync：DELETE InFlight（状态守卫）</text>
+
+  <!-- 丢弃/清理 标签 -->
+  <line x1="1250" y1="456" x2="1250" y2="470" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrRed)"/>
+  <text x="1262" y="463" font-size="11.5" font-weight="bold" fill="#b91c1c">丢弃 / 保留清理：DELETE DeadLetter</text>
+
+  <!-- Pending 状态 -->
+  <rect x="60" y="470" width="420" height="210" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="76" y="498" font-size="16" font-weight="bold" fill="#1d4ed8">Pending（待转发）</text>
+  <text x="76" y="526" font-size="12.5" fill="#334155">入队目标态（新行）</text>
+  <text x="76" y="548" font-size="12.5" fill="#334155">可被出队</text>
+  <text x="76" y="570" font-size="12.5" fill="#64748b">监控：Count / GetCountAsync</text>
+  <text x="76" y="592" font-size="12.5" fill="#64748b">→ BufferBacklog / StatusController</text>
+
+  <!-- InFlight 状态 -->
+  <rect x="540" y="470" width="420" height="210" rx="10" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="556" y="498" font-size="16" font-weight="bold" fill="#b45309">InFlight（转发中）</text>
+  <text x="556" y="526" font-size="12.5" fill="#334155">已出队、未确认删除</text>
+  <text x="556" y="548" font-size="12.5" fill="#334155">两阶段①：事务内 SELECT + UPDATE</text>
+  <text x="556" y="570" font-size="12.5" fill="#64748b">崩溃恢复：EnsureRecoveredAsync → Pending</text>
+  <text x="556" y="592" font-size="12.5" fill="#64748b">（至少一次，可能重复投递）</text>
+
+  <!-- DeadLetter 状态 -->
+  <rect x="1020" y="470" width="420" height="210" rx="10" fill="#fef2f2" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="1036" y="498" font-size="16" font-weight="bold" fill="#b91c1c">DeadLetter（死信）</text>
+  <text x="1036" y="526" font-size="12.5" fill="#334155">重试超限（retry+1 ≥ max，默认 5）</text>
+  <text x="1036" y="548" font-size="12.5" fill="#334155">不再自动出队</text>
+  <text x="1036" y="570" font-size="12.5" fill="#64748b">管理：DeadLettersController / 保留清理</text>
+
+  <!-- 状态转换箭头 -->
+  <line x1="480" y1="652" x2="538" y2="652" stroke="#334155" stroke-width="1.8" marker-end="url(#arr)"/>
+  <text x="509" y="641" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#334155">DequeueAsync 出队（SELECT + UPDATE 'InFlight'）</text>
+
+  <line x1="960" y1="652" x2="1018" y2="652" stroke="#ef4444" stroke-width="1.8" marker-end="url(#arrRed)"/>
+  <text x="989" y="641" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#b91c1c">MarkFailed：retry+1 ≥ max 进死信</text>
+
+  <!-- InFlight → Pending（重试回队） -->
+  <polyline points="640,680 640,706 300,706 300,680" fill="none" stroke="#b45309" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="470" y="699" text-anchor="middle" font-size="11.5" fill="#b45309">MarkFailed：retry+1 &lt; max → 回队重试（记 last_error）</text>
+
+  <!-- DeadLetter → Pending（人工重试） -->
+  <polyline points="1120,680 1120,738 250,738 250,680" fill="none" stroke="#8b5cf6" stroke-width="1.6" stroke-dasharray="7 4" marker-end="url(#arrPurple)"/>
+  <text x="700" y="730" text-anchor="middle" font-size="11.5" fill="#6d28d9">RetryDeadLetter（人工重试）：retry=0、last_error=NULL → 回到 Pending</text>
+
+  <!-- ===== ③ 消费侧 ===== -->
+  <rect x="60" y="772" width="1540" height="28" rx="6" fill="#eef2ff"/>
+  <text x="72" y="791" font-size="15" font-weight="bold" fill="#3730a3">③ 消费侧 · 出队 → 转发 → 确认删除 / 失败重试（Forwarder 与 HttpForwarderEngine）</text>
+
+  <!-- 出队拉取 -->
+  <line x1="220" y1="812" x2="220" y2="682" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrSlate)"/>
+  <text x="230" y="746" font-size="11.5" fill="#64748b">出队拉取（5s 轮询）</text>
+
+  <rect x="60" y="812" width="350" height="120" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="76" y="836" font-size="15" font-weight="bold" fill="#15803d">Forwarder（MQTT，5s 周期）</text>
+  <text x="76" y="860" font-size="12.5" fill="#334155">DequeueAsync('mqtt') → 反序列化</text>
+  <text x="76" y="882" font-size="12.5" fill="#334155">MQTT Publish QoS 1（AIMD 节流）</text>
+  <text x="76" y="904" font-size="12.5" fill="#334155">成功 → Commit；失败 → MarkFailed</text>
+
+  <rect x="430" y="812" width="350" height="120" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="446" y="836" font-size="15" font-weight="bold" fill="#15803d">HttpForwarderEngine（HTTP）</text>
+  <text x="446" y="860" font-size="12.5" fill="#334155">DequeueAsync('http') → HTTP POST</text>
+  <text x="446" y="882" font-size="12.5" fill="#334155">成功 → Commit；失败 → MarkFailed</text>
+  <text x="446" y="904" font-size="12.5" fill="#334155">通道隔离，独立 batchId</text>
+
+  <line x1="900" y1="812" x2="900" y2="682" stroke="#10b981" stroke-width="1.8" marker-end="url(#arrGreen)"/>
+  <text x="910" y="746" font-size="11.5" fill="#047857">确认成功 → 删除 InFlight 行</text>
+
+  <rect x="800" y="812" width="350" height="120" rx="8" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+  <text x="816" y="836" font-size="15" font-weight="bold" fill="#047857">CommitAsync（成功确认）</text>
+  <text x="816" y="860" font-size="12.5" fill="#334155">DELETE WHERE id IN @ids</text>
+  <text x="816" y="882" font-size="12.5" fill="#334155">AND status='InFlight'（状态守卫）</text>
+  <text x="816" y="904" font-size="12.5" fill="#334155">非 InFlight → 已提交/已失败，跳过</text>
+
+  <line x1="1270" y1="812" x2="1270" y2="682" stroke="#ef4444" stroke-width="1.8" marker-end="url(#arrRed)"/>
+  <text x="1280" y="746" font-size="11.5" fill="#b91c1c">失败 → 重试计数 +1 / 死信</text>
+
+  <rect x="1170" y="812" width="430" height="120" rx="8" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+  <text x="1186" y="836" font-size="15" font-weight="bold" fill="#c2410c">MarkFailedAsync（失败）</text>
+  <text x="1186" y="860" font-size="12.5" fill="#334155">一次 UPDATE：retry_count + 1</text>
+  <text x="1186" y="882" font-size="12.5" fill="#334155">&lt; max → 回 Pending；≥ max → DeadLetter</text>
+  <text x="1186" y="904" font-size="12.5" fill="#334155">取消(停机)：不调用，保持 InFlight</text>
+
+  <!-- ===== ④ 恢复与运维 ===== -->
+  <rect x="60" y="985" width="1540" height="28" rx="6" fill="#eef2ff"/>
+  <text x="72" y="1004" font-size="15" font-weight="bold" fill="#3730a3">④ 恢复与运维（触发方）</text>
+
+  <rect x="60" y="1025" width="340" height="120" rx="8" fill="#ecfeff" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="76" y="1049" font-size="14" font-weight="bold" fill="#0e7490">EnsureRecoveredAsync</text>
+  <text x="76" y="1073" font-size="12.5" fill="#334155">启动后首次使用前执行</text>
+  <text x="76" y="1095" font-size="12.5" fill="#334155">遗留 InFlight → Pending</text>
+  <text x="76" y="1117" font-size="12.5" fill="#334155">失败仅告警，下次操作重试</text>
+  <text x="76" y="1137" font-size="12.5" font-weight="bold" fill="#0e7490">作用：InFlight → Pending（崩溃恢复）</text>
+
+  <rect x="420" y="1025" width="340" height="120" rx="8" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="436" y="1049" font-size="14" font-weight="bold" fill="#6d28d9">DeadLettersController（Web API）</text>
+  <text x="436" y="1073" font-size="12.5" fill="#334155">GET：GetDeadLettersAsync（列表）</text>
+  <text x="436" y="1095" font-size="12.5" fill="#334155">POST：RetryDeadLetterAsync → Pending</text>
+  <text x="436" y="1117" font-size="12.5" fill="#334155">DELETE：DiscardDeadLetterAsync</text>
+  <text x="436" y="1137" font-size="12.5" font-weight="bold" fill="#6d28d9">作用：DeadLetter</text>
+
+  <rect x="780" y="1025" width="340" height="120" rx="8" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="796" y="1049" font-size="14" font-weight="bold" fill="#6d28d9">DeadLetterRetentionService</text>
+  <text x="796" y="1073" font-size="12.5" fill="#334155">后台周期任务（默认 30 天 / 24h）</text>
+  <text x="796" y="1095" font-size="12.5" fill="#334155">PurgeDeadLettersAsync(before)</text>
+  <text x="796" y="1117" font-size="12.5" fill="#334155">按保留期分批 DELETE DeadLetter</text>
+  <text x="796" y="1137" font-size="12.5" font-weight="bold" fill="#6d28d9">作用：DeadLetter</text>
+
+  <rect x="1140" y="1025" width="460" height="120" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="1156" y="1049" font-size="14" font-weight="bold" fill="#475569">Count / GetCountAsync（监控）</text>
+  <text x="1156" y="1073" font-size="12.5" fill="#334155">Pending 积压数 → BufferBacklog 指标</text>
+  <text x="1156" y="1095" font-size="12.5" fill="#334155">→ StatusController / 停机排空检查</text>
+  <text x="1156" y="1117" font-size="12.5" fill="#334155">DB 故障按 0 返回，不抛出</text>
+  <text x="1156" y="1137" font-size="12.5" font-weight="bold" fill="#475569">作用：Pending（只读）</text>
+
+  <!-- ===== 底部说明 ===== -->
+  <rect x="60" y="1172" width="1540" height="64" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="76" y="1196" font-size="12.5" font-weight="bold" fill="#334155">至少一次（at-least-once）：出队标记 InFlight 与 Commit 删除之间若进程崩溃 → 启动时 InFlight 重置为 Pending 重新投递，可能重复，消费端须幂等。</text>
+  <text x="76" y="1218" font-size="12.5" fill="#334155">两阶段提交：出队 = 事务内 SELECT + UPDATE 'InFlight'（阶段一），事务外反序列化负载；Commit 带状态守卫（仅删 InFlight 行，防 stale commit 误删未发送数据）。</text>
+</svg>

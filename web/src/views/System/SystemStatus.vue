@@ -19,10 +19,6 @@
         <div class="stat-value">{{ backlog }}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">节流器</div>
-        <div class="stat-value">{{ throttle.batch }} / {{ throttle.delay }}ms</div>
-      </div>
-      <div class="stat-card">
         <div class="stat-label">在线设备</div>
         <div class="stat-value">{{ onlineDevices }}</div>
       </div>
@@ -43,6 +39,9 @@
         </div>
       </div>
     </div>
+
+    <!-- ADR-065 A2：转发看板——outbox 水位曲线 + 断点续传事件流（前端 3s 采样推导） -->
+    <ForwarderBoard :backlog="backlog" :mqtt-state="mqtt.state" :forward-enabled="forwardMqttEnabled" />
 
     <!-- 设备熔断器状态（ADR-054：纯边缘形态恒展示） -->
     <div class="card" style="margin-top:20px">
@@ -105,11 +104,11 @@ import { ElMessage } from 'element-plus'
 import client from '../../api/client'
 import { getSerialPorts, getSerialPortStatus } from '../../api/devices'
 import { getForwarderEnabled, setForwarderEnabled } from '../../api/forwarder'
+import ForwarderBoard from '../../components/ForwarderBoard.vue'
 
 const siteId = ref('')
 const mqtt = ref({ state: '-', connected: false })
 const backlog = ref(0)
-const throttle = ref({ batch: 1000, delay: 0 })
 const onlineDevices = ref(0)
 const breakers = ref<any[]>([])
 const health = ref<any[]>([])
@@ -141,7 +140,6 @@ async function refresh() {
       // ADR-061：状态字串含 Disabled（开关关闭）——connected 仅 Connected 为真，供下方卡片映射
       mqtt.value = { state: sys.data.mqttState, connected: sys.data.mqttState === 'Connected' }
       backlog.value = sys.data.bufferBacklog
-      throttle.value = { batch: sys.data.throttleBatchSize, delay: sys.data.throttleDelayMs }
       onlineDevices.value = sys.data.onlineDevices
       breakers.value = sys.data.circuitBreakers
     }

@@ -55,7 +55,7 @@
 
 **A3.4** `Success` 与 `NoMatchingSubscribers`。后者表示 broker 已处理消息但无订阅者匹配，按协议不算失败；算成功可避免无意义重试风暴。坑：云上无人订阅时 Forwarder 也会 Commit 删除本地数据——消息「发出去了但没人收」，业务上可能等于丢数据，需要云侧订阅监控配合。
 
-**A3.5** 两层叠加：① 本地 SQLite 缓冲两阶段——Dequeue 移出 → Publish 成功才 Commit 删除（失败 MarkFailed 进重试/死信）；② MQTT QoS1 保证 broker 至少收到一次。重复窗口：Publish 成功但 Commit 前崩溃 → 重启后批次重新入队重发；Publish 超时但 broker 实际已收 → 重试重发。丢数据窗口极小：仅当 Commit/死信逻辑自身出错。云侧必须幂等（设备号 + 时间戳去重）配合 at-least-once。
+**A3.5** 两层叠加：① 本地 SQLite 缓冲两阶段——Dequeue 移出 → Publish 成功才 Commit 删除（失败 MarkFailed 重试，超限丢弃）；② MQTT QoS1 保证 broker 至少收到一次。重复窗口：Publish 成功但 Commit 前崩溃 → 重启后批次重新入队重发；Publish 超时但 broker 实际已收 → 重试重发。丢数据窗口极小：仅当 Commit/丢弃逻辑自身出错。云侧必须幂等（设备号 + 时间戳去重）配合 at-least-once。
 
 ## 四、MqttHostedService 监视循环
 
@@ -107,10 +107,10 @@
 
 **A8.1** 时间线（broker 重启 5 分钟）：
 - t0 断线：wrapper `OnDisconnectedAsync`（ClientWasConnected=true → LogWarning），State → Reconnecting，指数退避 1s / 2s / 4s……；健康检查 Degraded；`NitroMetrics.MqttState` 变为 Reconnecting。
-- 断线期间：ForwarderEngine 每轮看到 State != Connected 跳过，缓冲积压；超 1000 批后每 60s 一条积压告警；Throttle 持续失败收缩 batch（若期间有尝试）。
+- 断线期间：ForwarderEngine 每轮看到 State != Connected 跳过，缓冲积压；超 1000 批后每 60s 一条积压告警。
 - 退避耗尽（默认 10 次）：State → Faulted（LogError），健康检查 Unhealthy；MqttHostedService 接管，每 30s 尝试一次 ConnectAsync。
-- broker 恢复：监视循环下一次尝试成功 → Connected（`_reconnectCount` 重置）→ 重放订阅（如有）→ ForwarderEngine 恢复排空，Throttle 随成功逐步放大 batch，缓冲回落到零。
-- 无需人工介入：重连全程自动；只有 MaxReconnectAttempts=0 或离线时间超过缓冲/死信策略承受范围才需人工。
+- broker 恢复：监视循环下一次尝试成功 → Connected（`_reconnectCount` 重置）→ 重放订阅（如有）→ ForwarderEngine 恢复排空（每轮固定 ≤1000 批，2026-08-22 删 AIMD），缓冲回落到零。
+- 无需人工介入：重连全程自动；只有 MaxReconnectAttempts=0 或离线时间超过缓冲策略承受范围才需人工。
 
 **A8.2** 后果：① 字典只增不减——订阅被业务废弃后，重连仍重放僵尸订阅，产生无谓消息流；② 重放失败只 Warning——本轮订阅缺失且无重试，若 broker 此后一直正常，缺失会永久持续到下一次断线。最小修复：新增 `UnsubscribeAsync`（接口只增不删，新方法）+ 成功后从字典删除；重放失败时标记待重放，在每次连接成功 / 定时任务中重试，或把重放失败视为连接失败触发再次重连。
 
@@ -122,4 +122,4 @@
 - 命令下行：`SubscribeAsync` 已支持订阅，接入 `Messages` 消费者（Forwarder 或新 HostedService），并把 `OnMessageReceivedAsync` 的 TryWrite 改为 WriteAsync / 独立队列（P3-1 注释已预留方向）。
 - 约束：接口只增不删 → 新能力用新方法/新接口；Singleton 生命周期 → 多实例必须走命名注册或工厂，不能改生命周期。
 
-**A8.5** 排队等待的风险：PublishAsync 挂起 → Forwarder 单批卡死 → 出队停滞；内存队列无限增长 → OOM；超时/取消语义复杂化。更重要的是职责重叠：本地 SQLite 缓冲（持久化、两阶段、死信）已经是「排队」，把等待再放内存队列是重复排队——进程崩溃时内存队列数据全丢，反而破坏 at-least-once。当前设计把「等待」交给持久缓冲（快速失败 + 跳过本轮），PublishAsync 保持无状态快速返回，职责清晰、崩溃安全。
+**A8.5** 排队等待的风险：PublishAsync 挂起 → Forwarder 单批卡死 → 出队停滞；内存队列无限增长 → OOM；超时/取消语义复杂化。更重要的是职责重叠：本地 SQLite 缓冲（持久化、两阶段、重试/丢弃）已经是「排队」，把等待再放内存队列是重复排队——进程崩溃时内存队列数据全丢，反而破坏 at-least-once。当前设计把「等待」交给持久缓冲（快速失败 + 跳过本轮），PublishAsync 保持无状态快速返回，职责清晰、崩溃安全。

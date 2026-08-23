@@ -38,6 +38,10 @@ export interface DevicePoint {
   deadband: number
   scaleFactor: number
   scaleOffset: number
+  /// 写值范围下限（null = 不限，docs/14 写功能）；仅数值点位有意义
+  minLimit?: number | null
+  /// 写值范围上限（null = 不限，docs/14 写功能）
+  maxLimit?: number | null
 }
 
 export type DataType = 'Bool' | 'Byte' | 'Int16' | 'UInt16' | 'Int32' | 'UInt32' | 'Int64' | 'UInt64' | 'Float' | 'Double' | 'String'

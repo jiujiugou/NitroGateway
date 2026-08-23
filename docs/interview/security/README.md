@@ -39,10 +39,10 @@ SecurityServiceCollectionExtensions（总入口：配置绑定 + fail-fast + 全
 
 ## 跨模块依赖（答题时需要知道的上下文）
 
-- **Webapi 控制器**：直接消费 RBAC——Alarms（查看全员/确认 Admin+Operator）、AlarmRules、DeadLetters、PointImport（Admin+Operator）、Status/Devices/Measurements（全员）。
+- **Webapi 控制器**：直接消费 RBAC——Alarms（查看全员/确认 Admin+Operator）、AlarmRules、PointImport（Admin+Operator）、Status/Devices/Measurements（全员）（DeadLetters 控制器 2026-08-22 删除）。
 - **`IProtocolDriver.WriteAsync`（Protocol 模块）**：写保护的最终执行对象，当前无生产调用方（所以 Guard 未接线）。
 - **Serilog**：审计与日志落点（`logs/nitrogateway-.log`，日滚动保留 7 天，CompactJson），见 `appsettings.json:16-29`。
-- **ADR-004**（`notes/ADR/ADR-004-security-optimization.md`）：本模块加固依据——P1 写保护、P2 配置 fail-fast/限流/异常顺序、P3 登录与审计细节。
+- **ADR-004**（`notes/ADR/security/ADR-004-security-optimization.md`）：本模块加固依据——P1 写保护、P2 配置 fail-fast/限流/异常顺序、P3 登录与审计细节。
 - **Dev 密钥**：`appsettings.json:53` 的 `NitroGateway-Dev...` 前缀会触发「随机密钥降级」，token 不跨重启——题 Q1.3/Q7.5 反复考这一点。
 
 ## 注意事项

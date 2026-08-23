@@ -11,7 +11,6 @@ public static class ProtocolServiceCollectionExtensions
     /// <summary>注册协议驱动体系。依次：复合工厂 → 各协议注册</summary>
     public static IServiceCollection AddNitroProtocol(this IServiceCollection services)
     {
-        services.AddNitroModbus();
 
         // 单例工厂：首次解析时创建实例并注册所有协议模块
         services.AddSingleton(sp =>
@@ -26,7 +25,7 @@ public static class ProtocolServiceCollectionExtensions
 
         // 长连接驱动池：按设备复用驱动，设备变更时由 DeviceManager 触发 Evict
         services.AddSingleton<IProtocolDriverPool, ProtocolDriverPool>();
-
+        services.AddSingleton<ISerialPortManager, SerialPortManager>();
         return services;
     }
 }

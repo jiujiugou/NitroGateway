@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { loadMe, saveMe, getMe } from '../api/user'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -14,19 +15,33 @@ const router = createRouter({
     { path: '/monitoring', name: 'Monitoring', component: () => import('../views/Monitoring/MonitoringView.vue') },
     { path: '/alarms', name: 'Alarms', component: () => import('../views/Alarms/AlarmListView.vue') },
     { path: '/alarmrules', name: 'AlarmRules', component: () => import('../views/Alarms/AlarmRulesView.vue') },
-    { path: '/deadletters', name: 'DeadLetters', component: () => import('../views/DeadLetters/DeadLettersView.vue') },
+    { path: '/audit', name: 'AuditLog', component: () => import('../views/Audit/AuditLogView.vue') },
+    // ADR-066：用户管理页（仅 Admin；前端门控只是 UX，后端 AdminOnly 策略兜底）
+    { path: '/users', name: 'Users', component: () => import('../views/Users/UserListView.vue'), meta: { roles: ['Admin'] } },
     { path: '/system', name: 'SystemStatus', component: () => import('../views/System/SystemStatus.vue') },
     { path: '/history', name: 'History', component: () => import('../views/History/HistoryView.vue') },
   ]
 })
 
-// 导航守卫：仅处理未登录跳 /login；ADR-054 后无 mode 分支，所有边缘能力页面恒可访问
-router.beforeEach((to, from, next) => {
+// 导航守卫：未登录跳 /login；meta.roles 时校验当前用户角色（前端 UX，后端策略兜底）
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
   if (to.path !== '/login' && !token) {
     next('/login')
   } else if (to.path === '/login' && token) {
     next('/dashboard')
+  } else if (to.meta.roles) {
+    // 缓存无角色信息时（旧会话）尝试实时拉取 /api/user/me，避免菜单误锁
+    const roles = to.meta.roles as string[] | undefined
+    let user = loadMe()
+    if (!user) {
+      try {
+        const me = await getMe()
+        if (me) { user = me; saveMe(me) }
+      } catch { /* 拉取失败按无权限处理，后端会兜底 */ }
+    }
+    if (!user || !roles?.includes(user.role)) next('/dashboard')
+    else next()
   } else {
     next()
   }

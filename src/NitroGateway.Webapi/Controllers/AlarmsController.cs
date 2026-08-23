@@ -27,6 +27,32 @@ public class AlarmsController : ControllerBase
             : BadRequest(ApiResponse<List<AlarmDto>>.Fail("Alarms", r.Error!.Message));
     }
 
+    /// <summary>
+    /// 告警汇总（ADR-065 A1 仪表盘 KPI）：活跃告警数 + 今日发生告警数。
+    /// 「今日」按服务器本地时区 0 点起算（网关运行在现场时区，本地语义最直观）。
+    /// </summary>
+    [HttpGet("summary")]
+    public async Task<ActionResult<ApiResponse<AlarmSummaryDto>>> Summary()
+    {
+        var activeResult = await _alarms.GetAllActiveAsync();
+        if (activeResult.IsFailure)
+            return BadRequest(ApiResponse<AlarmSummaryDto>.Fail("Alarms", activeResult.Error!.Message));
+
+        // 本地时区今日 0 点 → UTC（存储为 UTC O 串，见 M005）
+        var now = DateTime.Now;
+        var localTodayStart = new DateTime(now.Year, now.Month, now.Day);
+        var todayStartUtc = TimeZoneInfo.ConvertTimeToUtc(localTodayStart);
+        var todayResult = await _alarms.CountOccurredSinceAsync(todayStartUtc);
+        if (todayResult.IsFailure)
+            return BadRequest(ApiResponse<AlarmSummaryDto>.Fail("Alarms", todayResult.Error!.Message));
+
+        return Ok(ApiResponse<AlarmSummaryDto>.Ok(new AlarmSummaryDto
+        {
+            Active = activeResult.Value!.Count,
+            Today = todayResult.Value
+        }));
+    }
+
     /// <summary>获取指定设备的活跃告警</summary>
     [HttpGet("device/{deviceId}")]
     public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> GetByDevice(Guid deviceId, [FromQuery] string? siteId = null)
@@ -92,4 +118,14 @@ public class AlarmDto
     public string OccurredAt { get; set; } = "";
     public string? ResolvedAt { get; set; }
     public string? AcknowledgedAt { get; set; }
+}
+
+/// <summary>告警汇总 DTO（仪表盘 KPI：活跃数 / 今日发生数）</summary>
+public sealed class AlarmSummaryDto
+{
+    /// <summary>当前活跃（含已确认未恢复）告警数</summary>
+    public int Active { get; set; }
+
+    /// <summary>今日（本地 0 点起）发生告警数</summary>
+    public int Today { get; set; }
 }

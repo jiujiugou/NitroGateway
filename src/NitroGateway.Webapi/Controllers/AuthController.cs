@@ -21,7 +21,8 @@ public class AuthController : ControllerBase
 
     /// <summary>登录并获取 JWT Token</summary>
     [HttpPost("login")]
-    public ActionResult<ApiResponse<LoginResponse>> Login([FromBody] LoginRequest req)
+    public async Task<ActionResult<ApiResponse<LoginResponse>>> Login(
+        [FromBody] LoginRequest req, CancellationToken ct)
     {
         // ADR-004 P3-2：用户名 Trim，避免首尾空格导致匹配失败
         var username = req.Username?.Trim() ?? "";
@@ -30,6 +31,7 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             return BadRequest(ApiResponse<LoginResponse>.Fail("Login", "用户名和密码不能为空"));
 
+        // ADR-066：用户 DB 化——登录实时读 users 表（改密/启停/新增即时生效，无需改配置重启）
         // ADR-004 P2-1：失败计数 + 短时锁定，防暴力破解
         var key = BuildKey(username);
         if (_limiter.IsLocked(key, out var remaining))
@@ -39,17 +41,24 @@ public class AuthController : ControllerBase
                 ApiResponse<LoginResponse>.Fail("Login", $"尝试过于频繁，请 {Math.Ceiling(remaining.TotalSeconds)} 秒后再试"));
         }
 
-        var token = _tokens.IssueToken(username, password);
-        if (token is null)
+        var result = await _tokens.IssueTokenAsync(username, password, ct);
+        if (!result.IsSuccess)
         {
+            // 不区分「用户不存在/密码错误」统一 401，避免泄露账号存在性；停用单独 403 便于管理方感知
             _limiter.RecordFailure(key);
-            return Unauthorized(ApiResponse<LoginResponse>.Fail("Login", "用户名或密码错误"));
+            return result.Status switch
+            {
+                TokenIssueStatus.Disabled => StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    ApiResponse<LoginResponse>.Fail("Login", "账号已停用，请联系管理员")),
+                _ => Unauthorized(ApiResponse<LoginResponse>.Fail("Login", "用户名或密码错误"))
+            };
         }
 
         _limiter.Reset(key);
         return Ok(ApiResponse<LoginResponse>.Ok(new LoginResponse
         {
-            Token = token,
+            Token = result.Token!,
             TokenType = "Bearer"
         }));
     }

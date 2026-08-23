@@ -27,6 +27,8 @@
     <ProjectReference Include="..\NitroGateway.Storage\Disk\NitroGateway.Storage.Disk.csproj" />
     <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
     <ProjectReference Include="..\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
+    <!-- ADR-065 A3：审计落库（SqliteAuditLogStore 实现 Security.IAuditLogStore） -->
+    <ProjectReference Include="..\NitroGateway.Security\NitroGateway.Security.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿﻿using Microsoft.AspNetCore.Mvc;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
 using NitroGateway.DeviceManagement;
@@ -19,28 +19,11 @@ using AlarmRuleDomain = NitroGateway.Alarm.Domain.AlarmRule;
 namespace NitroGateway.UnitTests;
 
 /// <summary>
-/// ADR-022 控制器层测试：DeadLetters maxCount 夹紧、Devices 非法输入 400 / 忽略客户端 ID、
+/// ADR-022 控制器层测试：Devices 非法输入 400 / 忽略客户端 ID、
 /// AlarmRules 非法 Guid/枚举 400。fakes 均记录调用供断言。
 /// </summary>
 public class WebapiControllerTests
 {
-    // ── DeadLettersController：P1-3 maxCount 夹紧 ──
-
-    [Theory]
-    [InlineData(-1, 1)]
-    [InlineData(0, 1)]
-    [InlineData(100, 100)]
-    [InlineData(99_999, 1000)]
-    public async Task DeadLetters_GetAll_ClampsMaxCount(int input, int expected)
-    {
-        var buffer = new FakeForwardBuffer();
-        var ctrl = new DeadLettersController(buffer);
-
-        var result = await ctrl.GetAll(maxCount: input);
-
-        Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Equal(expected, buffer.LastDeadLetterMax);
-    }
 
     // ── DevicesController：P2-4 忽略客户端 ID / P2-1 非法枚举 400 / 空嵌套保护 ──
 
@@ -536,8 +519,6 @@ public sealed class FakeSiteCatalog : ISiteCatalog
 }
 public sealed class FakeForwardBuffer : IForwardBuffer
 {
-    public int? LastDeadLetterMax { get; private set; }
-
     public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
         => Task.FromResult(OperationResult.Success());
 
@@ -551,10 +532,7 @@ public sealed class FakeForwardBuffer : IForwardBuffer
         => Task.FromResult(OperationResult.Success());
 
     public Task<OperationResult<IReadOnlyList<DeadLetterEntry>>> GetDeadLettersAsync(int maxCount, CancellationToken ct = default)
-    {
-        LastDeadLetterMax = maxCount;
-        return Task.FromResult<OperationResult<IReadOnlyList<DeadLetterEntry>>>(Array.Empty<DeadLetterEntry>());
-    }
+        => Task.FromResult<OperationResult<IReadOnlyList<DeadLetterEntry>>>(Array.Empty<DeadLetterEntry>());
 
     public Task<OperationResult> RetryDeadLetterAsync(Guid batchId, CancellationToken ct = default)
         => Task.FromResult(OperationResult.Success());

@@ -6,6 +6,9 @@
     <ProjectReference Include="..\NitroGateway.Storage\Configuration\NitroGateway.Storage.Configuration.csproj" />
     <ProjectReference Include="..\NitroGateway.Protocol\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+    <!-- 写功能（docs/14）：WriteGuard 门控（Security 纯校验逻辑）+ 最近值查询（Storage.TimeSeries 纯接口） -->
+    <ProjectReference Include="..\NitroGateway.Security\NitroGateway.Security.csproj" />
+    <ProjectReference Include="..\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

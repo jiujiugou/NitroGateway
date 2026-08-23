@@ -5,7 +5,7 @@
 ## 使用方法
 
 1. 按难度递进刷题：先答 `questions.md`，能写下来、讲清楚算过。
-2. 每题都附「代码定位」；答不上或不确定就去看对应代码 + XML 注释 + `notes/ADR/ADR-006-transport-mqtt-optimization.md` + 测试，再回来答。
+2. 每题都附「代码定位」；答不上或不确定就去看对应代码 + XML 注释 + `notes/ADR/forwarder/ADR-006-transport-mqtt-optimization.md` + 测试，再回来答。
 3. 对照 `answers.md` 自检。参考答案只给要点，能展开讲才算吃透。
 4. 难度标记：★ 基础（边界/数据流）· ★★ 进阶（实现细节/失败路径/并发）· ★★★ 深水（设计权衡/缺陷/演进，面试加分项）。
 
@@ -44,7 +44,7 @@
 
 - `IMqttClient` 消费方：`Forwarder`（QoS1 转发核心链路，Publish 成功才 Commit）、`MqttAlarmNotifier`（告警推送，topic `nitrogateway/{deviceId}/alarms`）、`MqttHealthCheck`（健康检查三档映射）、`StatusController`（暴露 MqttState / MqttConnected）、`DeviceStatusDispatcher`（实现 IMqttStateListener，SignalR 出口）。
 - `ForwarderEngine` 每轮从 DI 解析 `IMqttClient`，`State != Connected` 时跳过本轮排空（`ForwarderEngine.cs:118-121`）。
-- `notes/ADR/ADR-006-transport-mqtt-optimization.md` 是 MQTT 优化清单：P1-1 ClientId 唯一、P1-2 重连重放订阅、P1-3 重连无恢复路径、P2-1 移除 cmd 订阅、P3-1~P3-5 管道丢弃/CTS 释放/监视循环/Dispose 状态/参数边界，全部已修复（2026-08-07）。
+- `notes/ADR/forwarder/ADR-006-transport-mqtt-optimization.md` 是 MQTT 优化清单：P1-1 ClientId 唯一、P1-2 重连重放订阅、P1-3 重连无恢复路径、P2-1 移除 cmd 订阅、P3-1~P3-5 管道丢弃/CTS 释放/监视循环/Dispose 状态/参数边界，全部已修复（2026-08-07）。
 
 ## 注意事项
 

@@ -31,7 +31,7 @@
 代码定位：`MqttClientWrapper.cs:27-29`、`:371-381`（StartReconnectLoop）、`:355-368`（finally 复位）。
 
 **Q2.4 ★★** 为什么首连失败也要「确定性」启动重连（`HandleConnectFailure`），而不是依赖 `DisconnectedAsync` 事件？历史教训是什么（ADR-006 P1-3）？
-代码定位：`MqttClientWrapper.cs:111-115,383-393`；`notes/ADR/ADR-006-transport-mqtt-optimization.md` P1-3。
+代码定位：`MqttClientWrapper.cs:111-115,383-393`；`notes/ADR/forwarder/ADR-006-transport-mqtt-optimization.md` P1-3。
 
 **Q2.5 ★★** `OnDisconnectedAsync` 里两个条件——`MaxReconnectAttempts == 0` 直接置 Disconnected、只有 `State == Connected` 才启动重连——分别防什么？为什么不处理 Reconnecting / Faulted / Disconnected 状态？
 代码定位：`MqttClientWrapper.cs:307-328`。
@@ -108,7 +108,7 @@
 ## 六、DI 与配置
 
 **Q6.1 ★★** `AddNitroMqtt` 自动生成 ClientId 的格式是什么？ADR-006 P1-1 修复了什么 bug？8 位 GUID 后缀的唯一性够吗？
-代码定位：`MqttServiceCollectionExtensions.cs:13-30`；`notes/ADR/ADR-006-transport-mqtt-optimization.md` P1-1；`tests/NitroGateway.IntegrationTests/MqttClientWrapperTests.cs`（AddNitroMqtt_AutoClientId_IsUniqueAndPrefixed）。
+代码定位：`MqttServiceCollectionExtensions.cs:13-30`；`notes/ADR/forwarder/ADR-006-transport-mqtt-optimization.md` P1-1；`tests/NitroGateway.IntegrationTests/MqttClientWrapperTests.cs`（AddNitroMqtt_AutoClientId_IsUniqueAndPrefixed）。
 
 **Q6.2 ★★** `MqttConnectionOptions` 属性为什么全部是 `init`？不可变的意义？`with` 表达式怎么用？`ConfigurationBinder` 绑定 init 属性的兼容性靠什么验证？
 代码定位：`MqttConnectionOptions.cs`；`MqttClientWrapperTests.HostPort_AreImmutable`、`AddNitroMqtt_AutoClientId_IsUniqueAndPrefixed`（ADR-006 P3-5）。
@@ -136,7 +136,7 @@
 ## 八、场景诊断与演进（深水区）
 
 **Q8.1 ★★★** 诊断题：broker 重启 5 分钟后恢复。按时间线描述你在「日志 / Prometheus 指标 / 健康检查 / Forwarder 行为 / 转发缓冲」五个观察点分别会看到什么？哪些环节不需要人工介入？
-代码定位：`MqttClientWrapper.cs:307-369`；`MqttHostedService.cs:25-57`；`ForwarderEngine.cs:97-121`；`ForwardingThrottle.cs`。
+代码定位：`MqttClientWrapper.cs:307-369`；`MqttHostedService.cs:25-57`；`ForwarderEngine.cs:97-121`（2026-08-22 删 AIMD，无节流状态）。
 
 **Q8.2 ★★★** 缺陷题：`_subscriptions` 字典「只增不减」，且重放订阅失败只记 Warning 不重试——各自的后果是什么？给出最小修复方案（考虑接口只增不删的约束）。
 代码定位：`MqttClientWrapper.cs:203-215`、`:395-407`。

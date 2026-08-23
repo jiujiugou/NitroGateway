@@ -143,7 +143,7 @@ public class ForwarderActivityTests
     }
 
     private static ForwarderImpl CreateForwarder(FakeBuffer buffer, FakeMqtt mqtt)
-        => new(buffer, new JsonMessageSerializer(), mqtt, new ForwardingThrottle(), NullLogger<ForwarderImpl>.Instance);
+        => new(buffer, new JsonMessageSerializer(), mqtt, NullLogger<ForwarderImpl>.Instance);
 
     /// <summary>成功转发置 Ok</summary>
     [Fact]

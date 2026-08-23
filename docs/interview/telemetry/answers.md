@@ -42,7 +42,7 @@
 
 **Q2.1 类型盘点**
 - Counter（2）：`nitro_collection_total`、`nitro_forward_total` —— 计数只增，用 `rate()` 算吞吐。
-- Gauge（6）：`nitro_circuit_breaker_state`、`nitro_buffer_backlog`、`nitro_throttle_batch_size`、`nitro_mqtt_state`、`nitro_devices_online`、`nitro_devices_available` —— 当前值可升可降。
+- Gauge（6）：`nitro_circuit_breaker_state`、`nitro_buffer_backlog`、`nitro_mqtt_state`、`nitro_devices_online`、`nitro_devices_available`、`nitro_disk_free_bytes` —— 当前值可升可降。（`nitro_throttle_batch_size` 已于 2026-08-22 随 AIMD 节流删除）
 - Histogram（1）：`nitro_collection_duration_ms` —— 分布统计，算分位数。
 - 选型依据：事件次数用 Counter；瞬时状态用 Gauge；耗时分布用 Histogram。
 
@@ -70,8 +70,8 @@
 ## 三、逐指标解析与上报点
 
 **Q3.1 全景**
-- 定义：`NitroMetrics.cs` 9 个静态字段（Counter 2 / Gauge 6 / Histogram 1）。
-- 上报：`DeviceCollector.cs:90,91,129,130,153`；`Forwarder.cs:109,116,126,146,147`；`MqttClientWrapper.cs:265`。
+- 定义：`NitroMetrics.cs` 静态字段（Counter 7 / Gauge 6 / Histogram 1）。
+- 上报：`DeviceCollector.cs`（采集/熔断/落库失败）；`Forwarder.cs:104,110,125,143`（success/failure/BufferBacklog）；`SqliteForwardOutbox.cs:431`（dropped）；`MqttClientWrapper.cs`（mqtt_state）。
 - 哑火 2 个：`nitro_collection_duration_ms`、`nitro_devices_online`（只有定义无写入方）。
 
 **Q3.2 collection_total 语义**
@@ -85,12 +85,11 @@
 - 隐患：进程重启后未采集前该序列不存在（`_created`/首次抓取后才出现），需要结合 `collection_total` 判断。
 
 **Q3.4 deadletter 标签缺失**
-- `NitroMetrics.cs:43-48` 声明 `status ∈ {success, failure, deadletter}`，但 `Forwarder.cs` 只 Inc success/failure。
-- 后果：死信只能查 DB/API（`IForwardBuffer.GetDeadLettersAsync`），指标层看不到死信量 → 无法对"数据不可达"做告警。
-- 修复方向：MarkFailed 超限转死信处补 `WithLabels("deadletter").Inc()`（已登记 ADR-009 P2-1）。
+- ~~历史遗留~~：原声明 `status ∈ {success, failure, deadletter}` 但无人上报；2026-08-22 转发简化（删死信，改重试超限即丢弃）后标签改为 `{success, failure, dropped}`，丢弃点在 `SqliteForwardOutbox.cs:431` 上报 `WithLabels("dropped").Inc()`。
+- 现在：`dropped` 已可观测，`forward_total{status="dropped"}` 上升即"数据不可达被放弃"，可做告警。
 
 **Q3.5 采样偏差**
-- `Forwarder.cs:146-147` 每轮（5s）末尾采样一次，是**周期性采样**不是事件驱动 → 抓不到两轮之间的瞬时峰值。
+- `Forwarder.cs:143` 每轮（5s）末尾采样一次，是**周期性采样**不是事件驱动 → 抓不到两轮之间的瞬时峰值。
 - 可接受性：积压是慢变量（断线期间持续堆积），5s 采样足够告警；若要看精确峰值需在 `EnqueueAsync` 侧打点。
 - 另注意：`BufferBacklog` 取值是 `_buffer.Count` 内存计数，若缓冲在另一进程/库中则不准（当前单进程可接受）。
 
@@ -164,12 +163,12 @@
 
 **Q6.1 约定来源**
 - 约定：全成功置 `Ok`；任一失败/异常/提交失败置 `Error` + 描述（`SetStatus(ActivityStatusCode.Error, reason)`）。
-- 来源：ADR-001 P2-9（Forwarder 失败路径显式置 Error，注释在 `Forwarder.cs:60-64`），已在各模块推广。
+- 来源：ADR-001 P2-9（Forwarder 失败路径显式置 Error，注释在 `Forwarder.cs:60-62`），已在各模块推广。
 - 动机：`ActivityStatusCode.Unset`（默认）无法区分"没执行"和"成功"；显式 Ok/Error 让 Jaeger 按状态过滤可靠。
 
 **Q6.2 失败路径清单**
 - Collect：`DeviceCollector.cs:93-94`（读失败 Error + error.message）
-- Forward：`Forwarder.cs:78`（Dequeue 失败）、`:118`（发布失败）、`:129`（异常）、`:142`（Commit 失败）
+- Forward：`Forwarder.cs:77`（Dequeue 失败）、`:112`（发布失败）、`:128`（异常）、`:139`（Commit 失败）
 - SqliteWrite：`SqliteMeasurementStore.cs:74-75`（异常回滚后 Error + 异常串）
 - MqttPublish：`MqttClientWrapper.cs:151-152`（未连接）、`:181-182`（ReasonCode 失败）、`:187-188`（异常）
 
@@ -253,16 +252,16 @@
 
 **Q9.1 Broker 断线 3h 场景**
 - 断线瞬间：`mqtt_state` 2→3（Reconnecting，`MqttClientWrapper.cs:265` 的 SetState 触发），抓取端可见。
-- 断线期间：`forward_total{status="failure"}` 增长；`buffer_backlog` 持续上升（每 5s 采样）；`throttle_batch_size` 因 AIMD 失败递减（`ForwardingThrottle`）。
+- 断线期间：`forward_total{status="failure"}` 增长；`buffer_backlog` 持续上升（每 5s 采样）。
 - 若最终 Faulted：`mqtt_state=4`；Forwarder 未连接时跳过本轮（`ForwarderEngine` State 检查），backlog 不再增长但也不排空。
-- 恢复：`mqtt_state` 回 2；AIMD 从小批量逐步试，成功后 `throttle_batch_size` 回升；`buffer_backlog` 逐轮下降排空；期间可能有重复投递（QoS1 at-least-once，靠云端幂等兜底）。
+- 恢复：`mqtt_state` 回 2；每轮固定 ≤1000 批排水（2026-08-22 删 AIMD，无节流状态变化）；`buffer_backlog` 逐轮下降排空；期间可能有重复投递（QoS1 at-least-once，靠云端幂等兜底）。
 
 **Q9.2 闭环优化排序（参考答案，按影响）**
 1. ~~接 OTLP/OpenTelemetry~~ **已完成（ADR-056）**：追踪从"空转"变"可用"（Q7.4）。
 2. ~~本地观察通道~~ **已完成（ADR-057）**：File 导出器落盘 JSONL，无 collector 也能看 span（Q7.5）。
 3. ~~补 `devices_online` 上报~~ **已完成（ADR-009 P1-2）**：在线率是核心指标（Q4.2）。
 4. ~~补 `collection_duration_ms` 上报~~ **已完成（ADR-009 P1-1）**：性能回归可告警（Q4.1）。
-5. ~~补 deadletter 计数~~ **已完成（ADR-009 P2-1）**：数据不可达要能告警（Q3.4）。
+5. ~~补 deadletter 计数~~ **已完成（ADR-009 P2-1，2026-08-22 改名 dropped）**：数据不可达要能告警（Q3.4）。
 6. ~~修 help 文本 + F-23 文档 + csproj 去重~~ **已完成（ADR-009 P2-2/P2-3/P2-4）**：低成本一致性（Q4.4/Q4.3/Q1.6）。
 - 剩余：/metrics 鉴权（视网络隔离计划排期）；生产 OTLP 端点接入（当前默认 localhost:4317，需指到 jaeger/tempo/otel-collector；本机排查先用 `Exporter=File`）。
 
@@ -275,13 +274,13 @@
 
 **Q9.4 三大支柱现状**
 - logging：Serilog（控制台+文件+结构化）——最成熟，基本可用。
-- metrics：定义 9 个、实际接线 9 个（duration/online 已于 ADR-009 补上报点，Q4.1/Q4.2）、端点无鉴权——可用。
+- metrics：定义 14 个（Counter 7 / Gauge 6 / Histogram 1）、实际接线除 duration/online 外均可用（Q4.1/Q4.2）、端点无鉴权——可用。
 - tracing：8 个 Span 定义完整 + 状态约定好，**已启用执行层**（Webapi/Ingest 默认 Otlp 导出，ADR-056；无 collector 本地观察用 `Exporter=File` 落盘 JSONL，ADR-057；`Exporter=None`/`Enabled=false` 可关）——从"最弱"变为可用，生产需配好 OTLP 端点。
 - 第一刀已落下：OTLP 已接、tracing 生效，形成"日志/指标/追踪"三件套闭环；下一步是端点鉴权与生产 collector 落地。
 
 **Q9.5 陷阱复盘清单**
 - ~~哑火指标~~ 已修复：`collection_duration_ms`、`devices_online`（ADR-009 P1-1/P1-2，Q4.1/Q4.2）。
-- ~~定义未用~~ 已修复：`forward_total` 的 deadletter label（ADR-009 P2-1，Q3.4）。
+- ~~定义未用~~ 已修复并演进：`forward_total` 原 deadletter label 无人上报 → 2026-08-22 转发简化后改为 `dropped`（重试超限丢弃），`SqliteForwardOutbox.cs:431` 已上报（Q3.4）。
 - ~~文本错误~~ 已修复：`mqtt_state` help 顺序（ADR-009 P2-2，Q4.4）。
 - ~~文档漂移~~ 已修复：F-23 8 vs 9（ADR-009 P2-3，Q4.3）。
 - ~~工程问题~~ 部分已修复：csproj 重复引用已去重（P2-4）；`Version="*"` 遗留（Q1.6）。

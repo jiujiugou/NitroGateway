@@ -44,6 +44,13 @@ public sealed class DeviceDialogService : IDeviceDialogService
     }
 
     /// <inheritdoc />
+    public bool EditWrite(WriteValueEditor editor)
+    {
+        var window = new WriteValueWindow { DataContext = editor, Owner = Application.Current?.MainWindow };
+        return window.ShowDialog() == true;
+    }
+
+    /// <inheritdoc />
     public bool Confirm(string title, string message) =>
         MessageBox.Show(Application.Current?.MainWindow, message, title,
             MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;

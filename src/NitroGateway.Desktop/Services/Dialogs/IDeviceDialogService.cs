@@ -18,6 +18,9 @@ public interface IDeviceDialogService
     /// <summary>批量生成点位表单（docs/13）。返回 true 表示用户点生成且 editor 已更新；false 表示取消</summary>
     bool EditPointBatch(PointBatchEditor editor);
 
+    /// <summary>写值对话框（下发控制值）。返回 true 表示用户确认下发且 editor.InputValue 已填；false 表示取消</summary>
+    bool EditWrite(WriteValueEditor editor);
+
     /// <summary>破坏性操作确认（如删除设备/点位）</summary>
     bool Confirm(string title, string message);
 

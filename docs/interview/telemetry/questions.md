@@ -56,11 +56,11 @@
 **Q3.3 ★★** `circuit_breaker_state` 在失败（:91）和成功（:130）路径 Set，但熔断跳过期间不 Set。Gauge 的值会怎样？监控端如何持续看到 Open 状态？
 代码定位：`DeviceCollector.cs:91,130`。
 
-**Q3.4 ★★** `forward_total` 的 label 声明了 success | failure | deadletter，但代码里只有 success（:109）和 failure（:116,126）上报。deadletter 指标缺失意味着什么？怎么才能监控死信？
-代码定位：`NitroMetrics.cs:43-48`；`Forwarder.cs:109,116,126`。
+**Q3.4 ★★** `forward_total` 的 label 现在是 success | failure | dropped。dropped 在哪上报？它取代了原来的 deadletter 标签意味着什么（2026-08-22 转发简化）？怎么用这个指标监控"数据不可达"？
+代码定位：`NitroMetrics.cs`（ForwardTotal 注释）；`SqliteForwardOutbox.cs:431`（dropped）；`Forwarder.cs:104,110,125`（success/failure）。
 
-**Q3.5 ★★★** `buffer_backlog` 和 `throttle_batch_size` 在 `ForwardBatchAsync` 末尾 Set（:146-147），每 5 秒才采一次样。你能观察到积压的瞬时峰值吗？这是采样偏差问题还是可接受？
-代码定位：`Forwarder.cs:146-147`；`ForwarderEngine.cs` 触发周期。
+**Q3.5 ★★★** `buffer_backlog` 在 `ForwardBatchAsync` 末尾 Set（:156），每 5 秒才采一次样。你能观察到积压的瞬时峰值吗？这是采样偏差问题还是可接受？（`throttle_batch_size` 已随 AIMD 删除）
+代码定位：`Forwarder.cs:143`；`ForwarderEngine.cs` 触发周期。
 
 **Q3.6 ★★** `mqtt_state` 的数值来自 `(int)state`。`MqttConnectionState` 枚举顺序是什么？指标 help 文本里写的顺序对吗？抓取端会不会被误导？
 代码定位：`MqttClientWrapper.cs:265`；`MqttConnectionState.cs`；`NitroMetrics.cs:66-72`。
@@ -109,10 +109,10 @@
 ## 六、Activity 状态约定
 
 **Q6.1 ★★** 仓库里 Activity 状态的约定是什么（Ok / Error / 描述）？这个约定从哪次修复开始被显式要求？
-代码定位：`Forwarder.cs:60-64` 注释（ADR-001 P2-9）；`ForwarderActivityTests` 类注释。
+代码定位：`Forwarder.cs:60-62` 注释（ADR-001 P2-9）；`ForwarderActivityTests` 类注释。
 
 **Q6.2 ★★** 列出所有「失败路径显式置 Error」的代码位置（Collect / Forward / SqliteWrite / MqttPublish 各在哪几行）。
-代码定位：`DeviceCollector.cs:93-94`；`Forwarder.cs:78,118,129,142`；`SqliteMeasurementStore.cs:74-75`；`MqttClientWrapper.cs:151-152,181-182,187-188`。
+代码定位：`DeviceCollector.cs:93-94`；`Forwarder.cs:77,112,128,139`；`SqliteMeasurementStore.cs:74-75`；`MqttClientWrapper.cs:151-152,181-182,187-188`。
 
 **Q6.3 ★★★** `ReadDevice` span 从头到尾没有 `SetStatus`。读设备失败时它是什么状态？错误信息在哪个 span 上能看到？这是缺陷还是有意设计？
 代码定位：`DeviceReader.cs:44-72`；`DeviceCollector.cs:93-94`。
@@ -165,11 +165,11 @@
 
 ## 九、诊断与开放题
 
-**Q9.1 ★★★** 场景题：MQTT Broker 断线 3 小时再恢复。按时间线描述 `mqtt_state`、`forward_total`、`buffer_backlog`、`throttle_batch_size` 的变化，以及恢复后积压如何排空。
-代码定位：`MqttClientWrapper.cs:265`；`Forwarder.cs:146-147`；`ForwardingThrottle.cs`。
+**Q9.1 ★★★** 场景题：MQTT Broker 断线 3 小时再恢复。按时间线描述 `mqtt_state`、`forward_total`、`buffer_backlog` 的变化，以及恢复后积压如何排空（2026-08-22 删 AIMD，无节流状态）。
+代码定位：`MqttClientWrapper.cs:265`；`Forwarder.cs:143`；`Forwarder.cs` 固定批量上限。
 
 **Q9.2 ★★★** 你现在是负责人，要给 Telemetry 模块做一次"闭环优化"，按优先级列出 3-5 件事并说明理由（已知缺口见 Q4.1 / Q4.2 / Q3.4 / Q4.4 / Q4.5）。
-代码定位：`notes/ADR/ADR-009-telemetry-observability-gaps.md`。
+代码定位：`notes/ADR/telemetry/ADR-009-telemetry-observability-gaps.md`。
 
 **Q9.3 ★★★** 新增一个"告警触发次数"指标（label: ruleId, severity），按仓库规范写出完整步骤（定义 → 上报 → 测试 → 文档），并指出与现有 9 个指标的一致性要求。
 代码定位：`NitroMetrics.cs` 命名规范；`docs/03-功能清单.md` F-23。
@@ -177,5 +177,5 @@
 **Q9.4 ★★★** 可观测性三大支柱（logging / metrics / tracing）在本仓库的现状各是什么水平？缺口分别在哪？如果要给生产环境上线可观测性，第一刀砍在哪？
 代码定位：`Webapi/Program.cs` Serilog；`NitroMetrics.cs`；`GatewayActivitySource.cs`。
 
-**Q9.5 ★★★** 陷阱复盘：把本模块所有"定义与实现不一致"的点列全（哑火指标、deadletter 标签、help 文本、F-23、csproj 重复引用、无监听器——均已修复），并说出每题修在哪、面试中如何展开讲。
+**Q9.5 ★★★** 陷阱复盘：把本模块所有"定义与实现不一致"的点列全（哑火指标、deadletter 标签→dropped、help 文本、F-23、csproj 重复引用、无监听器——均已修复），并说出每题修在哪、面试中如何展开讲。
 代码定位：见各题。

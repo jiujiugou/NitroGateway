@@ -14,7 +14,7 @@ namespace NitroGateway.UnitTests;
 /// SqliteForwardOutbox 数据可靠性测试（ADR-001 P0-1/P0-2 + P1-6 补充）。
 /// ADR-001 P1-4 后每个操作使用独立连接，因此用临时文件库（而非共享 :memory: 连接）承载测试。
 /// 覆盖：InFlight 启动恢复、损坏负载恢复、入队异常分类、正常往返、
-/// MarkFailed 超限死信、死信查询/重试/丢弃、Commit 删除。
+/// MarkFailed 超限即丢弃、死信方法（停用）查询/重试/丢弃、Commit 删除。
 /// </summary>
 public class SqliteForwardOutboxTests
 {
@@ -90,6 +90,15 @@ public class SqliteForwardOutboxTests
         var retryCount = reader.GetInt32(1);
         var lastError = reader.IsDBNull(2) ? null : reader.GetString(2);
         return (status, retryCount, lastError);
+    }
+
+    private static bool RowExists(string connectionString, string id)
+    {
+        using var connection = Open(connectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM forward_buffer WHERE id = @id;";
+        command.Parameters.AddWithValue("@id", id);
+        return Convert.ToInt32(command.ExecuteScalar()) > 0;
     }
 
     private static void DropForwardBufferTable(string connectionString)
@@ -209,9 +218,9 @@ public class SqliteForwardOutboxTests
         Assert.Contains("反序列化", lastError);
     }
 
-    /// <summary>P0-1②：损坏负载重试超限后进入死信队列</summary>
+    /// <summary>P0-1②：损坏负载重试超限后直接丢弃（简化 2026-08-22，不再进死信队列）</summary>
     [Fact]
-    public async Task Dequeue_CorruptPayload_OverMaxRetries_MovesToDeadLetter()
+    public async Task Dequeue_CorruptPayload_OverMaxRetries_Drops()
     {
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
@@ -223,11 +232,7 @@ public class SqliteForwardOutboxTests
         Assert.True(result.IsSuccess);
         Assert.Empty(result.Value!);
         Assert.Equal(0, buffer.Count);
-
-        var (status, retryCount, lastError) = ReadRow(db.ConnectionString, batchId);
-        Assert.Equal("DeadLetter", status);
-        Assert.Equal(3, retryCount);
-        Assert.Contains("反序列化", lastError);
+        Assert.False(RowExists(db.ConnectionString, batchId));
     }
 
     /// <summary>P0-1②：负载为 null 同样视为损坏，恢复为 Pending + 重试计数</summary>
@@ -286,9 +291,9 @@ public class SqliteForwardOutboxTests
         Assert.Equal(batch.Records[0].PointName, dequeued.Records[0].PointName);
     }
 
-    /// <summary>P1-6：MarkFailed 重试超限 → 正常批次进入死信队列（Forwarder 发布失败路径）</summary>
+    /// <summary>P1-6：MarkFailed 重试超限 → 直接丢弃（简化 2026-08-22，Forwarder 发布失败路径）</summary>
     [Fact]
-    public async Task MarkFailed_OverMaxRetries_MovesToDeadLetter()
+    public async Task MarkFailed_OverMaxRetries_Drops()
     {
         using var db = new TempForwardBufferDb();
         var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxRetries: 2);
@@ -303,15 +308,12 @@ public class SqliteForwardOutboxTests
 
         await buffer.MarkFailedAsync(batch.Id, "broker 不可达");
 
-        var (status, retryCount, lastError) = ReadRow(db.ConnectionString, batch.Id.ToString());
-        Assert.Equal("DeadLetter", status);
-        Assert.Equal(2, retryCount);
-        Assert.Contains("broker", lastError);
+        Assert.False(RowExists(db.ConnectionString, batch.Id.ToString()));
     }
 
-    /// <summary>ADR-009 P2-1：MarkFailed 超限进死信时上报 ForwardTotal{status=deadletter}</summary>
+    /// <summary>ADR-009 P2-1：MarkFailed 超限丢弃时上报 ForwardTotal{status=dropped}</summary>
     [Fact]
-    public async Task MarkFailed_OverMaxRetries_ReportsDeadletterMetric()
+    public async Task MarkFailed_OverMaxRetries_ReportsDroppedMetric()
     {
         using var db = new TempForwardBufferDb();
         var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance, maxRetries: 2);
@@ -324,8 +326,8 @@ public class SqliteForwardOutboxTests
         using var stream = new MemoryStream();
         await Prometheus.Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
         var exported = System.Text.Encoding.UTF8.GetString(stream.ToArray());
-        // 存在性断言而非精确值：其他走死信路径的测试（如损坏负载恢复）也会累加该计数器
-        Assert.Contains("nitro_forward_total{status=\"deadletter\"}", exported);
+        // 存在性断言而非精确值：其他走丢弃路径的测试（如损坏负载恢复）也会累加该计数器
+        Assert.Contains("nitro_forward_total{status=\"dropped\"}", exported);
     }
 
     /// <summary>ADR-001 P3-13：GetCountAsync 异步返回 Pending 批次数，不含死信</summary>
@@ -365,8 +367,10 @@ public class SqliteForwardOutboxTests
     {
         using var db = new TempForwardBufferDb();
         var batch = NewBatch(Guid.NewGuid());
-        InsertRow(db.ConnectionString, batch.Id.ToString(), Serialize(batch), "DeadLetter", retryCount: 3);
         var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+        // 先触发启动恢复（2026-08-22 起恢复会清理历史死信），再插入死信行，避免被清理
+        await buffer.GetCountAsync();
+        InsertRow(db.ConnectionString, batch.Id.ToString(), Serialize(batch), "DeadLetter", retryCount: 3);
 
         var result = await buffer.GetDeadLettersAsync(10);
 
@@ -384,8 +388,10 @@ public class SqliteForwardOutboxTests
     {
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
-        InsertRow(db.ConnectionString, batchId, "{}", "DeadLetter", retryCount: 6);
         var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+        // 先触发启动恢复（2026-08-22 起恢复会清理历史死信），再插入死信行，避免被清理
+        await buffer.GetCountAsync();
+        InsertRow(db.ConnectionString, batchId, "{}", "DeadLetter", retryCount: 6);
 
         var result = await buffer.RetryDeadLetterAsync(Guid.Parse(batchId));
 
@@ -401,8 +407,10 @@ public class SqliteForwardOutboxTests
     {
         using var db = new TempForwardBufferDb();
         var batchId = Guid.NewGuid().ToString();
-        InsertRow(db.ConnectionString, batchId, "{}", "DeadLetter");
         var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+        // 先触发启动恢复（2026-08-22 起恢复会清理历史死信），再插入死信行，避免被清理
+        await buffer.GetCountAsync();
+        InsertRow(db.ConnectionString, batchId, "{}", "DeadLetter");
 
         var result = await buffer.DiscardDeadLetterAsync(Guid.Parse(batchId));
 
@@ -509,6 +517,8 @@ public class SqliteForwardOutboxTests
     {
         using var db = new TempForwardBufferDb();
         var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+        // 先触发启动恢复（2026-08-22 起恢复会清理历史死信），再插入死信行，避免被清理
+        await buffer.GetCountAsync();
         InsertRow(db.ConnectionString, Guid.NewGuid().ToString(), "{}", "DeadLetter");
 
         // 手动插入一条较新的死信（InsertRow 固定 2026-08-06，这里用更新时间戳）

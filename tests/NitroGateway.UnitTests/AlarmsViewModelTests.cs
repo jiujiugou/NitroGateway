@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
@@ -177,8 +177,9 @@ public sealed class AlarmsViewModelTests
             Task.FromResult(OperationResult<IReadOnlyList<NitroGateway.Alarm.Domain.Alarm>>.Success(Array.Empty<NitroGateway.Alarm.Domain.Alarm>()));
         public Task<OperationResult<IReadOnlyList<NitroGateway.Alarm.Domain.Alarm>>> QueryAsync(DateTime from, DateTime to, int limit = 1000, CancellationToken ct = default) =>
             Task.FromResult(OperationResult<IReadOnlyList<NitroGateway.Alarm.Domain.Alarm>>.Success(Array.Empty<NitroGateway.Alarm.Domain.Alarm>()));
+        public Task<OperationResult<int>> CountOccurredSinceAsync(DateTime sinceUtc, CancellationToken ct = default) =>
+            Task.FromResult(OperationResult<int>.Success(0));
     }
-
     /// <summary>可编程告警仓储：QueryAsync 返回 History、GetAllActiveAsync 返回 Active。</summary>
     private sealed class StubAlarmRepository : IAlarmRepository
     {
@@ -195,5 +196,7 @@ public sealed class AlarmsViewModelTests
         public Task<OperationResult> SaveAsync(AlarmEntity alarm, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<OperationResult> UpdateStateAsync(Guid alarmId, AlarmState state, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<OperationResult<IReadOnlyList<AlarmEntity>>> GetActiveByDeviceAsync(Guid deviceId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<OperationResult<int>> CountOccurredSinceAsync(DateTime sinceUtc, CancellationToken ct = default) =>
+            Task.FromResult(OperationResult<int>.Success(0));
     }
 }

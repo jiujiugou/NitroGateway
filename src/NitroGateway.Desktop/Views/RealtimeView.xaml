@@ -106,6 +106,102 @@
                             <TextBlock Text="{Binding SelectedPoint.Name, FallbackValue=请选择点位查看曲线}"
                                        Foreground="{StaticResource TextSecondary}" FontSize="12.5"
                                        VerticalAlignment="Center" Margin="12,0,0,0" />
+                            <!-- 行业惯例（SCADA）：控制动作“选中对象→操作对话框”，不常驻工具栏。
+                                 选中可写点位（CanWrite=True）时，曲线卡片头部出现“写值”按钮，点击弹 WriteValueWindow。
+                                 命令由 RealtimeViewModel 提供 WriteCommand；RealtimePointItem 需提供 bool CanWrite。 -->
+                            <Button Content="✎ 写值" Command="{Binding WriteCommand}" CommandParameter="{Binding SelectedPoint}"
+                                    Margin="12,0,0,0" VerticalAlignment="Center"
+                                    ToolTip="向选中的可写点位下发实际值">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedPoint.CanWrite}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <!-- 行内写值编辑器（借鉴 ThingsGateway 行内就地输入）：
+                                 选中可写点位点“✎ 写值”后在曲线卡片头部就地展开输入区，
+                                 确认/取消走 RealtimeViewModel 的 ConfirmWriteCommand / CancelWriteCommand。 -->
+                            <Border Background="{StaticResource FillLight}" BorderBrush="{StaticResource BorderColor}"
+                                    BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="12,0,0,0"
+                                    VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsWriteEditorOpen}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding CurrentWriteEditor.PointName, FallbackValue=—}"
+                                               FontWeight="SemiBold" FontSize="12.5" VerticalAlignment="Center"
+                                               Margin="0,0,10,0" />
+                                    <!-- Bool 点位用开关（勾选=1），数值/字符串用文本框 -->
+                                    <CheckBox Content="True" VerticalAlignment="Center"
+                                              IsChecked="{Binding CurrentWriteEditor.BoolValue}"
+                                              ToolTip="Bool 点位写入值（勾选=1）">
+                                        <CheckBox.Style>
+                                            <Style TargetType="CheckBox">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CurrentWriteEditor.IsBool}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </CheckBox.Style>
+                                    </CheckBox>
+                                    <TextBox Width="110" VerticalAlignment="Center" Margin="0,0,8,0"
+                                             Text="{Binding CurrentWriteEditor.InputValue, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="输入要写入的数值或字符串">
+                                        <TextBox.Style>
+                                            <Style TargetType="TextBox">
+                                                <!-- 非 Bool 点位显示文本框（默认可见）；Bool 点位由 CheckBox 承接，这里折叠。
+                                                     注意默认必须是 Visible：若默认 Collapsed 则数值/字符串点位永远没有输入框。 -->
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CurrentWriteEditor.IsBool}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBox.Style>
+                                    </TextBox>
+                                    <Button Content="下发" Command="{Binding ConfirmWriteCommand}"
+                                            Margin="0,0,6,0">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+                                                <Setter Property="IsEnabled" Value="True" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsWriting}" Value="True">
+                                                        <Setter Property="IsEnabled" Value="False" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    <Button Content="取消" Command="{Binding CancelWriteCommand}">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="IsEnabled" Value="True" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsWriting}" Value="True">
+                                                        <Setter Property="IsEnabled" Value="False" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                         <lvc:CartesianChart Grid.Row="1" Series="{Binding Series}"
                                             XAxes="{Binding XAxes}" YAxes="{Binding YAxes}" />

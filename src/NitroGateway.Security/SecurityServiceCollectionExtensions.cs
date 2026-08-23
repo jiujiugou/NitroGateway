@@ -102,7 +102,14 @@ public static class SecurityServiceCollectionExtensions
         services.AddSingleton(jwtConfig);
         services.AddSingleton<IReadOnlyList<UserConfig>>(jwtConfig.Users);
 
+        // ADR-066：用户 DB 化——登录校验/管理接口共用同一密码哈希器（无状态，单例）。
+        // PasswordHasher<UserAccount> 与 PasswordHasher<UserConfig> 哈希格式一致（PBKDF2），
+        // 首启种子（配置用户哈希直落 users 表）可被登录正常校验。
+        services.AddSingleton<PasswordHasher<UserAccount>>();
+
         // ── 2. Token 签发 ──
+        // TokenGenerator 改读 IUserStore（Persistence 注册），登录每次实时读库；
+        // JWT 签发/RBAC/限流行为不变（ADR-066）
         services.AddSingleton<TokenGenerator>();
 
         // ── 3. JWT 认证中间件 ──

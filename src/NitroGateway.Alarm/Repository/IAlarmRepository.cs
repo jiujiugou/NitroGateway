@@ -43,4 +43,12 @@ public interface IAlarmRepository
     Task<OperationResult<IReadOnlyList<Domain.Alarm>>> QueryAsync(
         DateTime from, DateTime to, string? siteId, int limit = 1000, CancellationToken ct = default)
         => QueryAsync(from, to, limit, ct);
+
+    /// <summary>
+    /// 统计自 <paramref name="sinceUtc"/>（含）之后发生的告警条数（ADR-065 A1 仪表盘「今日告警」KPI）。
+    /// 按 occurred_at 过滤；实现应做精确 COUNT，不依赖 limit 截断。
+    /// </summary>
+    /// <param name="sinceUtc">统计起点（UTC，含）</param>
+    /// <param name="ct">取消令牌</param>
+    Task<OperationResult<int>> CountOccurredSinceAsync(DateTime sinceUtc, CancellationToken ct = default);
 }

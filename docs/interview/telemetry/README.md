@@ -39,9 +39,9 @@ Tracing 三件套（Source / Activities / Tags）→ Activity 状态约定（Ok/
 | nitro_collection_total | `DeviceCollector.cs:90,129`（failure / success） |
 | nitro_collection_duration_ms | `DeviceCollector.cs:231`（Observe 整轮并行采集耗时，ADR-009 P1-1 已修复） |
 | nitro_circuit_breaker_state | `DeviceCollector.cs:91,130` |
-| nitro_forward_total | `Forwarder.cs:119,126,144`（success/failure）+ 死信点 `SqliteForwardBuffer.cs:370`（deadletter，ADR-009 P2-1 已修复） |
-| nitro_buffer_backlog | `Forwarder.cs:146` |
-| nitro_throttle_batch_size | `Forwarder.cs:147` |
+| nitro_forward_total | `Forwarder.cs:104,110,125`（success/failure）+ `SqliteForwardOutbox.cs:431`（dropped，2026-08-22 由 deadletter 改名，重试超限丢弃上报） |
+| nitro_buffer_backlog | `Forwarder.cs:143` |
+| ~~nitro_throttle_batch_size~~ | 2026-08-22 随 AIMD 节流删除 |
 | nitro_mqtt_state | `MqttClientWrapper.cs:265`（SetState） |
 | nitro_devices_online | `DeviceCollector.cs:180`（健康在线快照，ADR-009 P1-2 已修复） |
 | nitro_devices_available | `DeviceCollector.cs:153` |
@@ -57,6 +57,6 @@ Tracing 三件套（Source / Activities / Tags）→ Activity 状态约定（Ok/
 ## 注意事项
 
 - **代码是唯一事实来源**：`docs/03-功能清单.md` F-23 写「8 个指标」，实际 9 个字段（文档漂移）；F-25 写「8 个 Span」与 `GatewayActivities` 一致
-- 已知缺口均已处理（`notes/ADR/ADR-009-telemetry-observability-gaps.md` 状态"全部已处理"）；追踪执行层启用见 `notes/ADR/ADR-056-otel-tracing-execution.md`；File 落盘导出见 `notes/ADR/ADR-057-tracing-file-exporter.md`
+- 已知缺口均已处理（`notes/ADR/telemetry/ADR-009-telemetry-observability-gaps.md` 状态"全部已处理"）；追踪执行层启用见 `notes/ADR/telemetry/ADR-056-otel-tracing-execution.md`；File 落盘导出见 `notes/ADR/telemetry/ADR-057-tracing-file-exporter.md`
 - 测试参照：`tests/NitroGateway.UnitTests/ForwarderActivityTests.cs`（ActivityListener 捕获 + 状态断言）；当前无指标单测
 - 答完全部题目后，试着不看代码画出「采集一轮 → SQLite/MQTT」的完整指标与 span 时间线

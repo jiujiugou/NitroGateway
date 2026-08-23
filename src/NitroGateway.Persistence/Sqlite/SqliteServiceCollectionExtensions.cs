@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NitroGateway.Alarm.Repository;
+using NitroGateway.Security.Audit;
+using NitroGateway.Security.Auth;
 using NitroGateway.Storage.Disk;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.Configuration;
@@ -40,7 +42,7 @@ public static class SqliteServiceCollectionExtensions
         services.AddSingleton<IMeasurementStore>(_ => new SqliteMeasurementStore(connectionString));
         // ADR-035 第 1 步：站点目录（Web 按 site 过滤的数据源，Dapper 单例，与 MeasurementStore 同模式）
         services.AddSingleton<ISiteCatalog>(_ => new SqliteSiteCatalog(connectionString));
-        // ADR-018 P2-3：缓冲入队上限 + 死信保留天数均可配置，防止 MQTT 长期离线/坏消息无限累积
+        // ADR-018 P2-3：缓冲入队上限可配置，防止 MQTT 长期离线无限累积
         services.AddSingleton<IForwardBuffer>(sp => new SqliteForwardOutbox(
             connectionString,
             sp.GetRequiredService<ILogger<SqliteForwardOutbox>>(),
@@ -59,13 +61,6 @@ public static class SqliteServiceCollectionExtensions
             sp.GetRequiredService<ILogger<MeasurementRetentionService>>(),
             retentionDays: configuration.GetValue("Persistence:MeasurementRetentionDays", 30),
             interval: configuration.GetValue<TimeSpan?>("Persistence:MeasurementRetentionInterval") ?? TimeSpan.FromHours(24)));
-
-        // ADR-018 P2-3：死信保留任务（后台周期清理，防止死信表无限增长，与 measurements 保留对称）
-        services.AddHostedService(sp => new DeadLetterRetentionService(
-            sp.GetRequiredService<IForwardBuffer>(),
-            sp.GetRequiredService<ILogger<DeadLetterRetentionService>>(),
-            retentionDays: configuration.GetValue("Persistence:DeadLetterRetentionDays", 30),
-            interval: configuration.GetValue<TimeSpan?>("Persistence:DeadLetterRetentionInterval") ?? TimeSpan.FromHours(24)));
 
         // ADR-012：磁盘守卫——同一实例同时是 IDiskStatus（供采集/转发/健康检查联动）与 HostedService
         services.AddOptions<DiskGuardOption>()
@@ -90,6 +85,18 @@ public static class SqliteServiceCollectionExtensions
             sp.GetRequiredService<AlarmRuleCache>(),
             sp.GetRequiredService<SqliteAlarmRuleRepository>()));
         services.AddScoped<IAlarmRepository, SqliteAlarmRepository>();
+
+        // ADR-065 A3：操作审计落库（Dapper 单例，每操作独立连接）——AuditMiddleware 非 GET 写
+        // audit_logs，Webapi 审计查询页读取；同 MeasurementStore 模式，不依赖 DbContext。
+        services.AddSingleton<IAuditLogStore>(sp => new SqliteAuditLogStore(
+            connectionString,
+            sp.GetRequiredService<ILogger<SqliteAuditLogStore>>()));
+
+        // ADR-066：用户存储（Dapper 单例，每操作独立连接）——TokenGenerator 登录/UserController 管理共用；
+        // 首启空表时由 Webapi 启动期 SeedIfEmptyAsync 灌入配置用户（保留 admin/admin123 开发登录）
+        services.AddSingleton<IUserStore>(sp => new SqliteUserStore(
+            connectionString,
+            sp.GetRequiredService<ILogger<SqliteUserStore>>()));
 
         return services;
     }

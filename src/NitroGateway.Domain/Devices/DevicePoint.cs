@@ -56,4 +56,16 @@ public sealed class DevicePoint
 
     /// <summary>缩放偏移</summary>
     public double ScaleOffset { get; set; }
+
+    /// <summary>
+    /// 写值范围下限（null = 不限）。供 WriteGuard.Range 校验与前端录入/展示。
+    /// 仅对数值型点位有意义（Bool 通常配 0/1）；String 类型忽略。
+    /// </summary>
+    public double? MinLimit { get; set; }
+
+    /// <summary>
+    /// 写值范围上限（null = 不限）。供 WriteGuard.Range 校验与前端录入/展示。
+    /// 仅对数值型点位有意义（Bool 通常配 0/1）；String 类型忽略。
+    /// </summary>
+    public double? MaxLimit { get; set; }
 }

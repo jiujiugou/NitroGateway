@@ -1,0 +1,91 @@
+<Window x:Class="NitroGateway.Desktop.Views.WriteValueWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="460" SizeToContent="Height" MinWidth="420"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource PageBackground}"
+        Foreground="{DynamicResource TextPrimary}"
+        FontFamily="Segoe UI, Microsoft YaHei UI"
+        FontSize="13.5">
+    <!-- 合并共享样式：无 Application 实例（单元测试冒烟）时也能解析 StaticResource（PrimaryButtonStyle 等） -->
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid Margin="26">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 页头 -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="下发写值" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="向设备点位写入实际控制值" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+        </StackPanel>
+
+        <!-- 点位信息卡片 -->
+        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="20" Margin="0,16,0,0">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,12,14">
+                        <TextBlock Text="设备" Style="{StaticResource FormLabelStyle}" />
+                        <TextBlock Text="{Binding DeviceName, FallbackValue=—}" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="0,0,0,14">
+                        <TextBlock Text="点位" Style="{StaticResource FormLabelStyle}" />
+                        <TextBlock Text="{Binding PointName, FallbackValue=—}" FontWeight="SemiBold" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,12,14">
+                        <TextBlock Text="地址" Style="{StaticResource FormLabelStyle}" />
+                        <TextBlock Text="{Binding Address, FallbackValue=—}" Foreground="{StaticResource TextSecondary}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="0,0,0,14">
+                        <TextBlock Text="数据类型" Style="{StaticResource FormLabelStyle}" />
+                        <TextBlock Text="{Binding DataType, FallbackValue=—}" Foreground="{StaticResource TextSecondary}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <TextBlock Text="当前值" Style="{StaticResource FormLabelStyle}" />
+                        <TextBlock Text="{Binding CurrentValueText, FallbackValue=—}" Foreground="{StaticResource TextSecondary}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="0,0,0,0">
+                        <TextBlock Text="写入范围" Style="{StaticResource FormLabelStyle}" />
+                        <TextBlock Text="{Binding RangeText, FallbackValue=不限}" Foreground="{StaticResource TextSecondary}" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 新值输入：Bool 点位可改为 CheckBox、数值点位可改为数值控件（按 DataType 由调用方切换） -->
+                <StackPanel Margin="0,10,0,0">
+                    <TextBlock Text="新值" Style="{StaticResource FormLabelStyle}" />
+                    <TextBox Text="{Binding InputValue, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="16" Padding="8,6"
+                             ToolTip="输入要写入的数值或字符串；Bool 点位可改为开关控件" />
+                </StackPanel>
+
+                <!-- 二次确认警示 -->
+                <Border Background="{StaticResource BadRowBrush}" CornerRadius="6" Padding="12,9" Margin="0,14,0,0">
+                    <TextBlock Text="⚠ 该操作将立即向设备写入实际值，请确认目标值正确后再下发。"
+                               Foreground="{StaticResource DangerBrush}" FontSize="12.5" TextWrapping="Wrap" />
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Width="96" Margin="0,0,12,0" IsCancel="True" Click="OnCancel" />
+            <Button Content="确认下发" Width="120" IsDefault="True" Click="OnConfirm" Style="{StaticResource PrimaryButtonStyle}" />
+        </StackPanel>
+    </Grid>
+</Window>

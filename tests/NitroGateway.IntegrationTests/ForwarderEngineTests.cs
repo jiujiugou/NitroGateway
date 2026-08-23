@@ -151,13 +151,11 @@ public class ForwarderEngineTests
         var services = new ServiceCollection();
         services.AddSingleton<IForwardBuffer>(buffer);
         services.AddSingleton<IMqttClient>(mqtt);
-        services.AddSingleton<ForwardingThrottle>();
         services.AddSingleton<IMessageSerializer, JsonMessageSerializer>();
         services.AddSingleton<IForwarder>(sp => new NitroGateway.Forwarder.Forwarder(
             buffer,
             sp.GetRequiredService<IMessageSerializer>(),
             mqtt,
-            sp.GetRequiredService<ForwardingThrottle>(),
             NullLogger<NitroGateway.Forwarder.Forwarder>.Instance));
         await using var provider = services.BuildServiceProvider();
 

@@ -489,3 +489,6 @@ $RECYCLE.BIN/
 
 # NitroGateway backups
 backups/
+
+# 临时分析脚本（不提交）
+.scratch/

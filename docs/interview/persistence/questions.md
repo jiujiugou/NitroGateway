@@ -1,4 +1,4 @@
-﻿# Persistence 模块面试题
+# Persistence 模块面试题
 
 > 难度：★ 基础 · ★★ 进阶 · ★★★ 深水。每题附「代码定位」，答不出先看代码再看答案。
 > 共 10 组 48 题；参考答案见 `answers.md`。
@@ -11,13 +11,13 @@
 代码定位：`src/NitroGateway.Storage/DESIGN.md`；`src/NitroGateway.Storage/Buffer/IForwardBuffer.cs:11`、`src/NitroGateway.Storage/TimeSeries/IMeasurementStore.cs:12`。
 
 **Q1.2 ★** 同一个数据库，为什么配置数据（devices/points/alarms）走 EF Core，而 measurements 和 forward_buffer 走 Dapper 手写 SQL？两套技术栈的边界在哪里？
-代码定位：`src/NitroGateway.Persistence/Sqlite/NitroGatewayDbContext.cs` 类注释；`src/NitroGateway.Persistence/Sqlite/SqliteMeasurementStore.cs`、`SqliteForwardBuffer.cs`。
+代码定位：`src/NitroGateway.Persistence/Sqlite/NitroGatewayDbContext.cs` 类注释；`src/NitroGateway.Persistence/Sqlite/SqliteMeasurementStore.cs`、`SqliteForwardOutbox.cs`。
 
 **Q1.3 ★★** DI 注册：为什么 EF 仓储是 Scoped、Dapper 存储是 Singleton？Singleton 下跨线程安全如何保证？
 代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteServiceCollectionExtensions.cs:25`。
 
 **Q1.4 ★★** 接口纪律「只增不删」在缓冲接口上的体现？保留 `Count` 同步属性、新增 `GetCountAsync` 的代价与收益？
-代码定位：`src/NitroGateway.Storage/Buffer/IForwardBuffer.cs:11`；`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs` 的 `Count` / `GetCountAsync`。
+代码定位：`src/NitroGateway.Storage/Buffer/IForwardBuffer.cs:11`；`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs` 的 `Count` / `GetCountAsync`。
 
 **Q1.5 ★★** DomainMapper 的职责？枚举、Guid、ConnectionParams 各以什么形式存储？为什么空参数序列化为 `"{}"`？
 代码定位：`src/NitroGateway.Persistence/DomainMapper.cs:11`。
@@ -64,23 +64,23 @@
 
 ## 四、转发缓冲 forward_buffer
 
-**Q4.1 ★** forward_buffer 表结构（M002 + M004 追加列）与批次状态机？
-代码定位：`src/NitroGateway.Persistence/Migrations/M002_CreateForwardBufferTable.cs`、`M004_AddDeadLetterSupport.cs`；`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs` 类注释。
+**Q4.1 ★** forward_buffer 表结构（M002 + M004 追加列）与批次状态机？（超限处置现在是丢弃不是死信，2026-08-22 简化）
+代码定位：`src/NitroGateway.Persistence/Migrations/M002_CreateForwardBufferTable.cs`、`M004_AddDeadLetterSupport.cs`；`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs` 类注释。
 
 **Q4.2 ★★** 两阶段提交：DequeueAsync 为什么在事务内「SELECT + UPDATE 标记 InFlight」？为什么出队时不删除？
-代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs:117`。
+代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs:117`。
 
 **Q4.3 ★★★** 启动恢复：构造函数把遗留 InFlight 重置为 Pending 的目的？恢复失败为什么只告警不阻断启动？
-代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs:57`。
+代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs:57`。
 
 **Q4.4 ★★★** 出队后反序列化损坏的行怎么处理？为什么不能让它留在 InFlight？恢复失败会怎样？
-代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs:117`（步骤②）、`:195`（RecoverCorruptRowAsync）。
+代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs:117`（步骤②）、`:195`（RecoverCorruptRowAsync）。
 
-**Q4.5 ★★★** MarkFailedAsync 如何做到「一次 UPDATE 完成重试计数 + 状态迁移」？为什么判断是否进死信要放到事务外？原来几次往返（ADR-001 P2-11）？
-代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs:242`。
+**Q4.5 ★★★** MarkFailedAsync 如何做到「丢弃判定 + 一次 UPDATE 完成重试计数与状态迁移」？（2026-08-22 起先 DELETE 丢弃、未命中再 UPDATE 回 Pending）原来几次往返（ADR-001 P2-11）？UPDATE 忘了 SET status='Pending' 会怎样？
+代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs:399`。
 
-**Q4.6 ★★** 死信三操作（GetDeadLetters / RetryDeadLetter / DiscardDeadLetter）的语义？为什么都带 `status = 'DeadLetter'` 条件？损坏负载如何兜底？
-代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs:289`、`:327`、`:355`。
+**Q4.6 ★★** 死信三操作（GetDeadLetters / RetryDeadLetter / DiscardDeadLetter）现在是什么状态？为什么接口里还保留？原语义为什么都带 `status = 'DeadLetter'` 条件？
+代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs:450`（【停用】起）`、:499`、`:532`。
 
 **Q4.7 ★★** `Count` 与 `GetCountAsync` 的区别？BufferRow 为什么只投影 id + payload？
 代码定位：`src/NitroGateway.Storage/Buffer/IForwardBuffer.cs:11`；`src/NitroGateway.Persistence/Sqlite/BufferRow.cs`。
@@ -120,7 +120,7 @@
 代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteErrorClassifier.cs:13`；`tests/NitroGateway.UnitTests/SqliteErrorClassifierTests.cs`。
 
 **Q6.4 ★★** 失败处理的三层次：阻断启动（备份失败）、仅告警（InFlight 恢复/保留清理）、返回 Failure（业务操作）——各自的判断标准？
-代码定位：`src/NitroGateway.Persistence/MigrationRunner.cs:63`；`SqliteForwardBuffer.cs:57`；`MeasurementRetentionService.cs:34`。
+代码定位：`src/NitroGateway.Persistence/MigrationRunner.cs:63`；`SqliteForwardOutbox.cs:57`；`MeasurementRetentionService.cs:34`。
 
 ---
 
@@ -162,10 +162,10 @@
 代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteMeasurementStore.cs:33`；`GatewayActivities.SqliteWrite`。
 
 **Q9.2 ★★** persistence 相关的测试文件与各自覆盖点？
-代码定位：`tests/NitroGateway.UnitTests`（SqliteMeasurementStoreTests / SqliteForwardBufferTests / SqliteErrorClassifierTests / SqliteAlarmRepositoryTests / MeasurementRetentionServiceTests / MeasurementWriteHostTests）。
+代码定位：`tests/NitroGateway.UnitTests`（SqliteMeasurementStoreTests / SqliteForwardOutboxTests / SqliteErrorClassifierTests / SqliteAlarmRepositoryTests / MeasurementRetentionServiceTests / MeasurementWriteHostTests）。
 
-**Q9.3 ★★★** 像「启动恢复」「死信转移」「分页夹紧」这类行为，测试用真 SQLite 还是 mock？红绿对照怎么用？并发类行为怎么测才稳定？
-代码定位：`tests/NitroGateway.UnitTests/SqliteForwardBufferTests.cs`、`SqliteMeasurementStoreTests.cs`。
+**Q9.3 ★★★** 像「启动恢复」「重试超限丢弃」「分页夹紧」这类行为，测试用真 SQLite 还是 mock？红绿对照怎么用？并发类行为怎么测才稳定？
+代码定位：`tests/NitroGateway.UnitTests/SqliteForwardOutboxTests.cs`、`SqliteMeasurementStoreTests.cs`。
 
 ---
 
@@ -175,7 +175,7 @@
 代码定位：`src/NitroGateway.Persistence/Sqlite/SqlitePragmas.cs`、`MigrationRunner.cs`、`SqliteMeasurementStore.cs`。
 
 **Q10.2 ★★★** MQTT 断网 24h：数据可靠性链路怎么走？主要风险是什么（buffer 表增长 vs measurements 保留）？
-代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardBuffer.cs` 全链路；`MeasurementRetentionService.cs`。
+代码定位：`src/NitroGateway.Persistence/Sqlite/SqliteForwardOutbox.cs` 全链路；`MeasurementRetentionService.cs`。
 
 **Q10.3 ★★★** measurements 大表优化方向（分区/降采样/索引/保留窗口）？各自代价？
 代码定位：`src/NitroGateway.Persistence/Migrations/M001_CreateMeasurementsTable.cs`；`SqliteMeasurementStore.cs`。

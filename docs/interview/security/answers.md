@@ -80,13 +80,13 @@ Admin / Operator / Viewer + 组合常量 `AdminOperator`（"Admin,Operator"）�
 | --- | --- |
 | Alarms（查看） | AllRoles |
 | Alarms（确认） | AdminOperator |
-| AlarmRules / DeadLetters / PointImport | AdminOperator |
+| AlarmRules / PointImport | AdminOperator（DeadLetters 控制器已于 2026-08-22 删除） |
 | Status / Devices / Measurements | AllRoles |
 | Auth（login） | AllowAnonymous |
 规律：**读 = 全员；写/变更 = Admin + Operator；Viewer 一律不可变更**。注意 DevicesController 当前只有查询端点，未来加增删改端点时应按操作分级而非沿用类级 AllRoles。
 
 **Q4.3 最小权限**
-查看是只读职责，Viewer 需要；确认告警是状态变更（影响告警处置流），只给需要执行的人——最小权限原则（least privilege）。同理 AlarmRules / DeadLetters / PointImport 都是「操作」，排除 Viewer。
+查看是只读职责，Viewer 需要；确认告警是状态变更（影响告警处置流），只给需要执行的人——最小权限原则（least privilege）。同理 AlarmRules / PointImport 都是「操作」，排除 Viewer（原 DeadLetters 亦同，已随死信删除 2026-08-22）。
 
 **Q4.4 SignalR query token**
 浏览器 WebSocket 无法自定义 Authorization 头，SignalR 官方模式是从 query string 读 `access_token`（`OnMessageReceived`）。风险：token 出现在 URL → 浏览器历史、代理/网关访问日志、Referer 泄露面扩大。缓解：短有效期 + TLS + 访问日志脱敏；另外当前实现**对所有请求路径**都读 `access_token`（不限定 SignalR 路径），属于宽松实现。

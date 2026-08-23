@@ -35,6 +35,10 @@ public sealed class PointDto
     public string? Description { get; init; } public string DataType { get; init; } = ""; public string Access { get; init; } = "";
     public bool Enabled { get; init; } public int ScanIntervalMs { get; init; }
     public double Deadband { get; init; } public double ScaleFactor { get; init; } public double ScaleOffset { get; init; }
+    /// <summary>写值范围下限（null=不限，docs/14 写功能）</summary>
+    public double? MinLimit { get; init; }
+    /// <summary>写值范围上限（null=不限，docs/14 写功能）</summary>
+    public double? MaxLimit { get; init; }
     /// <summary>配置最后修改时间（O 格式 UTC，ADR-033 阶段 3/4 同步版本依据）</summary>
     public string UpdatedAt { get; init; } = "";
     /// <summary>删除标记（tombstone，ADR-033 阶段 3/4）</summary>

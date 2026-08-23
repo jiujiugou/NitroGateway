@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.Collection;
 using NitroGateway.DeviceManagement;
-using NitroGateway.Forwarder;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Transport.MQTT;
@@ -20,7 +19,6 @@ public class StatusController : ControllerBase
     private readonly IDeviceHealthMonitor _healthMonitor;
     private readonly IForwardBuffer _buffer;
     private readonly IMqttClient _mqtt;
-    private readonly ForwardingThrottle _throttle;
     private readonly ICircuitBreakerRegistry _breakers;
     private readonly string _siteId;
 
@@ -29,7 +27,6 @@ public class StatusController : ControllerBase
         IDeviceHealthMonitor healthMonitor,
         IForwardBuffer buffer,
         IMqttClient mqtt,
-        ForwardingThrottle throttle,
         ICircuitBreakerRegistry breakers,
         IConfiguration configuration)
     {
@@ -37,7 +34,6 @@ public class StatusController : ControllerBase
         _healthMonitor = healthMonitor;
         _buffer = buffer;
         _mqtt = mqtt;
-        _throttle = throttle;
         _breakers = breakers;
         // ADR-054：web 收敛为纯边缘单一身份——本站点 ID 来自 Site:Id 配置（缺省 default），
         // 替代原「中心站点目录」概念；前端系统状态页与设备表单据此展示本网关站点。
@@ -115,8 +111,6 @@ public class StatusController : ControllerBase
             MqttState = _mqtt.State.ToString(),
             MqttConnected = _mqtt.State == MqttConnectionState.Connected,
             BufferBacklog = bufferBacklog,
-            ThrottleBatchSize = _throttle.MaxBatchSize,
-            ThrottleDelayMs = _throttle.DelayMs,
             OnlineDevices = onlineCount,
             CircuitBreakers = breakerStates
         }));

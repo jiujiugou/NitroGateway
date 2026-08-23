@@ -11,7 +11,7 @@ namespace NitroGateway.Persistence.Sqlite;
 
 /// <summary>
 /// 转发 Outbox（SQLite 持久化实现）。实现 <see cref="IForwardBuffer"/>：FIFO、至少一次投递、
-/// 两阶段提交、重试上限、死信队列与按保留期清理。
+/// 两阶段提交、重试上限（超限即丢弃）。
 ///
 /// <para><b>为什么是 Outbox 而不是 Buffer：</b>这不是内存队列，而是一张持久化表（forward_buffer）——
 /// 采集侧同步写入、转发侧（MQTT/HTTP）异步消费，进程崩溃不丢、重启续传，即"事务性 Outbox"模式。
@@ -22,8 +22,10 @@ namespace NitroGateway.Persistence.Sqlite;
 ///   <listheader><term>状态</term><description>含义</description></listheader>
 ///   <item><term>Pending</term><description>待转发（入队目标态，可被出队）</description></item>
 ///   <item><term>InFlight</term><description>已出队、转发中（出队事务内标记；进程崩溃后可恢复）</description></item>
-///   <item><term>DeadLetter</term><description>重试超限，不再自动出队（可人工重试/丢弃/按保留期清理）</description></item>
 /// </list>
+/// <para><b>重试超限即丢弃（简化，2026-08-22）：</b>重试 <see cref="_maxRetries"/> 次仍失败不再进死信队列——
+/// 普通遥测旧值不值钱（云端侧按时间戳/主键幂等，补发过期数据也无意义），直接 DELETE 丢弃并记 Warning 日志 +
+/// <c>dropped</c> 指标；死信 UI/保留任务随之移除。</para>
 ///
 /// <para><b>状态转换（每个转换对应一处 SQL 操作）：</b></para>
 /// <list type="table">
@@ -31,15 +33,13 @@ namespace NitroGateway.Persistence.Sqlite;
 ///   <item><term>→ Pending</term><description>EnqueueAsync：INSERT（status='Pending', retry_count=0, channel 随行写入）</description></item>
 ///   <item><term>Pending → InFlight</term><description>DequeueAsync：同一事务 SELECT + UPDATE status='InFlight'（两阶段出队阶段一）</description></item>
 ///   <item><term>InFlight →（删除）</term><description>CommitAsync：DELETE WHERE id IN @ids AND status='InFlight'（带状态守卫，ADR-018 P3-1）</description></item>
-///   <item><term>InFlight → Pending / DeadLetter</term><description>MarkFailedAsync：UPDATE CASE retry_count+1 &gt;= max → DeadLetter 否则回 Pending（重试上限）</description></item>
+///   <item><term>InFlight → Pending /（删除）</term><description>MarkFailedAsync：重试计数+1，超限（retry_count+1 &gt;= max）直接 DELETE 丢弃，否则回 Pending（重试上限）</description></item>
 ///   <item><term>InFlight → Pending（崩溃恢复）</term><description>EnsureRecoveredAsync：UPDATE 遗留 InFlight → Pending（延迟到首次使用，ADR-018 P3-5）</description></item>
-///   <item><term>DeadLetter → Pending</term><description>RetryDeadLetterAsync：UPDATE retry_count=0, last_error=NULL</description></item>
-///   <item><term>DeadLetter →（删除）</term><description>DiscardDeadLetterAsync / PurgeDeadLettersAsync：DELETE WHERE status='DeadLetter'</description></item>
 /// </list>
 ///
 /// <para><b>至少一次（at-least-once）语义：</b>出队（标记 InFlight）与确认删除（Commit）之间若进程崩溃，
 /// 遗留 InFlight 在下次启动首次使用时重置为 Pending 重新出队——因此<b>可能重复投递</b>，消费端须幂等。
-/// 出队时反序列化失败的行经 RecoverCorruptRowAsync 复用 MarkFailedAsync 重试/死信路径（P0-1②）。</para>
+/// 出队时反序列化失败的行经 RecoverCorruptRowAsync 复用 MarkFailedAsync 重试/丢弃路径（P0-1②）。</para>
 ///
 /// <para><b>异常契约（本类所有方法统一，除特别注明）：</b></para>
 /// <list type="bullet">
@@ -127,6 +127,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     {
         try
         {
+            // 计数反映恢复后状态：首读即触发启动恢复（InFlight→Pending、清理历史死信），
+            // 与其余写操作一致（ADR-018 P3-5 惰性恢复语义，2026-08-22 起 GetCount 也参与）。
+            await EnsureRecoveredAsync(ct);
             await using var conn = await OpenConnectionAsync(ct);
             return await conn.ExecuteScalarAsync<int>(
                 new CommandDefinition(
@@ -170,6 +173,17 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
                         "启动恢复：{Count} 个 InFlight 转发批次已重置为 Pending（上次进程可能异常退出）",
                         recovered);
                 }
+
+                // 简化（2026-08-22）：旧版死信（重试超限转 DeadLetter）已无 UI/保留任务管理，且属失效遥测——
+                // 启动时一次性清理，避免孤儿行永久滞留（此后 MarkFailed 超限直接 DELETE，不再产生死信）。
+                var purged = await conn.ExecuteAsync(
+                    "DELETE FROM forward_buffer WHERE status = 'DeadLetter'");
+                if (purged > 0)
+                {
+                    _logger.LogWarning(
+                        "启动清理：删除 {Count} 条旧版死信（已改为重试超限即丢弃策略）", purged);
+                }
+
                 Volatile.Write(ref _recoveryCompleted, true);
             }
             catch (Exception ex)
@@ -234,7 +248,7 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     /// <summary>
     /// 出队最多 maxCount 批 Pending 数据（FIFO，按 enqueued_at 升序）。
     /// 两阶段提交：同一事务内 SELECT + UPDATE 标记 InFlight，随后事务外反序列化负载；
-    /// 反序列化失败的行经 <see cref="RecoverCorruptRowAsync"/> 恢复（重试计数+1，超限进死信），
+    /// 反序列化失败的行经 <see cref="RecoverCorruptRowAsync"/> 恢复（重试计数+1，超限即丢弃），
     /// 不影响其余行出队。空队返回空列表。DB 异常归类返回，取消抛 OCE（契约见类注释）。
     /// </summary>
     public async Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(
@@ -297,7 +311,7 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
         }
 
         // ② 反序列化。损坏行不能卡在 InFlight（P0-1②）：
-        //    重置为 Pending + retry_count+1 + last_error，超过 _maxRetries 进死信。
+        //    重置为 Pending + retry_count+1 + last_error，超过 _maxRetries 丢弃。
         //    事务已随作用域释放，恢复逻辑可复用 MarkFailedAsync 开启新事务。
         var result = new List<BatchMeasurements>(rows.Count);
         foreach (var row in rows)
@@ -326,7 +340,7 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     }
 
     /// <summary>
-    /// P0-1② 出队反序列化失败恢复：复用 <see cref="MarkFailedAsync"/> 的重试/死信逻辑，
+    /// P0-1② 出队反序列化失败恢复：复用 <see cref="MarkFailedAsync"/> 的重试/丢弃逻辑，
     /// 恢复自身失败仅记日志，不影响其余行出队。
     /// </summary>
     private async Task RecoverCorruptRowAsync(string id, string reason, CancellationToken ct)
@@ -378,9 +392,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     }
 
     /// <summary>
-    /// 标记一次转发失败：单事务内一次 UPDATE 完成重试计数+1 与状态迁移
-    /// （retry_count+1 ≥ maxRetries 进 DeadLetter，否则回 Pending），并记录 last_error；
-    /// 事务外再查询一次以判断是否进死信（仅供 Warning 日志）。DB 异常归类返回，取消抛 OCE（契约见类注释）。
+    /// 标记一次转发失败：单事务内重试计数+1；超限（retry_count+1 ≥ maxRetries）直接 DELETE 丢弃
+    /// （普通遥测旧值不值钱，简化 2026-08-22），否则回 Pending 待下轮重试并记录 last_error。
+    /// DB 异常归类返回，取消抛 OCE（契约见类注释）。
     /// </summary>
     public async Task<OperationResult> MarkFailedAsync(
     Guid batchId,
@@ -394,28 +408,29 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
             await using var conn = await OpenConnectionAsync(ct);
             await using var tx = await conn.BeginTransactionAsync(ct);
 
-            // ADR-001 P2-11：合并为一次 UPDATE（重试计数 + 超限进死信），3 次往返 → 2 次
-            await conn.ExecuteAsync(
-                @"UPDATE forward_buffer
-              SET status = CASE WHEN retry_count + 1 >= @max THEN 'DeadLetter' ELSE 'Pending' END,
-                    retry_count = retry_count + 1,
-                    last_error = @error
-              WHERE id = @id",
-                new { id = batchId.ToString(), error = reason, max = _maxRetries }, tx);
+            // 简化（2026-08-22）：重试超限即丢弃——先按"超限"条件 DELETE，未命中再走重试计数+1 回 Pending。
+            var dropped = await conn.ExecuteAsync(
+                @"DELETE FROM forward_buffer WHERE id = @id AND retry_count + 1 >= @max",
+                new { id = batchId.ToString(), max = _maxRetries }, tx);
+
+            if (dropped == 0)
+            {
+                // 未超限必须把状态重置回 Pending 待下轮重试（否则批次卡 InFlight 不再出队，重试机制失效）
+                await conn.ExecuteAsync(
+                    @"UPDATE forward_buffer
+                      SET status = 'Pending', retry_count = retry_count + 1, last_error = @error
+                      WHERE id = @id",
+                    new { id = batchId.ToString(), error = reason }, tx);
+            }
 
             await tx.CommitAsync(ct);
 
-            // 判断是否进入死信（供 Warning 日志）
-            var deadCount = await conn.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM forward_buffer WHERE id=@id AND status='DeadLetter'",
-                new { id = batchId.ToString() });
-            if (deadCount > 0)
+            if (dropped > 0)
             {
-                // ADR-009 P2-1：ForwardTotal 的 deadletter 标签此前无上报点（Forwarder 无法感知是否进死信，
-                // 转换发生在 MarkFailed 内部，故在此上报）；与 Forwarder.cs 的 success/failure 上报互补。
-                NitroMetrics.ForwardTotal.WithLabels("deadletter").Inc();
+                // 与 Forwarder.cs 的 success/failure 上报互补：丢弃发生在 MarkFailed 内部，故在此上报。
+                NitroMetrics.ForwardTotal.WithLabels("dropped").Inc();
                 _logger.LogWarning(
-                    "转发批次 {BatchId} 进入死信队列（重试 {MaxRetries} 次后失败）: {Error}",
+                    "转发批次 {BatchId} 重试超限（{MaxRetries} 次）已丢弃: {Error}",
                     batchId, _maxRetries, reason);
             }
 
@@ -432,7 +447,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     }
 
     /// <summary>
-    /// 获取死信队列条目（按入队时间升序，最多 maxCount 条）。
+    /// 【停用】获取死信队列条目（按入队时间升序，最多 maxCount 条）。
+    /// 死信特性已移除（2026-08-22，重试超限即丢弃），本方法仅保留以满足 <see cref="IForwardBuffer"/> 接口只增不删；
+    /// 不再产生新死信，历史死信在启动恢复时清理，正常返回空列表。
     /// 从 payload 反序列化 BatchMeasurements 提取设备/记录数，损坏负载按空批次展示（DeviceId=Empty、RecordCount=0）。
     /// DB 异常归类返回，取消抛 OCE（契约见类注释）。
     /// </summary>
@@ -475,7 +492,8 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     }
 
     /// <summary>
-    /// 死信重试：仅当条目处于 DeadLetter 时重置为 Pending（retry_count=0、last_error 清空）。
+    /// 【停用】死信重试：仅当条目处于 DeadLetter 时重置为 Pending（retry_count=0、last_error 清空）。
+    /// 死信特性已移除（2026-08-22），保留仅因 <see cref="IForwardBuffer"/> 接口只增不删。
     /// 条目不存在或不在死信状态返回 NotFound Failure；DB 异常归类返回，取消抛 OCE（契约见类注释）。
     /// </summary>
     public async Task<OperationResult> RetryDeadLetterAsync(Guid batchId, CancellationToken ct = default)
@@ -507,7 +525,8 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     }
 
     /// <summary>
-    /// 丢弃死信（物理删除）：仅当条目处于 DeadLetter 时删除。
+    /// 【停用】丢弃死信（物理删除）：仅当条目处于 DeadLetter 时删除。
+    /// 死信特性已移除（2026-08-22），保留仅因 <see cref="IForwardBuffer"/> 接口只增不删。
     /// 条目不存在或不在死信状态返回 NotFound Failure；DB 异常归类返回，取消抛 OCE（契约见类注释）。
     /// </summary>
     public async Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default)
@@ -539,7 +558,8 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
     }
 
     /// <summary>
-    /// ADR-018 P2-3：按入队时间清理过期死信（物理删除），与 measurements 保留清理对称，
+    /// 【停用】ADR-018 P2-3：按入队时间清理过期死信（物理删除），与 measurements 保留清理对称，
+    /// 死信特性已移除（2026-08-22），保留仅因 <see cref="IForwardBuffer"/> 接口只增不删。
     /// 防止坏消息持续累积死信表。分批删除（单批 ≤ <see cref="DefaultPurgeBatchSize"/> 行，
     /// 每批独立事务）避免大 DELETE 长时间持锁；本 SQLite 编译版不支持 DELETE ... LIMIT，
     /// 用 SELECT id 限批 → 按 id 批量删除 实现分批。DB 异常归类返回，取消抛 OCE（契约见类注释）。

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
@@ -56,6 +57,7 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
     private readonly UiDispatcher _ui;
     private readonly EventBridge _bridge;
     private readonly ILogger<RealtimeViewModel> _logger;
+    private readonly IWriteService? _writeService;
     private readonly Dictionary<Guid, RealtimePointItem> _pointsById = [];
 
     /// <summary>
@@ -118,18 +120,29 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty] private bool _isActive = true;
 
+    /// <summary>行内写值编辑器（选中可写点位后弹出就地输入，借鉴 ThingsGateway 行内交互）。</summary>
+    [ObservableProperty] private WriteValueEditor? _currentWriteEditor;
+
+    /// <summary>行内写值编辑器是否展开（true 时曲线卡片头部就地显示输入区）。</summary>
+    [ObservableProperty] private bool _isWriteEditorOpen;
+
+    /// <summary>写值请求执行中（禁用确认/取消，防重复下发）。</summary>
+    [ObservableProperty] private bool _isWriting;
+
     public RealtimeViewModel(
         IDeviceSnapshotCache cache,
         IMeasurementStore store,
         UiDispatcher ui,
         EventBridge bridge,
-        ILogger<RealtimeViewModel> logger)
+        ILogger<RealtimeViewModel> logger,
+        IWriteService? writeService = null)
     {
         _cache = cache;
         _store = store;
         _ui = ui;
         _bridge = bridge;
         _logger = logger;
+        _writeService = writeService;
 
         // 图表渲染细节（配色/坐标轴/labeler）集中在 RealtimeChartFactory，
         // ViewModel 只持有绑定对象，读代码不再穿过表现层噪音（ADR-045）。
@@ -141,6 +154,90 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
 
         _bridge.FrameReady += OnFrame;
         _ = LoadDevicesAsync();
+    }
+
+    /// <summary>
+    /// 写值入口命令：曲线卡片头“✎ 写值”按钮在选中可写点位时显示。
+    /// 不再弹独立窗口（<see cref="WriteValueWindow"/>），改为行内就地编辑器
+    /// （借鉴 ThingsGateway 行内交互）：填充 <see cref="CurrentWriteEditor"/> 并展开
+    /// <see cref="IsWriteEditorOpen"/>，用户确认后由 <see cref="ConfirmWriteAsync"/> 走
+    /// IWriteService 统一链路（Access + WriteGuard 三级门控 → 驱动写）。
+    /// </summary>
+    [RelayCommand]
+    private void Write(RealtimePointItem? point)
+    {
+        if (point is null || !point.CanWrite)
+            return;
+        var device = SelectedDevice;
+        if (device is null)
+            return;
+
+        CurrentWriteEditor = new WriteValueEditor
+        {
+            DeviceId = device.Id,
+            PointId = point.PointId,
+            DeviceName = device.Name,
+            PointName = point.Name,
+            Address = point.Address,
+            DataType = point.DataType,
+            CurrentValueText = point.ValueText,
+            // 预填当前值：Bool 点位默认按当前值勾选（与 Web 端预填一致），数值/字符串由用户输入。
+            BoolValue = point.DataType == "Bool" && (point.ValueText is "1" or "True" or "true"),
+            // 桌面行模型未透传 MinLimit/MaxLimit，先显示“不限”（服务侧 WriteGuard 仍按配置校验）
+            RangeText = "不限"
+        };
+        IsWriteEditorOpen = true;
+    }
+
+    /// <summary>
+    /// 确认下发：把行内编辑器值按 DataType 形态（Bool → bool / 其余 → 字符串）封装
+    /// <see cref="WriteRequest"/>，调 <see cref="IWriteService.WriteAsync"/>（与 Web 写端点同一链路）。
+    /// 成功关闭编辑器并在状态栏提示；失败保留编辑器并把原因写进 <see cref="StatusText"/>。
+    /// </summary>
+    [RelayCommand]
+    private async Task ConfirmWriteAsync()
+    {
+        var editor = CurrentWriteEditor;
+        if (editor is null || _writeService is null)
+        {
+            StatusText = _writeService is null ? "写值服务不可用" : "";
+            return;
+        }
+
+        IsWriting = true;
+        try
+        {
+            var request = new WriteRequest
+            {
+                DeviceId = editor.DeviceId,
+                PointId = editor.PointId,
+                Value = editor.IsBool ? editor.BoolValue : (object)editor.InputValue
+            };
+            var result = await _writeService.WriteAsync(request);
+            if (result.IsSuccess)
+            {
+                var displayValue = editor.IsBool ? (editor.BoolValue ? "1" : "0") : editor.InputValue;
+                StatusText = $"写值成功：{editor.PointName} → {displayValue}";
+                IsWriteEditorOpen = false;
+                CurrentWriteEditor = null;
+            }
+            else
+            {
+                StatusText = $"写值失败：{result.Error!.Message}";
+            }
+        }
+        finally
+        {
+            IsWriting = false;
+        }
+    }
+
+    /// <summary>取消行内写值：关闭编辑器并丢弃输入。</summary>
+    [RelayCommand]
+    private void CancelWrite()
+    {
+        IsWriteEditorOpen = false;
+        CurrentWriteEditor = null;
     }
 
     partial void OnSelectedDeviceChanged(DeviceOption? value)
@@ -165,6 +262,10 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedPointChanged(RealtimePointItem? value)
     {
+        // 写值编辑器与选中点位强绑定：切换点位立即关闭编辑器，防止把新值误下发给旧点位（控制动作安全）。
+        IsWriteEditorOpen = false;
+        CurrentWriteEditor = null;
+
         _loadVersion++;
         _rawValues.Clear();
         ChartValues.Clear();
@@ -298,7 +399,8 @@ public sealed partial class RealtimeViewModel : ObservableObject, IDisposable
                     PointId = point.Id,
                     Name = point.Name,
                     Address = point.Address,
-                    DataType = point.DataType.ToString()
+                    DataType = point.DataType.ToString(),
+                    Access = point.Access
                 };
                 if (_latestByPoint.TryGetValue(point.Id, out var snapshot))
                     item.Update(snapshot);
@@ -540,6 +642,10 @@ public sealed partial class RealtimePointItem : ObservableObject
     public required string Name { get; init; }
     public required string Address { get; init; }
     public required string DataType { get; init; }
+    public required PointAccess Access { get; init; }
+
+    /// <summary>是否可写（Access ∈ {WriteOnly, ReadWrite}），供“选中点位”上下文写值按钮显隐。</summary>
+    public bool CanWrite => Access is PointAccess.WriteOnly or PointAccess.ReadWrite;
 
     [ObservableProperty] private string _valueText = "—";
     [ObservableProperty] private string _qualityText = "—";

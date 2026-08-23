@@ -12,10 +12,11 @@ namespace NitroGateway.Forwarder;
 /// 数据转发实现：Dequeue → Serialize → MQTT Publish（QoS 1）→ Commit。
 /// <para>关键设计：</para>
 /// <list type="bullet">
-/// <item>内嵌自适应节流（<see cref="ForwardingThrottle"/>，AIMD）：失败收紧、成功放松，防止 MQTT 恢复时冲垮 Broker；</item>
+/// <item>固定批量上限（<see cref="MaxDequeuePerCall"/>）限制单次出队量，防止 MQTT 恢复时一次冲垮 Broker；
+/// 普通遥测量级下无需 AIMD 自适应节流（简化，2026-08-22）；</item>
 /// <item>失败批次 MarkFailed（重试计数 +1，超限自动进死信），隔离坏消息，不阻塞后续批次；</item>
 /// <item>仅发布成功才 Commit 删除，保证至少一次语义；Commit/MarkFailed 失败显式记录 Error 日志，避免静默丢数；</item>
-/// <item>每轮记录 Activity（<see cref="GatewayActivities.Forward"/>）与 Prometheus 指标（ForwardTotal / BufferBacklog / ThrottleBatchSize）。</item>
+/// <item>每轮记录 Activity（<see cref="GatewayActivities.Forward"/>）与 Prometheus 指标（ForwardTotal / BufferBacklog）。</item>
 /// </list>
 /// </summary>
 public sealed class Forwarder : IForwarder
@@ -29,8 +30,8 @@ public sealed class Forwarder : IForwarder
     /// <summary>MQTT 客户端：QoS 1 发布，非成功返回码视为该批转发失败</summary>
     private readonly IMqttClient _mqtt;
 
-    /// <summary>全局节流器（Singleton）：AIMD 调整单次出队批量与批次间延迟</summary>
-    private readonly ForwardingThrottle _throttle;
+    /// <summary>单次调用最大出队批次数：固定上限，替代原 AIMD 自适应节流（简化，2026-08-22）。</summary>
+    private const int MaxDequeuePerCall = 1000;
 
     /// <summary>站点标识（ADR-035 第 1 步）：上行 topic 第三层 nitrogateway/{siteId}/{deviceId}/measurements</summary>
     private readonly string _siteId;
@@ -42,21 +43,18 @@ public sealed class Forwarder : IForwarder
     /// <param name="buffer">转发缓冲：负责 Pending/重试计数/死信状态管理</param>
     /// <param name="serializer">消息序列化器：BatchMeasurements → 发布负载字节</param>
     /// <param name="mqtt">MQTT 客户端：发布失败（非成功返回码）即视为该批转发失败</param>
-    /// <param name="throttle">全局节流器（Singleton），跨调度周期保持 AIMD 状态</param>
     /// <param name="logger">日志</param>
     /// <param name="siteId">站点标识；缺省/空白回退 <see cref="SiteOptions.DefaultSiteId"/>（兼容既有构造与单现场部署）</param>
     public Forwarder(
         IForwardBuffer buffer,
         IMessageSerializer serializer,
         IMqttClient mqtt,
-        ForwardingThrottle throttle,
         ILogger<Forwarder> logger,
         string? siteId = null)
     {
         _buffer = buffer;
         _serializer = serializer;
         _mqtt = mqtt;
-        _throttle = throttle;
         _logger = logger;
         _siteId = string.IsNullOrWhiteSpace(siteId) ? SiteOptions.DefaultSiteId : siteId.Trim();
     }
@@ -71,8 +69,8 @@ public sealed class Forwarder : IForwarder
     {
         using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.Forward);
 
-        // ── 节流限制单次出队量 ──
-        var takeCount = Math.Min(maxCount, _throttle.MaxBatchSize);
+        // ── 固定上限限制单次出队量（替代原 AIMD 节流）──
+        var takeCount = Math.Min(maxCount, MaxDequeuePerCall);
 
         var dequeueResult = await _buffer.DequeueAsync(takeCount, ct);
         // P1-3①：Dequeue 失败必须显式暴露——否则出队异常被吞掉，转发静默停滞，
@@ -89,7 +87,6 @@ public sealed class Forwarder : IForwarder
         {
             // ADR-017 P2-1：空轮也必须刷新指标，否则积压清空后 BufferBacklog 恒显旧值
             NitroMetrics.BufferBacklog.Set(0);
-            NitroMetrics.ThrottleBatchSize.Set(_throttle.MaxBatchSize);
             activity?.SetStatus(ActivityStatusCode.Ok);
             return OperationResult.Success();
         }
@@ -102,9 +99,6 @@ public sealed class Forwarder : IForwarder
 
         foreach (var batch in dequeueResult.Value!)
         {
-            // ── 批次间延迟（节流生效时）──
-            await _throttle.ApplyDelayAsync(ct);
-
             try
             {
                 var payload = _serializer.Serialize(batch);
@@ -115,13 +109,11 @@ public sealed class Forwarder : IForwarder
                 if (result.IsSuccess)
                 {
                     committed.Add(batch.Id);
-                    _throttle.OnMqttSuccess();
                     NitroMetrics.ForwardTotal.WithLabels("success").Inc();
                 }
                 else
                 {
                     _logger.LogWarning("转发失败 {BatchId}: {Error}", batch.Id, result.Error!.Message);
-                    _throttle.OnMqttFailure();
                     await MarkFailedOrLogErrorAsync(batch.Id, result.Error!.Message, ct);
                     NitroMetrics.ForwardTotal.WithLabels("failure").Inc();
                     anyFailure = true;
@@ -139,7 +131,6 @@ public sealed class Forwarder : IForwarder
             catch (Exception ex)
             {
                 _logger.LogError(ex, "转发异常 {BatchId}", batch.Id);
-                _throttle.OnMqttFailure();
                 await MarkFailedOrLogErrorAsync(batch.Id, ex.Message, ct);
                 NitroMetrics.ForwardTotal.WithLabels("failure").Inc();
                 activity?.SetTag(GatewayActivityTags.ErrorMessage, ex.ToString());
@@ -163,7 +154,6 @@ public sealed class Forwarder : IForwarder
 
         // ADR-017 P3-1：改走异步 GetCountAsync，不再每轮同步查库（ADR-001 P3-13 约定）
         NitroMetrics.BufferBacklog.Set(await _buffer.GetCountAsync(ct));
-        NitroMetrics.ThrottleBatchSize.Set(_throttle.MaxBatchSize);
 
         // 成功路径才置 Ok；任一批次失败/异常/提交失败已在上方置 Error
         if (!anyFailure)

@@ -28,9 +28,13 @@
         <router-link to="/alarms" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🔔</span><span>告警记录</span>
         </router-link>
-        <!-- ADR-044/054：死信是转发缓冲产物；web 恒为边缘形态（会转发），死信入口恒显示 -->
-        <router-link to="/deadletters" class="nav-item" active-class="nav-active">
-          <span class="nav-icon">📬</span><span>死信管理</span>
+        <!-- ADR-065 A3：操作日志查询页（写值/登录/配置变更可追溯） -->
+        <router-link to="/audit" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">🧾</span><span>操作日志</span>
+        </router-link>
+        <!-- ADR-066：用户管理（仅 Admin 可见；后端 AdminOnly 策略兜底） -->
+        <router-link v-if="currentUser?.role === 'Admin'" to="/users" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">👥</span><span>用户管理</span>
         </router-link>
         <router-link to="/system" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🖥️</span><span>系统状态</span>
@@ -51,18 +55,52 @@
           <span class="status-sep">|</span>
           <span>缓冲队列 {{ backlog }} 批</span>
         </div>
+        <!-- ADR-066：当前登录用户（角色/自助改密/退出登录） -->
+        <div class="topbar-user">
+          <el-dropdown trigger="click">
+            <span class="user-chip">
+              <span class="user-icon">👤</span>
+              <span>{{ currentUser?.username ?? '未登录' }}</span>
+              <span v-if="currentUser" class="user-role">{{ currentUser.role }}</span>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="pwdVisible = true">修改密码</el-dropdown-item>
+                <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </header>
       <div class="content-area">
         <router-view />
       </div>
     </main>
   </div>
+
+  <!-- 自助改密（任何已登录角色；ADR-066） -->
+  <el-dialog v-model="pwdVisible" title="修改密码" width="420">
+    <el-form label-width="80px">
+      <el-form-item label="当前密码">
+        <el-input v-model="pwdForm.current" type="password" show-password />
+      </el-form-item>
+      <el-form-item label="新密码">
+        <el-input v-model="pwdForm.next" type="password" show-password :placeholder="`至少 ${pwdMin} 位`" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="pwdVisible = false">取消</el-button>
+      <el-button type="primary" :loading="pwdLoading" @click="submitPassword">确定</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getSystemStatus } from './api/status'
 import { createLiveConnection } from './api/signalr'
+import { getMe, saveMe, clearMe, changeMyPassword, type CurrentUser } from './api/user'
 import type { HubConnection } from '@microsoft/signalr'
 
 const mqttConnected = ref(false)
@@ -70,6 +108,48 @@ const mqttDisabled = ref(false)
 const backlog = ref(0)
 
 let conn: HubConnection | null = null
+
+// ADR-066：当前登录用户（顶部栏显示 + 侧边栏菜单门控）
+const currentUser = ref<CurrentUser | null>(null)
+const pwdVisible = ref(false)
+const pwdForm = ref({ current: '', next: '' })
+const pwdLoading = ref(false)
+const pwdMin = 8
+
+// 登录后/刷新时拉取自己的用户信息并缓存（角色变更后重进页面即生效）
+async function refreshMe() {
+  try {
+    const me = await getMe()
+    if (me) {
+      currentUser.value = me
+      saveMe(me)
+    }
+  } catch { /* 401 由拦截器跳登录，其余静默 */ }
+}
+
+function logout() {
+  clearMe()
+  localStorage.removeItem('token')
+  window.location.href = '/login'
+}
+
+async function submitPassword() {
+  if (pwdForm.value.next.length < pwdMin) {
+    ElMessage.warning(`新密码不能少于 ${pwdMin} 位`)
+    return
+  }
+  pwdLoading.value = true
+  try {
+    await changeMyPassword(pwdForm.value.current, pwdForm.value.next)
+    ElMessage.success('密码已修改')
+    pwdVisible.value = false
+    pwdForm.value = { current: '', next: '' }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error?.message ?? '修改失败')
+  } finally {
+    pwdLoading.value = false
+  }
+}
 
 // ADR-007 P1-3：后端 SignalR 无 BufferBacklogChanged 事件（仅 Measurement/DeviceStatusChanged/MqttStateChanged），
 // 原监听静默失效；改为周期性轮询 /status/system 刷新积压数
@@ -90,6 +170,7 @@ function applyMqttState(state?: string) {
 }
 
 onMounted(async () => {
+  await refreshMe()
   await refreshStatus()
   statusTimer = window.setInterval(refreshStatus, 10000)
 
@@ -131,6 +212,11 @@ onUnmounted(() => {
 .topbar { height:52px; background:#fff; border-bottom:1px solid #e4e7ed; display:flex; align-items:center; justify-content:space-between; padding:0 28px; flex-shrink:0; box-shadow:0 1px 2px rgba(0,0,0,.03); }
 .topbar-title { color:#1a202c; font-weight:600; font-size:14px; }
 .topbar-status { color:#a0aec0; font-size:12px; display:flex; align-items:center; gap:8px; }
+.topbar-user { color:#4a5568; font-size:13px; }
+.user-chip { display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 8px; border-radius:6px; }
+.user-chip:hover { background:#f0f2f5; }
+.user-icon { font-size:16px; }
+.user-role { background:#ecf5ff; color:#409eff; border-radius:4px; padding:1px 6px; font-size:11px; }
 .status-dot { width:8px; height:8px; border-radius:50%; } .status-dot.online { background:#67c23a; } .status-dot.offline { background:#e6a23c; }
 .status-sep { color:#e4e7ed; }
 .content-area { flex:1; overflow-y:auto; padding:28px; }

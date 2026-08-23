@@ -149,6 +149,26 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         }
     }
 
+    /// <inheritdoc />
+    /// <remarks>ADR-065 A1：EF 精确 COUNT（不截断），时间以 O 格式字符串比较（与 QueryAsync 同约定）。</remarks>
+    public async Task<OperationResult<int>> CountOccurredSinceAsync(
+        DateTime sinceUtc, CancellationToken ct = default)
+    {
+        try
+        {
+            var fromStr = sinceUtc.ToUniversalTime().ToString("O");
+            var count = await _db.Alarms
+                .AsNoTracking()
+                .CountAsync(a => string.Compare(a.OccurredAt, fromStr) >= 0, ct);
+            return count;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("告警计数失败: {Error}", ex.Message);
+            return Classify(ex, "告警计数失败");
+        }
+    }
+
     /// <summary>
     /// EF 实体 → 领域模型。时间列解析约定：null → DateTime.MinValue（首超时）
     /// 或 null（确认/恢复）；"O" 格式字符串按本机时区解析，写入侧统一 UTC。

@@ -57,4 +57,12 @@ internal sealed class InMemoryAlarmRepository : IAlarmRepository
             .ToList();
         return Task.FromResult<OperationResult<IReadOnlyList<Domain.Alarm>>>(results);
     }
+
+    /// <inheritdoc />
+    public Task<OperationResult<int>> CountOccurredSinceAsync(
+        DateTime sinceUtc, CancellationToken ct = default)
+    {
+        var count = _alarms.Values.Count(a => a.OccurredAt >= sinceUtc);
+        return Task.FromResult<OperationResult<int>>(count);
+    }
 }

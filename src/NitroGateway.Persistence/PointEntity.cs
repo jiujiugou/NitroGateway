@@ -43,6 +43,12 @@ public sealed class PointEntity
     /// <summary>工程量缩放偏移，默认 0</summary>
     public double ScaleOffset { get; set; }
 
+    /// <summary>写值范围下限（null = 不限），供 WriteGuard.Range 校验（M013）</summary>
+    public double? MinLimit { get; set; }
+
+    /// <summary>写值范围上限（null = 不限），供 WriteGuard.Range 校验（M013）</summary>
+    public double? MaxLimit { get; set; }
+
     /// <summary>配置最后修改时间（O 格式 UTC 字符串，ADR-033 阶段 3/4；空串=最旧）</summary>
     public string UpdatedAt { get; set; } = "";
 

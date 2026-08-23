@@ -1,9 +1,8 @@
 namespace NitroGateway.Storage.Buffer;
 
 /// <summary>
-/// 死信条目摘要，用于 Admin API 展示。
-/// 有意只携带最小字段（不含设备名）：死信量小，前端按 DeviceId 展示即可；
-/// 如需设备名可后续增加冗余字段（实现侧需 join devices 表）。
+/// 【停用】死信条目摘要（接口只增不删保留；死信特性已移除 2026-08-22，不再产生新死信）。
+/// 携带最小字段（不含设备名），供遗留展示按 DeviceId 关联。
 /// </summary>
 public sealed record DeadLetterEntry
 {

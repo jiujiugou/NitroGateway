@@ -82,7 +82,7 @@ WAL 下：读读/读写并行，**写写互斥**（单写者）。并发写来�
 
 **Q4.1 表结构与状态机**
 M002 建表：`id`（批次 GUID 字符串 PK）、`payload`（BatchMeasurements CamelCase JSON）、`status`（默认 'Pending'）、`enqueued_at`（O 格式 UTC）；M004 追加 `retry_count`（默认 0）、`last_error`（可空）。索引 `(status, enqueued_at)` 支撑 FIFO 出队。
-状态机：`Pending`（待转发）→ Dequeue → `InFlight`（转发中）→ Commit 删除 / MarkFailed 回 `Pending`（重试+1）/ 超过 `maxRetries`（默认 5）进 `DeadLetter`；启动时遗留 InFlight 重置为 Pending。
+状态机：`Pending`（待转发）→ Dequeue → `InFlight`（转发中）→ Commit 删除 / MarkFailed 回 `Pending`（重试+1）/ 超过 `maxRetries`（默认 5）直接 DELETE 丢弃（2026-08-22 简化，原为进 DeadLetter）；启动时遗留 InFlight 重置为 Pending。
 
 **Q4.2 两阶段提交**
 DequeueAsync 在同一事务内：SELECT Pending 批次（LIMIT）→ UPDATE 标记 InFlight → 提交后才把数据交给 Forwarder。目的：
@@ -91,20 +91,22 @@ DequeueAsync 在同一事务内：SELECT Pending 批次（LIMIT）→ UPDATE 标
 - 语义是 at-least-once：崩溃后 InFlight 恢复为 Pending 重新发送，最多重复不丢失。
 
 **Q4.3 启动恢复**
-构造函数执行 `UPDATE forward_buffer SET status='Pending' WHERE status='InFlight'`：上次进程异常退出遗留的批次若留在 InFlight，不计入 Count、不再出队、不进死信 = **静默丢数**，所以必须恢复。
+构造函数执行 `UPDATE forward_buffer SET status='Pending' WHERE status='InFlight'`：上次进程异常退出遗留的批次若留在 InFlight，不计入 Count、不再出队 = **静默丢数**，所以必须恢复。
 恢复失败只 `LogWarning` 不阻断启动：数据库异常时网关仍能启动（下次启动继续尝试恢复）；若构造函数抛异常会导致整个 DI 失败、服务起不来，代价更大。
+实现细节（ADR-018 P3-5）：构造函数不立刻执行恢复，改为首次被使用时经 `EnsureRecoveredAsync` 异步完成，恢复完成前其余操作等待同一闸门（避免构造函数里做 IO + 启动竞态）。
 
 **Q4.4 损坏行恢复**
-Dequeue 提交事务后逐行反序列化；损坏行（JsonException / null）调用 `RecoverCorruptRowAsync`：复用 `MarkFailedAsync`（重试+1、记 last_error、超限进死信），让坏行进入正常失败路径而不是卡死 InFlight；恢复自身失败只记日志，**不影响其余行出队**（P0-1②）。
+Dequeue 提交事务后逐行反序列化；损坏行（JsonException / null）调用 `RecoverCorruptRowAsync`：复用 `MarkFailedAsync`（重试+1、记 last_error、超限直接丢弃），让坏行进入正常失败路径而不是卡死 InFlight；恢复自身失败只记日志，**不影响其余行出队**（P0-1②）。
 
 **Q4.5 MarkFailedAsync 合并往返**
-一次 UPDATE 完成「retry_count+1」与「状态迁移」：`retry_count+1 >= maxRetries` → DeadLetter，否则回 Pending，同时写 last_error——计数与状态迁移同语句，无并发窗口；事务外再查一次状态（仅用于进死信的 Warning 日志）。原实现 3 次往返（查/改/判）→ 2 次（ADR-001 P2-11）。
+先 `DELETE WHERE id=@id AND retry_count+1 >= maxRetries`（命中即丢弃，2026-08-22 简化，替代原进 DeadLetter）；未命中再 `UPDATE SET status='Pending', retry_count+1, last_error=@reason`——丢弃判定与状态迁移分开，但「计数 + 状态迁移」仍在同一条 UPDATE，无并发窗口。
+注意：UPDATE 必须带 `SET status='Pending'`（曾经丢失该字段导致批次卡 InFlight 不再重试，已修复）。
+原实现 3 次往返（查/改/判）→ 2 次（ADR-001 P2-11）。
 
 **Q4.6 死信三操作**
-- `GetDeadLettersAsync`：`status='DeadLetter' ORDER BY enqueued_at LIMIT`；payload 反序列化失败按空批次兜底（DeviceId=Empty、RecordCount=0），查询不死。
-- `RetryDeadLetterAsync`：`UPDATE ... SET status='Pending', retry_count=0, last_error=NULL WHERE id AND status='DeadLetter'`；影响 0 行 → NotFound。
-- `DiscardDeadLetterAsync`：`DELETE WHERE id AND status='DeadLetter'`；0 行 → NotFound。
-带状态条件：只能操作死信，防止误操作正常批次（如重试一个还在转发的批次）。
+- 现状（2026-08-22 起）：死信三操作【停用】——转发重试超限改为直接丢弃，不再产生 DeadLetter 状态，运行期不调用；保留实现仅因 `IForwardBuffer` 接口只增不删。
+- 原语义（供理解）：`GetDeadLettersAsync` 按 `status='DeadLetter' ORDER BY enqueued_at LIMIT` 查询，payload 反序列化失败按空批次兜底；`RetryDeadLetterAsync` 仅当 `status='DeadLetter'` 时重置为 Pending（retry_count=0、last_error=NULL），影响 0 行 → NotFound；`DiscardDeadLetterAsync` 仅 DeadLetter 才物理删除，0 行 → NotFound。
+- 带状态条件设计：只能操作死信，防止误操作正常批次（如重试一个还在转发的批次）。
 
 **Q4.7 Count / GetCountAsync / BufferRow**
 `Count` 是接口历史遗留的同步属性（每次开连接 `ExecuteScalar`），保留兼容，注释明确「async 路径请用 GetCountAsync」；`GetCountAsync` 用 `ExecuteScalarAsync` + `CommandDefinition(ct)`，避免同步阻塞线程（ADR-001 P3-13）。`BufferRow` 只投影 id + payload：避免把整行（status/retry_count/last_error）反序列化进内存，payload 出队后按需解析。
@@ -156,7 +158,7 @@ IOERR/CORRUPT 不是 StorageFull：只有 13 才表示磁盘满，误标会导�
 - 设备/点位仓储：SaveAsync 明确**不捕获**，EF 异常抛给上层统一处理（Web 请求路径有中间件）。三种策略的分界：后台/热路径自包含，请求路径交给框架层。
 
 **Q6.3 磁盘满链路**
-采集/转发写入 → SQLITE_FULL(13) → `StorageFull` → OperationResult Failure → 调用方降级（缓冲入队失败记录、转发失败进重试/死信、告警跳过），同时 Activity Error + 日志「(磁盘满)」。区分价值：StorageFull 提示扩容/清理（备份、保留策略、VACUUM），Storage 提示检修磁盘或恢复备份——告警与处置动作不同。测试：`SqliteErrorClassifierTests` 覆盖各错误码映射。
+采集/转发写入 → SQLITE_FULL(13) → `StorageFull` → OperationResult Failure → 调用方降级（缓冲入队失败记录、转发失败进重试/丢弃、告警跳过），同时 Activity Error + 日志「(磁盘满)」。区分价值：StorageFull 提示扩容/清理（备份、保留策略、VACUUM），Storage 提示检修磁盘或恢复备份——告警与处置动作不同。测试：`SqliteErrorClassifierTests` 覆盖各错误码映射。
 
 **Q6.4 失败处理三层次**
 - **阻断启动**（迁移备份失败）：不可回退、影响数据一致性 → 宁可失败。
@@ -207,14 +209,14 @@ devices/points：M003 建表，**PascalCase 列名历史遗留**；devices（Id 
 
 **Q9.2 测试覆盖**
 - `SqliteMeasurementStoreTests`：写入/查询/分页夹紧/最新值/清理。
-- `SqliteForwardBufferTests`：入队/出队/提交/失败重试/死信转移/启动恢复/GetCountAsync。
+- `SqliteForwardOutboxTests`：入队/出队/提交/失败重试/超限丢弃/启动恢复/GetCountAsync。
 - `SqliteErrorClassifierTests`：错误码 → OperationalError 映射。
 - `SqliteAlarmRepositoryTests`：告警/规则 CRUD + EF 异常解包分类。
 - `MeasurementRetentionServiceTests`：周期执行/取消/失败不中断。
 - `MeasurementWriteHostTests`（跨模块）：Channel 批量写落库。
 
 **Q9.3 真库 vs mock**
-- 行为类（启动恢复、死信转移、分页夹紧、FIFO 顺序）：用**真 SQLite**（临时文件/内存库）——事务、索引、约束行为真实，才能验证状态机与 SQL。
+- 行为类（启动恢复、超限丢弃、分页夹紧、FIFO 顺序）：用**真 SQLite**（临时文件/内存库）——事务、索引、约束行为真实，才能验证状态机与 SQL。
 - 上层（ForwarderEngine/控制器）：mock `IForwardBuffer` / `IMeasurementStore` 接口，测编排不测存储。
 - 红绿对照：先写断言期望行为的测试（红）→ 实现/修复 → 绿。
 - 并发类行为：不靠真实并发压测（不稳定），而是**确定性构造状态**（如直接插入 InFlight 行再触发恢复），断言结果。
@@ -232,7 +234,7 @@ devices/points：M003 建表，**PascalCase 列名历史遗留**；devices（Id 
 结论：接口 + 测试是资产的保护伞，SQL 细节是迁移成本主体。
 
 **Q10.2 断网 24h 链路**
-采集 → `EnqueueAsync` 落盘（SQLite 文件，断电不丢）→ Forwarder 每 5s `Dequeue`（Pending→InFlight）→ MQTT 失败 `MarkFailed`（重试+1 回 Pending）→ 超 5 次进 DeadLetter（不阻塞新数据）→ 恢复后 FIFO 继续发；本地 measurements 有保留策略控磁盘。主要风险是 **buffer 表磁盘增长**：批次量 = 采集频率 × 点数 × 断网时长，需评估 vs 磁盘容量；死信是「留证」不是「无限积压」，要配清理或重试窗口。数据不丢靠 buffer（可靠），历史可视化靠 measurements（尽力而为）——两级语义不同。
+采集 → `EnqueueAsync` 落盘（SQLite 文件，断电不丢）→ Forwarder 每 5s `Dequeue`（Pending→InFlight）→ MQTT 失败 `MarkFailed`（重试+1 回 Pending）→ 超 5 次直接丢弃并上报 dropped（2026-08-22 简化，不阻塞新数据）→ 恢复后 FIFO 继续发；本地 measurements 有保留策略控磁盘。主要风险是 **buffer 表磁盘增长**：批次量 = 采集频率 × 点数 × 断网时长，需评估 vs 磁盘容量。数据不丢靠 buffer（可靠），历史可视化靠 measurements（尽力而为）——两级语义不同。
 
 **Q10.3 大表优化方向**
 ① 保留策略调优（窗口与间隔）；② 按时间分表（measurements_YYYYMMDD + 视图/路由，SQLite 无原生分区）；③ 降采样（原始 1s 短窗保留，聚合 1min/1h 长窗）；④ 索引按实际查询瘦身；⑤ 低峰 `PRAGMA optimize` / VACUUM。代价：分表与降采样增加查询路由与写入复杂度，需权衡「查询兼容性 vs 存储成本」。

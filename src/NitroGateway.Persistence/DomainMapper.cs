@@ -81,6 +81,8 @@ public static class DomainMapper
         Deadband = entity.Deadband,
         ScaleFactor = entity.ScaleFactor,
         ScaleOffset = entity.ScaleOffset,
+        MinLimit = entity.MinLimit,
+        MaxLimit = entity.MaxLimit,
         UpdatedAt = ParseUpdatedAt(entity.UpdatedAt),
         IsDeleted = entity.IsDeleted
     };
@@ -100,6 +102,8 @@ public static class DomainMapper
         Deadband = domain.Deadband,
         ScaleFactor = domain.ScaleFactor,
         ScaleOffset = domain.ScaleOffset,
+        MinLimit = domain.MinLimit,
+        MaxLimit = domain.MaxLimit,
         UpdatedAt = FormatUpdatedAt(domain.UpdatedAt),
         IsDeleted = domain.IsDeleted
     };

@@ -11,7 +11,7 @@ namespace NitroGateway.Forwarder;
 public static class ForwarderServiceCollectionExtensions
 {
     /// <summary>
-    /// 注册转发模块：自适应节流器、JSON 序列化器、转发器（均为 Singleton）及转发引擎 BackgroundService。
+    /// 注册转发模块：JSON 序列化器、转发器（均为 Singleton）及转发引擎 BackgroundService。
     /// 旧签名仅注册 MQTT 通道（Channels 默认 mqtt），供独立测试/兼容调用使用；
     /// 生产宿主请使用 <see cref="AddNitroForwarder(IServiceCollection, IConfiguration)"/> 配置驱动注册。
     /// </summary>
@@ -61,16 +61,12 @@ public static class ForwarderServiceCollectionExtensions
     {
         var channels = option.ResolveChannels();
 
-        // 节流器用 Singleton：AIMD 状态需跨轮持久，若按作用域注册会在每轮重置为初始值，节流失效
-        services.AddSingleton<ForwardingThrottle>();
-
         services.AddSingleton<IMessageSerializer, JsonMessageSerializer>();
         // ADR-035 第 1 步：站点标识注入转发器（Site:Id，缺省 default）
         services.AddSingleton<IForwarder>(sp => new Forwarder(
             sp.GetRequiredService<IForwardBuffer>(),
             sp.GetRequiredService<IMessageSerializer>(),
             sp.GetRequiredService<NitroGateway.Transport.MQTT.IMqttClient>(),
-            sp.GetRequiredService<ForwardingThrottle>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Forwarder>>(),
             NitroGateway.Shared.SiteOptions.Resolve(
                 sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["Site:Id"])));

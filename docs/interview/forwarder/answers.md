@@ -11,10 +11,10 @@
 `ForwarderEngine` 每轮（首轮立即 + 之后每 5s）：
 1. `GetCountAsync` 查积压 → 独立 scope 解析 `IMqttClient` / `IForwarder`
 2. `State == Connected` 才调 `ForwardBatchAsync(MaxDrainPerRound=2000)`
-3. `takeCount = Math.Min(maxCount, _throttle.MaxBatchSize)`（`Forwarder.cs:69`）
+3. `takeCount = Math.Min(maxCount, MaxDequeuePerCall=1000)`（`Forwarder.cs:68`，2026-08-22 删 AIMD 后固定上限）
 4. `IForwardBuffer.DequeueAsync`：同一事务 SELECT Pending 行 + UPDATE 为 InFlight，事务外反序列化 → `List<BatchMeasurements>`
-5. 逐批：`ApplyDelayAsync`（节流延迟）→ `IMessageSerializer.Serialize(batch)` → JSON UTF-8 字节 → `IMqttClient.PublishAsync("nitrogateway/{deviceId}/measurements", payload, qos: 1)`（返回 `OperationResult`，不抛异常）
-6. 成功 → 收集 id 待 Commit；失败 → `MarkFailedAsync`（retry+1，≥5 进 DeadLetter）
+5. 逐批：`IMessageSerializer.Serialize(batch)` → JSON UTF-8 字节 → `IMqttClient.PublishAsync("nitrogateway/{deviceId}/measurements", payload, qos: 1)`（返回 `OperationResult`，不抛异常）
+6. 成功 → 收集 id 待 Commit；失败 → `MarkFailedAsync`（retry+1 回 Pending，超限直接 DELETE 丢弃）
 7. 轮末 `CommitAsync(committed)` 物理删除成功批次；更新指标与 Activity
 数据形态：DB 行（payload JSON 字符串）→ `BatchMeasurements` 对象 → `byte[]` JSON → Broker 消息体。
 测试：`ForwarderIntegrationTests.Forwarder_PublishesBatch_AndCommitsBuffer`。
@@ -25,11 +25,11 @@
 - Broker 连接/重连：Transport.MQTT 的 `MqttHostedService`；Forwarder 只读 `State`
 - 存储实现：Persistence（SQLite）；Forwarder 只依赖 `IForwardBuffer` 接口
 - 序列化格式决策：由 `IMessageSerializer` 实现决定（JSON/Protobuf/压缩）
-- Forwarder 只做：定时取数、序列化、发布、结果落库（Commit/MarkFailed）、节流反馈、可观测性
+- Forwarder 只做：定时取数、序列化、发布、结果落库（Commit/MarkFailed）、可观测性（固定批量上限 MaxDequeuePerCall=1000，2026-08-22 删节流反馈）
 
 **Q1.3 返回语义**
 - 仅 Dequeue 失败返回 `Failure`（+ Error 日志 + Activity Error）；其余一律 `Success`
-- 单批失败已 MarkFailed → 由缓冲的重试/死信机制表达，调用方无需感知个别批次结果（`IForwarder.cs` 语义约定）
+- 单批失败已 MarkFailed → 由缓冲的重试机制表达（超限丢弃），调用方无需感知个别批次结果（`IForwarder.cs` 语义约定）
 - 空队列 Success；Commit 失败也返回 Success（但 Error 日志 + Activity Error）
 - 原因：单批失败不阻塞整体；若整体返回 Failure，调用方可能整轮重试，反而把已成功批次重复发布
 
@@ -39,25 +39,25 @@
 - 测试：`ForwarderIntegrationTests` 中 `JsonMessageSerializer` 直接注入使用
 
 **Q1.5 DI 生命周期**
-- `ForwardingThrottle` Singleton：AIMD 状态必须跨轮持久；scoped 会在每轮重置为初始值 → 节流失效（DI 注释原文）
 - `IMessageSerializer` / `IForwarder` Singleton：无状态（依赖均为 Singleton/无状态）
 - `IMqttClient` 也是 Singleton（`MqttServiceCollectionExtensions.cs`，MqttClientWrapper + MqttHostedService）
 - 引擎每轮独立 scope：工程约定，隔离作用域；即使当前解析对象都是 Singleton，也避免未来 IForwarder 引入 scoped 依赖时出现生命周期泄漏
+- 注：`ForwardingThrottle` 已于 2026-08-22 删除（不再需要跨轮持久状态）
 
 **Q1.6 单轮出队量**
-- `Math.Min(maxCount, _throttle.MaxBatchSize)`；引擎传入 `MaxDrainPerRound = 2000`（`ForwarderEngine.cs:28,127`），throttle 初始 1000 → 实际首轮 ≤ 1000，持续失败可降到 100
-- 漂移点：DESIGN.md v1 决策表「Dequeue 全量（maxCount=int.MaxValue）」是设计时描述；实现已加引擎上限 + throttle 双重限制，**以代码为准**
+- `Math.Min(maxCount, MaxDequeuePerCall)`；引擎传入 `MaxDrainPerRound = 2000`（`ForwarderEngine.cs:28,127`），`MaxDequeuePerCall = 1000`（`Forwarder.cs`）→ 每轮实际 ≤ 1000
+- 漂移点：DESIGN.md v1 决策表「Dequeue 全量（maxCount=int.MaxValue）」是设计时描述；实现已加引擎上限 + 固定批量双重限制，**以代码为准**
 
 ---
 
 ## 二、缓冲与两阶段状态机
 
 **Q2.1 状态机**
-- Pending：待转发，可被 Dequeue（`Count` / `GetCountAsync` 只统计 Pending，不含死信）
+- Pending：待转发，可被 Dequeue（`Count` / `GetCountAsync` 只统计 Pending）
 - InFlight：已出队未确认（SELECT+UPDATE 同一事务标记）；不计 Count、不再被 Dequeue
-- 迁移：成功 → `CommitAsync` 物理删除；失败 → `MarkFailedAsync` retry_count+1，未超限回 Pending，超限（默认 5）→ DeadLetter
+- 迁移：成功 → `CommitAsync` 物理删除；失败 → `MarkFailedAsync` retry_count+1，未超限回 Pending，超限（默认 5）→ 直接 DELETE 丢弃并上报 `dropped` 指标（2026-08-22 简化，原为进 DeadLetter）
 - 启动恢复：遗留 InFlight → Pending（P0-1①）
-- DeadLetter：`GetDeadLettersAsync` 查询；`RetryDeadLetterAsync` 重置计数回 Pending；`DiscardDeadLetterAsync` 物理删除
+- 死信方法（GetDeadLetters/Retry/Discard/Purge）：已【停用】仅保留实现（接口只增不删约束），运行期不再产生 DeadLetter 状态
 - Dequeue「只返回不移除」：两阶段提交，进程崩溃时批次不丢（可能重复，但不丢），重启后恢复重发
 
 **Q2.2 DequeueAsync 事务**
@@ -66,7 +66,7 @@
 - 空队：直接 commit 并返回空列表
 
 **Q2.3 损坏行**
-- `RecoverCorruptRowAsync` → 复用 `MarkFailedAsync`：retry_count+1，超限进 DeadLetter，否则回 Pending（下轮再试，最多 5 次）
+- `RecoverCorruptRowAsync` → 复用 `MarkFailedAsync`：retry_count+1，超限直接丢弃，否则回 Pending（下轮再试，最多 5 次）
 - 不能留 InFlight：InFlight 不计 Count、不再出队、只靠进程重启恢复 → 一条坏数据会导致静默丢数（P0-1②）
 - 恢复本身失败仅 LogError，不影响其余行出队
 
@@ -76,15 +76,14 @@
 - 语义：崩溃窗口内「已发布未 Commit」的批次会重发 → 重复投递由云端幂等兜底
 
 **Q2.5 MarkFailedAsync**
-- 一次 UPDATE 完成：`status = CASE WHEN retry_count+1 >= @max THEN 'DeadLetter' ELSE 'Pending' END`、`retry_count+1`、`last_error=reason`（P2-11，3 次往返 → 2 次）
-- 事务外再 SELECT 一次判断是否进死信，仅供 Warning 日志
+- 先 `DELETE WHERE id=@id AND retry_count+1 >= @max`（命中即丢弃，2026-08-22 改）；未命中再 `UPDATE SET status='Pending', retry_count+1, last_error=@reason`
+- 一次 UPDATE 完成「计数 + 状态迁移」同语句（P2-11，3 次往返 → 2 次）；注意 UPDATE 必须带 `SET status='Pending'`，否则批次会卡 InFlight 不再重试
 - 默认 `maxRetries = 5`
-- 测试：`SqliteForwardBufferTests.MarkFailed_OverMaxRetries_MovesToDeadLetter`
+- 测试：`SqliteForwardOutboxTests.MarkFailed_OverMaxRetries_Drops` / `_ReportsDroppedMetric`
 
 **Q2.6 死信操作约束**
-- Retry：仅 `WHERE status='DeadLetter'` 才重置为 Pending（retry_count=0、last_error=NULL）
-- Discard：仅 DeadLetter 才物理删除
-- 不存在或不在死信状态 → `OperationalError.NotFound`：防止误操作 InFlight/Pending 批次
+- 现状（2026-08-22 起）：死信方法【停用】——转发重试超限改为直接丢弃，不再产生 DeadLetter 状态，运行期不会调用这些方法
+- 保留原因：`IForwardBuffer` 接口只增不删；实现（Retry 重置计数 / Discard 物理删除 / 带状态条件防误操作）仍保留供未来复用
 
 ---
 
@@ -96,7 +95,7 @@
 - 测试：`ForwarderFailureTests.ForwardBatchAsync_DequeueFailure_ReturnsFailureResult` / `_LogsError`；`ForwarderActivityTests.ForwardBatchAsync_DequeueFailure_SetsActivityError`
 
 **Q3.2 Publish 失败**
-依次：`LogWarning` → `OnMqttFailure()`（节流收紧）→ `MarkFailedOrLogErrorAsync`（重试/死信）→ `ForwardTotal.WithLabels("failure").Inc()` → `anyFailure=true` → Activity Error
+依次：`LogWarning` → `MarkFailedOrLogErrorAsync`（重试+1/超限丢弃）→ `ForwardTotal.WithLabels("failure").Inc()` → `anyFailure=true` → Activity Error
 - 方法仍返回 Success；后续批次继续处理（坏消息隔离，不阻塞）
 - 失败批次不进 committed 列表，不会被误删
 - 测试：`ForwarderFailureTests.ForwardBatchAsync_PublishFailure_MarksFailedForRetry`
@@ -104,7 +103,7 @@
 **Q3.3 异常路径差异**
 - 返回失败：`LogWarning`（Broker 拒绝类）
 - 抛异常：`LogError` + `activity.SetTag(ErrorMessage, ex.ToString())`（本地/网络异常类）
-- 相同：OnMqttFailure + MarkFailed + failure 指标 + Activity Error
+- 相同：MarkFailed + failure 指标 + Activity Error
 - 即「远端拒绝」与「本地异常」用日志级别区分，行为一致
 
 **Q3.4 Commit 失败**
@@ -114,7 +113,7 @@
 - 测试：`ForwarderFailureTests.ForwardBatchAsync_CommitFailure_LogsError`
 
 **Q3.5 MarkFailed 失败**
-- 后果同 Commit 失败：批次卡 InFlight；`LogError`「批次将卡 InFlight」（`Forwarder.cs:157-169`）
+- 后果同 Commit 失败：批次卡 InFlight；`LogError`「批次将卡 InFlight」（`Forwarder.cs:157-164`）
 - 恢复时机：仅进程重启（构造函数恢复逻辑）
 - `MarkFailedOrLogErrorAsync` 是显式封装：先检查结果再记日志，避免失败被吞
 - 测试：`ForwarderFailureTests.ForwardBatchAsync_MarkFailedFailure_LogsError`
@@ -123,37 +122,35 @@
 - 不丢：数据先落 SQLite（Pending）再发布，发布成功才删除
 - 重复窗口：① Publish 成功 → Commit 前崩溃 → 重启重发；② QoS1 本身允许 Broker 收到但 ACK 丢失 → 客户端重发；③ 死信 Retry 重置计数后重发
 - 云端兜底：按 BatchId / Record.Id 幂等去重（v1 语义为至少一次，非恰好一次）
+- 注：③ 死信 Retry 已随死信删除（2026-08-22），重复窗口只剩① ②
 
 ---
 
-## 四、AIMD 节流
+## 四、批量上限与简化（2026-08-22）
 
-**Q4.1 参数**
-- `MaxBatchSize ∈ [100, 1000]`，初始 1000；失败 `/2`（下限 100），成功 `+10`（上限 1000）
-- `DelayMs ∈ [0, 200]`，初始 0（不延迟）；失败 `+20ms`（上限 200），成功 `-5ms`（下限 0）
-- `ApplyDelayAsync` 仅当 DelayMs>0 时 `Task.Delay`
-- 测试：`NewThrottle_DefaultState` / `ThreeFailures_ShrinksBatchAndIncreasesDelay` / `RepeatedFailures_HitsFloor` / `Success_DoesNotExceedMax`
+**Q4.1 为什么删 AIMD**
+- 普通数据转发不需要自适应节流：网关是内网到云端的单发方向，Broker 恢复瞬间积压排水量级（每 5s ≤1000 批）不足以冲垮，AIMD 的批量/延迟双状态是过度设计
+- 现在：单轮出队固定上限 `MaxDequeuePerCall = 1000`（`Forwarder.cs`），不随成功/失败动态变化
+- 测试：`ForwarderMetricsTests` / `ForwarderEngineTests`（无节流相关测试，已随 `ForwardingThrottleTests` 删除）
 
-**Q4.2 收紧快、恢复慢**
-- 失败减半：1000→500→250→125→100，数轮内把压力降到安全区间
-- 成功 +10：缓慢恢复避免吞吐抖动（与 TCP 拥塞控制 AIMD 同源，类注释原文）
-- 目的：MQTT 恢复瞬间不冲垮 Broker
+**Q4.2 删除后排水兜底**
+- 固定批量上限本身限制每轮出队量（≤1000 批/5s），恢复后逐轮排空，不会一次性全量拉爆内存
+- 断线期间 `ForwarderEngine` 积压告警（>1000 批 / 60s 限流）仍保留，运维可见
+- 风险理解：内网→云单发方向、Broker 通常是云侧可控资源，容量弹性足够；若未来吞吐要求苛刻再引入节流（不预建）
 
-**Q4.3 Singleton 原因**
-- 状态必须跨调度轮持久；scoped 每轮新建 → 每轮都从 1000/0 开始，节流记忆丢失，恢复瞬间依旧冲垮 Broker（DI 注释原文：「若按作用域注册会在每轮重置为初始值，节流失效」）
+**Q4.3 还删了什么**
+- 死信队列（`DeadLetter` 状态不再产生）、死信 API（`DeadLettersController`）、死信保留任务（`DeadLetterRetentionService`）、死信 UI（`DeadLettersView`）、`ForwardingThrottle` + `ForwardingThrottleTests`
+- 死信方法留在 `IForwardBuffer` / `SqliteForwardOutbox`：**接口只增不删**约束，加【停用】注释保留实现供未来复用
 
-**Q4.4 线程安全假设**
-- 无锁，依赖 Forwarder 单线程顺序调用（每轮一个转发循环逐个反馈成功/失败，类注释原文）
-- 失效场景：若并行发布（多批次并发、各自 await 后调用 OnMqttSuccess/Failure），读改写出现竞态（基于过期值计算）
-- 修复方向：Interlocked / 锁，或按轮汇总后统一反馈
+**Q4.4 丢弃语义与观测**
+- `MarkFailedAsync`：先 `DELETE WHERE id AND retry_count+1 >= @max` 丢弃；未命中 `UPDATE SET status='Pending', retry_count+1`
+- 观测：`NitroMetrics.ForwardTotal` 标签 `deadletter` 改名为 `dropped`，丢弃时 Inc（`SqliteForwardOutbox.cs`）
+- 可靠性语义：重试 5 次仍失败视为坏数据/环境长期不可用，丢弃比无限积压/人工死信更符合「普通数据」定位
 
-**Q4.5 全局共享副作用**
-- 一台设备持续坏消息会让全局节流收紧（批量减半 + 延迟上升），拖慢所有设备
-- v1 单 Broker 场景可接受（ADR-001 P3-14 明确不修）；多 Broker/多租户时应按设备/租户隔离 throttle 实例
-
-**Q4.6 取消语义**
-- `Task.Delay(DelayMs, ct)` 取消 → `OperationCanceledException`
-- 该调用在 `Forwarder` 的 try 之外（`Forwarder.cs:97`）→ 冒泡到引擎 `catch (ex is not OperationCanceledException)` 不匹配 → 由 `ExecuteAsync` 的 `catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)` 按正常停机处理（不当作故障）
+**Q4.5 判断依据**
+- 两阶段缓冲（SQLite 落盘 + InFlight）保留：断电不丢、重启恢复，这是「至少一次」的根基，不删
+- 死信/AIMD 删：边缘场景数据量大、坏消息少，人工重放死信的运维价值低；AIMD 面向高吞吐公网场景，这里用不上
+- 结论：保留「可靠传输最小集」（两阶段 + 重试 + 丢弃计数），删「面向复杂网络的增量」（AIMD + 死信）
 
 ---
 
@@ -201,17 +198,17 @@
 ## 七、可观测性
 
 **Q7.1 指标**
-- `ForwardTotal`（labels: success/failure）：转发成功/失败批次数，增量 Counter
+- `ForwardTotal`（labels: success/failure/dropped）：转发成功/失败/重试超限丢弃批次数，增量 Counter（dropped 由 `SqliteForwardOutbox` 丢弃时上报）
 - `BufferBacklog`：待转发 Pending 批数，存量 Gauge（`_buffer.Count`，同步兼容接口）
-- `ThrottleBatchSize`：当前节流批量上限，暴露「系统是否处于节流/恢复」状态，运维可区分正常恢复与异常
+- ~~`ThrottleBatchSize`~~：2026-08-22 随 AIMD 删除，不再暴露
 - Activity "Forward"：每轮一次，状态 Ok/Error + BatchSize / ErrorMessage 标签（ADR-001 P2-9）
 
 **Q7.2 断线 3 小时时间线**
-1. 断线瞬间（已连接但发布失败）：throttle 收紧（1000→500→…→100，延迟→200ms）；`ForwardTotal{failure}` 上升
-2. 持续断线（Transport 层状态变 Disconnected/Reconnecting）：引擎跳过本轮，不 Dequeue、不产生死信；积压 >1000 → 首次 Warning，之后每 60s 一次
-3. 期间：`BufferBacklog` 持续增长（Collection 仍写入）；无死信产生（未发布不累加失败计数）
-4. 恢复：引擎放行 → throttle 从 100/200ms 缓慢回升（成功 +10 / -5ms），分多轮排水；积压回落 → 告警状态重置；`ForwardTotal{success}` 陡增
-5. 若恢复后发布仍持续失败（如认证/ACL 错误）：retry_count 累加，5 次后进死信 → 死信 API 可见
+1. 断线瞬间（已连接但发布失败）：`ForwardTotal{failure}` 上升；批次回 Pending（retry+1）
+2. 持续断线（Transport 层状态变 Disconnected/Reconnecting）：引擎跳过本轮，不 Dequeue；积压 >1000 → 首次 Warning，之后每 60s 一次
+3. 期间：`BufferBacklog` 持续增长（Collection 仍写入）；未发布不累加失败计数
+4. 恢复：引擎放行 → 每轮固定 ≤1000 批排水，逐轮排空；积压回落 → 告警状态重置；`ForwardTotal{success}` 陡增
+5. 若恢复后发布仍持续失败（如认证/ACL 错误）：retry_count 累加，5 次后直接丢弃并上报 `dropped`
 
 **Q7.3 恰好一次？**
 - 不能保证。QoS1 = 至少一次（Broker 可能收到但 ACK 丢失 → 重发）；本地 Commit 时机是「发布成功」而非「消费成功」；崩溃窗口会重发
@@ -235,11 +232,11 @@
 - 本质：把至少一次推进到「至少一次 + 消费确认」，仍非恰好一次（仍需幂等）
 
 **Q8.3 容量策略**
-- 现状：缓冲无条数上限，只受磁盘约束；有积压告警（1000 批 / 60s）但无止损
-- 方向：① 磁盘水位告警；② 缓冲条数上限 + 拒绝策略（工业场景「不丢」优先，需权衡）；③ TTL 老化（超时未转发进死信并告警）；④ 死信保留期 / 自动清理；⑤ 采集侧联动（积压超限暂停采集或降频）
+- 现状：缓冲无条数上限，只受磁盘约束；有积压告警（1000 批 / 60s）但无止损；重试超限直接丢弃（2026-08-22 简化）
+- 方向：① 磁盘水位告警；② 缓冲条数上限 + 拒绝策略（工业场景「不丢」优先，需权衡）；③ TTL 老化（超时未转发直接丢弃并告警）；④ 采集侧联动（积压超限暂停采集或降频）
 - 原则：容量策略要可配置、默认保守，不破坏 at-least-once
 
 **Q8.4 坏消息分类**
-- 问题：连接类错误（Broker 不可达，重试合理）与数据类错误（格式错误、超大 payload，重试必然失败）走同一路径 → 浪费 5 轮重试、且每轮都 `OnMqttFailure` 收紧全局节流，拖慢正常数据
-- 优化：错误分类——不可恢复错误（序列化/数据问题）直接进死信 + 告警；连接类错误走重试；序列化失败发生在本地，可立即死信
+- 问题：连接类错误（Broker 不可达，重试合理）与数据类错误（格式错误、超大 payload，重试必然失败）走同一路径 → 浪费 5 轮重试
+- 优化：错误分类——不可恢复错误（序列化/数据问题）直接丢弃 + 告警；连接类错误走重试（现已是「重试超限丢弃」，比原死信更简单）
 - 现状已隐含演进方向（v2+ 自适应退避、应用层 ACK），v1 未区分错误类型
