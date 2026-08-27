@@ -5,33 +5,50 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
+                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <!-- ADR-059：运行期开关样式（ToggleButton 圆形滑钮） -->
-            <Style x:Key="SwitchToggleStyle" TargetType="ToggleButton">
-                <Setter Property="Width" Value="44" />
-                <Setter Property="Height" Value="24" />
-                <Setter Property="Cursor" Value="Hand" />
+            <Style x:Key="SwitchToggleStyle"
+                   TargetType="ToggleButton">
+                <Setter Property="Width"
+                        Value="44"/>
+                <Setter Property="Height"
+                        Value="24"/>
+                <Setter Property="Cursor"
+                        Value="Hand"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ToggleButton">
                             <Grid>
-                                <Border x:Name="Track" CornerRadius="12"
+                                <Border x:Name="Track"
+                                        CornerRadius="12"
                                         Background="{StaticResource ScrollThumbBrush}">
-                                    <Ellipse x:Name="Thumb" Width="18" Height="18"
+                                    <Ellipse x:Name="Thumb"
+                                             Width="18"
+                                             Height="18"
                                              Fill="{StaticResource CardBackground}"
-                                             HorizontalAlignment="Left" Margin="3,0,0,0" />
+                                             HorizontalAlignment="Left"
+                                             Margin="3,0,0,0"/>
                                 </Border>
                             </Grid>
                             <ControlTemplate.Triggers>
-                                <Trigger Property="IsChecked" Value="True">
-                                    <Setter TargetName="Track" Property="Background"
-                                            Value="{StaticResource PrimaryBrush}" />
-                                    <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
-                                    <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0" />
+                                <Trigger Property="IsChecked"
+                                         Value="True">
+                                    <Setter TargetName="Track"
+                                            Property="Background"
+                                            Value="{StaticResource PrimaryBrush}"/>
+                                    <Setter TargetName="Thumb"
+                                            Property="HorizontalAlignment"
+                                            Value="Right"/>
+                                    <Setter TargetName="Thumb"
+                                            Property="Margin"
+                                            Value="0,0,3,0"/>
                                 </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter TargetName="Track" Property="Opacity" Value="0.5" />
+                                <Trigger Property="IsEnabled"
+                                         Value="False">
+                                    <Setter TargetName="Track"
+                                            Property="Opacity"
+                                            Value="0.5"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -43,95 +60,204 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- 页头 -->
-        <StackPanel Grid.Row="0" Margin="26,22,26,14">
-            <TextBlock Text="设置" Style="{StaticResource PageTitleStyle}" />
-            <TextBlock Text="站点标识、MQTT 上报与本地存储" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+        <StackPanel Grid.Row="0"
+                    Margin="26,22,26,14">
+            <TextBlock Text="设置"
+                       Style="{StaticResource PageTitleStyle}"/>
+            <TextBlock Text="站点标识、MQTT 上报与本地存储"
+                       Style="{StaticResource PageSubtitleStyle}"
+                       Margin="0,3,0,0"/>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="26,0,26,22">
-            <StackPanel MaxWidth="720" HorizontalAlignment="Left">
-                <GroupBox Header="站点标识（SiteId，ADR-036）" Margin="0,0,0,14">
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Margin="26,0,26,22">
+            <StackPanel MaxWidth="720"
+                        HorizontalAlignment="Left">
+                <GroupBox Header="站点标识（SiteId，ADR-036）"
+                          Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="当前站点标识（随数据上行，中心按此区分现场）：" Margin="0,2" />
-                        <TextBox Text="{Binding SiteId, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" />
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="保存" Command="{Binding SaveSiteIdCommand}" Margin="0,0,8,0" />
-                            <Button Content="重新生成" Command="{Binding RegenerateSiteIdCommand}" />
+                        <TextBlock Text="当前站点标识（随数据上行，中心按此区分现场）："
+                                   Margin="0,2"/>
+                        <TextBox Text="{Binding SiteId, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,4"/>
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,8,0,0">
+                            <Button Content="保存"
+                                    Command="{Binding SaveSiteIdCommand}"
+                                    Margin="0,0,8,0"/>
+                            <Button Content="重新生成"
+                                    Command="{Binding RegenerateSiteIdCommand}"/>
                         </StackPanel>
-                        <TextBlock Text="{Binding SiteIdStatus}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding SiteIdStatus}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"/>
                         <TextBlock Text="首次启动自动生成唯一标识；保存/重新生成后重启生效。格式：小写字母/数字开头、可含连字符、≤32 位（MQTT topic 与 URL 友好）。同一标识被多台机器使用会造成订阅端数据混淆。"
-                                   Foreground="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                   Foreground="{StaticResource MutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"/>
                     </StackPanel>
                 </GroupBox>
 
-                <GroupBox Header="MQTT 上报（独立发布，谁订阅谁消费）" Margin="0,0,0,14">
+                <GroupBox Header="MQTT 上报（独立发布，谁订阅谁消费）"
+                          Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Margin="0,2"><Run Text="Broker：" /><Run Text="{Binding MqttBroker}" /></TextBlock>
-                        <TextBlock Margin="0,2"><Run Text="ClientId：" /><Run Text="{Binding MqttClientId}" /></TextBlock>
-                        <TextBlock Margin="0,2"><Run Text="连接状态：" /><Run Text="{Binding MqttStateText}" FontWeight="SemiBold" /></TextBlock>
-                        <TextBlock Margin="0,2"><Run Text="转发缓冲积压：" /><Run Text="{Binding BufferBacklogText}" FontWeight="SemiBold" /></TextBlock>
+                        <TextBlock Margin="0,2"><Run Text="Broker："/><Run Text="{Binding MqttBroker}"/></TextBlock>
+                        <TextBlock Margin="0,2"><Run Text="ClientId："/><Run Text="{Binding MqttClientId}"/></TextBlock>
+                        <TextBlock Margin="0,2"><Run Text="连接状态："/><Run Text="{Binding MqttStateText}"
+                                                                        FontWeight="SemiBold"/></TextBlock>
+                        <TextBlock Margin="0,2"><Run Text="转发缓冲积压："/><Run Text="{Binding BufferBacklogText}"
+                                                                          FontWeight="SemiBold"/></TextBlock>
                     </StackPanel>
                 </GroupBox>
 
-                <GroupBox Header="MQTT 上云转发（ADR-059：运行期总开关）" Margin="0,0,0,14">
+                <GroupBox Header="MQTT 连接设置（测试连接，保存后重启生效）"
+                          Margin="0,0,0,14">
                     <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <TextBlock Text="Broker 地址："
+                                   Margin="0,2"/>
+                        <TextBox Text="{Binding MqttHost, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,4"/>
+                        <TextBlock Text="端口："
+                                   Margin="0,2"/>
+                        <TextBox Text="{Binding MqttPortText, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,4"/>
+                        <CheckBox Content="使用 TLS（端口通常 8883）"
+                                  IsChecked="{Binding MqttUseTls}"
+                                  Margin="0,8,0,0"/>
+                        <TextBlock Text="用户名（可选）："
+                                   Margin="0,8,0,0"/>
+                        <TextBox Text="{Binding MqttUsername, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,4"/>
+                        <TextBlock Text="密码（可选）："
+                                   Margin="0,2"/>
+                        <!-- ADR-067：默认 PasswordBox 遮蔽，勾选「显示密码」切到明文 TextBox（仅内存明文，落盘 DPAPI） -->
+                        <Grid>
+                            <TextBox x:Name="MqttPasswordVisibleBox"
+                                     Text="{Binding MqttPassword, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="0,4"
+                                     Visibility="Collapsed"/>
+                            <PasswordBox x:Name="MqttPasswordMaskedBox"
+                                         PasswordChanged="OnMqttPasswordChanged"
+                                         Margin="0,4"/>
+                        </Grid>
+                        <CheckBox x:Name="MqttPasswordRevealCheck"
+                                  Content="显示密码"
+                                  IsChecked="False"
+                                  Checked="OnMqttPasswordRevealChecked"
+                                  Unchecked="OnMqttPasswordRevealUnchecked"
+                                  Margin="0,8,0,0"/>
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,10,0,0">
+                            <Button Content="测试连接"
+                                    Command="{Binding TestMqttCommand}"
+                                    Margin="0,0,8,0"/>
+                            <Button Content="保存"
+                                    Command="{Binding SaveMqttSettingsCommand}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding MqttSettingsStatus}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"/>
+                        <TextBlock Text="测试连接使用独立临时客户端，不影响正在运行的上报连接；保存后重启生效（启动时加载，环境变量 MQTT__Host/MQTT__Port 等仍优先）。"
+                                   Foreground="{StaticResource MutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="MQTT 上云转发"
+                          Margin="0,0,0,14">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,2">
                             <ToggleButton Style="{StaticResource SwitchToggleStyle}"
                                           IsChecked="{Binding ForwardMqttEnabled, Mode=TwoWay}"
                                           Command="{Binding ToggleForwardMqttCommand}"
                                           CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
-                                          Margin="0,2,12,0" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding ForwardMqttStatus}" TextWrapping="Wrap"
-                                       VerticalAlignment="Center" Margin="0,2,0,0" />
+                                          Margin="0,2,12,0"
+                                          VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ForwardMqttStatus}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       Margin="0,2,0,0"/>
                         </StackPanel>
                         <TextBlock Text="关闭后本机采集/本地存储/告警不受影响，仅暂停 MQTT 上云（不入上云缓冲、不补发关闭期数据）；恢复后从关闭时刻续传。开关即时生效，保存在本机设置，重启保持。"
-                                   Foreground="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                   Foreground="{StaticResource MutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"/>
                     </StackPanel>
                 </GroupBox>
-
-                <GroupBox Header="中心配置同步（ADR-033 阶段 2：手动导入）" Margin="0,0,0,14">
+                <!--
+                <GroupBox Header="中心配置同步"
+                        Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Text="中心地址：" Margin="0,2" />
-                        <TextBox Text="{Binding CenterUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" />
-                        <TextBlock Text="中心 Token（JWT）：" Margin="0,2" />
-                        <!-- ADR-037 S5：默认 PasswordBox 遮蔽，勾选「显示 Token」切到明文 TextBox（仅内存明文，落盘 DPAPI 加密） -->
-                        <Grid>
-                            <TextBox x:Name="TokenVisibleBox" Text="{Binding CenterToken, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4" Visibility="Collapsed" />
-                            <PasswordBox x:Name="TokenMaskedBox" PasswordChanged="OnCenterTokenPasswordChanged"
-                                         Margin="0,4" />
-                        </Grid>
-                        <CheckBox x:Name="TokenRevealCheck" Content="显示 Token" IsChecked="False"
-                                  Checked="OnTokenRevealChecked" Unchecked="OnTokenRevealUnchecked" Margin="0,8,0,0" />
-                        <Button Content="从中心导入" Command="{Binding ImportFromCenterCommand}"
-                                Margin="0,10,0,4" HorizontalAlignment="Left" />
-                        <TextBlock Text="{Binding ImportStatusText}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                        <TextBlock Text="导入将以中心配置重置本地设备/点位（覆盖前需确认）。地址与 Token 仅保存在本机 %LocalAppData%。"
-                                   Foreground="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0" />
-                    </StackPanel>
-                </GroupBox>
-
-                <GroupBox Header="本地存储与采集" Margin="0,0,0,14">
+                        <TextBlock Text="中心地址："
+                                Margin="0,2"/>
+                        <TextBox Text="{Binding CenterUrl, UpdateSourceTrigger=PropertyChanged}"
+                                Margin="0,4"/>
+                        <TextBlock Text="中心 Token（JWT）："
+                                Margin="0,2"/>
+                <Grid>
+                    <TextBox x:Name="TokenVisibleBox"
+                             Text="{Binding CenterToken, UpdateSourceTrigger=PropertyChanged}"
+                             Margin="0,4"
+                             Visibility="Collapsed"/>
+                    <PasswordBox x:Name="TokenMaskedBox"
+                                 PasswordChanged="OnCenterTokenPasswordChanged"
+                                 Margin="0,4"/>
+                </Grid>
+                <CheckBox x:Name="TokenRevealCheck"
+                          Content="显示 Token"
+                          IsChecked="False"
+                          Checked="OnTokenRevealChecked"
+                          Unchecked="OnTokenRevealUnchecked"
+                          Margin="0,8,0,0"/>
+                <Button Content="从中心导入"
+                        Command="{Binding ImportFromCenterCommand}"
+                        Margin="0,10,0,4"
+                        HorizontalAlignment="Left"/>
+                <TextBlock Text="{Binding ImportStatusText}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0"/>
+                <TextBlock Text="导入将以中心配置重置本地设备/点位（覆盖前需确认）。地址与 Token 仅保存在本机 %LocalAppData%。"
+                           Foreground="{StaticResource MutedText}"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0"/>
+            </StackPanel>
+            </GroupBox>
+            -->
+                <GroupBox Header="本地存储与采集"
+                          Margin="0,0,0,14">
                     <StackPanel>
-                        <TextBlock Margin="0,2" TextWrapping="Wrap"><Run Text="SQLite 路径：" /><Run Text="{Binding DatabasePath}" /></TextBlock>
-                        <TextBlock Margin="0,2" Text="日志目录：" />
-                        <TextBox Text="{Binding LogDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="0,4" />
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                            <Button Content="保存日志目录" Command="{Binding SaveLogDirectoryCommand}" />
-                            <TextBlock Text="{Binding LogDirectoryStatus}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Margin="0,2"
+                                   TextWrapping="Wrap"><Run Text="SQLite 路径："/><Run Text="{Binding DatabasePath}"/></TextBlock>
+                        <TextBlock Margin="0,2"
+                                   Text="日志目录："/>
+                        <TextBox Text="{Binding LogDirectory, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="0,4"/>
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,6,0,0">
+                            <Button Content="保存日志目录"
+                                    Command="{Binding SaveLogDirectoryCommand}"/>
+                            <TextBlock Text="{Binding LogDirectoryStatus}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       Margin="12,0,0,0"/>
                         </StackPanel>
-                        <TextBlock Margin="0,2"><Run Text="采集间隔：" /><Run Text="{Binding CollectionInterval}" /> 毫秒</TextBlock>
-                        <TextBlock Margin="0,2"><Run Text="转发间隔：" /><Run Text="{Binding ForwarderInterval}" /> 毫秒</TextBlock>
+                        <TextBlock Margin="0,2"><Run Text="采集间隔："/><Run Text="{Binding CollectionInterval}"/> 毫秒</TextBlock>
+                        <TextBlock Margin="0,2"><Run Text="转发间隔："/><Run Text="{Binding ForwarderInterval}"/> 毫秒</TextBlock>
                     </StackPanel>
                 </GroupBox>
 
                 <TextBlock Text="说明：桌面端仅本机 UI、本机会话免登录（ADR-026 D5）；远程查看走中心 Webapi/Vue（ADR-025）。"
-                           Foreground="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                           Foreground="{StaticResource MutedText}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0"/>
             </StackPanel>
         </ScrollViewer>
     </Grid>

@@ -54,6 +54,10 @@ public sealed class GatewayHost : IAsyncDisposable
         var siteStore = new SiteSettingsStore();
         builder.Configuration["Site:Id"] = SiteIdProvider.Resolve(builder.Configuration, siteStore);
 
+        // ADR-067：MQTT 连接参数（设置页保存，desktop-settings.json）启动覆盖 appsettings；
+        // 环境变量 MQTT__* 仍优先。须在 AddNitroMqtt 绑定 Options 前执行（下方模块注册时）。
+        MqttDesktopConfig.Apply(builder.Configuration);
+
         // Serilog 作为唯一日志输出（与 Webapi 一致：清宿主提供程序 + 读配置 + DI 服务）
         builder.Logging.ClearProviders();
         builder.Services.AddSerilog((services, loggerConfiguration) => loggerConfiguration

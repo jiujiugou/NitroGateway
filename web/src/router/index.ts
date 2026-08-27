@@ -18,6 +18,8 @@ const router = createRouter({
     { path: '/audit', name: 'AuditLog', component: () => import('../views/Audit/AuditLogView.vue') },
     // ADR-066：用户管理页（仅 Admin；前端门控只是 UX，后端 AdminOnly 策略兜底）
     { path: '/users', name: 'Users', component: () => import('../views/Users/UserListView.vue'), meta: { roles: ['Admin'] } },
+    // ADR-036：站点身份管理（查看/修改/重新生成，与桌面设置页对齐）
+    { path: '/site', name: 'SiteIdentity', component: () => import('../views/Sites/SiteIdentityView.vue') },
     { path: '/system', name: 'SystemStatus', component: () => import('../views/System/SystemStatus.vue') },
     { path: '/history', name: 'History', component: () => import('../views/History/HistoryView.vue') },
   ]

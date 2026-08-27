@@ -9,10 +9,11 @@ using NitroGateway.Domain.Protocols;
 using NitroGateway.Protocols;
 using NitroGateway.Protocols.Modbus;
 using NitroGateway.Shared;
+using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Storage.Buffer;
-using NitroGateway.Storage.TimeSeries;
 using NitroGateway.Webapi.Controllers;
 using NitroGateway.Webapi.Models;
+using NitroGateway.Webapi.Services;
 using Xunit;
 using AlarmRuleDomain = NitroGateway.Alarm.Domain.AlarmRule;
 
@@ -31,7 +32,7 @@ public class WebapiControllerTests
     public async Task Devices_Create_IgnoresClientProvidedId()
     {
         var devices = new FakeDeviceManager();
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var clientId = Guid.NewGuid();
         var dto = new DeviceDto
         {
@@ -53,7 +54,7 @@ public class WebapiControllerTests
     public async Task Devices_Create_NullProtocolAndConnection_DoesNotThrow()
     {
         var devices = new FakeDeviceManager();
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var dto = new DeviceDto { Id = "", Name = "dev", Protocol = null!, Connection = null!, Status = "Online" };
 
         var result = await ctrl.Create(dto);
@@ -72,7 +73,7 @@ public class WebapiControllerTests
         var device = TestDevices.Device("1号车间 PLC");
         device.AddPoint(TestDevices.Point("炉温"));
         devices.AllDevices = new[] { device };
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
 
         var result = await ctrl.Export();
 
@@ -91,7 +92,7 @@ public class WebapiControllerTests
     {
         // ADR-035 方案 A：Web 建设备可指定站点归属，落库保留
         var devices = new FakeDeviceManager();
-        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var ctrl = new DevicesController(devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var dto = new DeviceDto
         {
             Name = "dev",
@@ -107,99 +108,54 @@ public class WebapiControllerTests
         Assert.Equal("site-a", devices.LastRegistered!.SiteId);
     }
 
-
-    public async Task Sites_GetSites_ReturnsCatalogList()
-    {
-        // ADR-035 第 1 步 Web 维度：站点目录仅读接口，返回中心库去重后的 site 列表
-        var catalog = new FakeSiteCatalog(new[] { "site-a", "site-b" });
-        var ctrl = new SitesController(catalog);
-
-        var result = await ctrl.GetSites();
-
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<List<string>>>(ok.Value);
-        Assert.True(body.Success);
-        Assert.Equal(new[] { "site-a", "site-b" }, body.Data);
-        Assert.Equal(1, catalog.CallCount);
-    }
-
     [Fact]
-    public async Task Sites_GetSites_EmptyCatalog_ReturnsEmptyList()
+    public async Task Devices_Create_MissingSiteId_DefaultsToProviderCurrent()
     {
-        var ctrl = new SitesController(new FakeSiteCatalog(Array.Empty<string>()));
-
-        var result = await ctrl.GetSites();
-
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<List<string>>>(ok.Value);
-        Assert.Empty(body.Data);
-    }
-    [Fact]
-    public async Task Sites_GetSiteInfos_ReturnsCatalogInfos()
-    {
-        // ADR-036 中心站点管理：详情列表含显示名/来源指纹/冲突标记
-        var catalog = new FakeSiteCatalog(Array.Empty<string>())
+        // ADR-054：web 作为纯边缘单一身份——前端不传 siteId，设备归属=本站点（SiteIdProvider.Current）
+        var devices = new FakeDeviceManager();
+        var ctrl = new DevicesController(
+            devices, new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(),
+            new FakeSiteIdProvider { Current = "edge-site-1" }, new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
+        var dto = new DeviceDto
         {
-            SiteInfos = new[]
-            {
-                new SiteInfo { SiteId = "site-a", DisplayName = "一号站", HasConflict = true },
-                new SiteInfo { SiteId = "site-b" }
-            }
+            Name = "dev",
+            Protocol = new ProtocolDto { Name = "ModbusTcp" },
+            Connection = new ConnectionDto { Endpoint = "127.0.0.1:502" },
+            Status = "Online"
         };
-        var ctrl = new SitesController(catalog);
 
-        var result = await ctrl.GetSiteInfos();
-
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var body = Assert.IsType<ApiResponse<List<SiteInfo>>>(ok.Value);
-        Assert.True(body.Success);
-        Assert.Equal(2, body.Data!.Count);
-        Assert.Equal("一号站", body.Data[0].DisplayName);
-        Assert.True(body.Data[0].HasConflict);
-        Assert.Equal(1, catalog.InfoCalls);
-    }
-
-    [Fact]
-    public async Task Sites_Rename_Valid_ReturnsOkAndForwards()
-    {
-        var catalog = new FakeSiteCatalog(Array.Empty<string>());
-        var ctrl = new SitesController(catalog);
-
-        var result = await ctrl.Rename("site-a", new RenameSiteRequest { DisplayName = " 一号站 " });
+        var result = await ctrl.Create(dto);
 
         Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Equal("site-a", catalog.RenameSiteId);
-        Assert.Equal("一号站", catalog.RenameDisplayName);   // 前后空白被 Trim
-        Assert.Equal(1, catalog.RenameCalls);
+        Assert.Equal("edge-site-1", devices.LastRegistered!.SiteId);
     }
 
     [Fact]
-    public async Task Sites_Rename_EmptySiteId_ReturnsBadRequest()
+    public async Task Devices_Create_WritesOutboxOnSuccess()
     {
-        var catalog = new FakeSiteCatalog(Array.Empty<string>());
-        var ctrl = new SitesController(catalog);
+        // ADR-033 阶段 4：设备落库成功后写 outbox，同步服务联网后上报中心
+        var outbox = new FakeConfigSyncOutboxStore();
+        var ctrl = new DevicesController(
+            new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(),
+            new FakeSiteIdProvider(), outbox, NullLogger<DevicesController>.Instance);
+        var dto = new DeviceDto
+        {
+            Name = "dev",
+            Protocol = new ProtocolDto { Name = "ModbusTcp" },
+            Connection = new ConnectionDto { Endpoint = "127.0.0.1:502" },
+            Status = "Online"
+        };
 
-        var result = await ctrl.Rename(" ", new RenameSiteRequest { DisplayName = "x" });
+        var result = await ctrl.Create(dto);
 
-        Assert.IsType<BadRequestObjectResult>(result.Result);
-        Assert.Equal(0, catalog.RenameCalls);
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(1, outbox.RecordDeviceCalls);
     }
 
-    [Fact]
-    public async Task Sites_Rename_DisplayNameTooLong_ReturnsBadRequest()
-    {
-        var catalog = new FakeSiteCatalog(Array.Empty<string>());
-        var ctrl = new SitesController(catalog);
-
-        var result = await ctrl.Rename("site-a", new RenameSiteRequest { DisplayName = new string('x', 101) });
-
-        Assert.IsType<BadRequestObjectResult>(result.Result);
-        Assert.Equal(0, catalog.RenameCalls);
-    }
     [Fact]
     public async Task Devices_UpdateStatus_InvalidEnum_ReturnsBadRequest()
     {
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
 
         var result = await ctrl.UpdateStatus(Guid.NewGuid(), "BogusStatus");
 
@@ -209,7 +165,7 @@ public class WebapiControllerTests
     [Fact]
     public async Task Devices_AddPoint_InvalidDataType_ReturnsBadRequest()
     {
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var dto = new PointDto { DataType = "Bogus", Access = "ReadOnly" };
 
         var result = await ctrl.AddPoint(Guid.NewGuid(), dto);
@@ -221,7 +177,7 @@ public class WebapiControllerTests
     public async Task Devices_AddPoint_IgnoresClientProvidedId()
     {
         var points = new FakePointManager();
-        var ctrl = new DevicesController(new FakeDeviceManager(), points, new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts());
+        var ctrl = new DevicesController(new FakeDeviceManager(), points, new FakeHealthMonitor(), new FakeDriverFactory(), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var clientPointId = Guid.NewGuid();
         var dto = new PointDto { Id = clientPointId.ToString(), Name = "p", Address = "1", DataType = "Float", Access = "ReadOnly" };
 
@@ -238,7 +194,7 @@ public class WebapiControllerTests
     public async Task Devices_TestConnection_ConnectAndPingOk_ReturnsSuccess()
     {
         var driver = new FakeProtocolDriver(OperationResult.Success(), OperationResult.Success());
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var dto = TestConnectionDto();
 
         var result = await ctrl.TestConnection(dto);
@@ -252,7 +208,7 @@ public class WebapiControllerTests
     public async Task Devices_TestConnection_ConnectOk_PingFail_ReturnsFailure()
     {
         var driver = new FakeProtocolDriver(OperationResult.Success(), OperationalError.Timeout("Ping 失败: 从站无响应"));
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var dto = TestConnectionDto();
 
         var result = await ctrl.TestConnection(dto);
@@ -266,7 +222,7 @@ public class WebapiControllerTests
     public async Task Devices_TestConnection_ConnectFail_ReturnsFailure()
     {
         var driver = new FakeProtocolDriver(OperationalError.Communication("Modbus 连接失败: 拒绝连接"), OperationResult.Success());
-        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts());
+        var ctrl = new DevicesController(new FakeDeviceManager(), new FakePointManager(), new FakeHealthMonitor(), new FakeDriverFactory(driver), new FakeSerialPorts(), new FakeSiteIdProvider(), new FakeConfigSyncOutboxStore(), NullLogger<DevicesController>.Instance);
         var dto = TestConnectionDto();
 
         var result = await ctrl.TestConnection(dto);
@@ -358,6 +314,83 @@ public class WebapiControllerTests
         Severity = "Warning",
         Enabled = true
     };
+
+    // ── SiteController：站点身份管理（ADR-036）查看 / 修改 / 重新生成 ──
+
+    [Fact]
+    public void Site_Get_ReturnsCurrentIdentity()
+    {
+        var provider = new FakeSiteIdProvider { Current = "edge-plant-1", Source = SiteIdSource.Persisted };
+        var ctrl = new SiteController(provider, NullLogger<SiteController>.Instance);
+
+        var result = ctrl.Get();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<SiteIdentityDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal("edge-plant-1", body.Data!.SiteId);
+        Assert.Equal("Persisted", body.Data.Source);
+        Assert.False(body.Data.ConfigPinned);
+        Assert.False(body.Data.RestartRequired); // GET 反映当前生效态
+    }
+
+    [Fact]
+    public void Site_Get_ConfiguredSource_MarksConfigPinned()
+    {
+        var provider = new FakeSiteIdProvider { Current = "env-site", Source = SiteIdSource.Configured };
+        var ctrl = new SiteController(provider, NullLogger<SiteController>.Instance);
+
+        var result = ctrl.Get();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<SiteIdentityDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.True(body.Data!.ConfigPinned);
+    }
+
+    [Fact]
+    public void Site_Update_Invalid_ReturnsBadRequest()
+    {
+        var provider = new FakeSiteIdProvider();
+        var ctrl = new SiteController(provider, NullLogger<SiteController>.Instance);
+
+        var result = ctrl.Update(new SiteIdentityUpdateRequest { SiteId = "Bad/Site" });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal("test-site", provider.Current); // 未生效
+    }
+
+    [Fact]
+    public void Site_Update_Valid_PersistsAndReturnsRestartRequired()
+    {
+        var provider = new FakeSiteIdProvider();
+        var ctrl = new SiteController(provider, NullLogger<SiteController>.Instance);
+
+        var result = ctrl.Update(new SiteIdentityUpdateRequest { SiteId = "plant-b" });
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<SiteIdentityDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal("plant-b", body.Data!.SiteId);
+        Assert.True(body.Data.RestartRequired);
+        Assert.Equal("plant-b", provider.Current);
+    }
+
+    [Fact]
+    public void Site_Regenerate_ReturnsNewIdAndRestartRequired()
+    {
+        var provider = new FakeSiteIdProvider { Current = "test-site" };
+        var ctrl = new SiteController(provider, NullLogger<SiteController>.Instance);
+
+        var result = ctrl.Regenerate();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ApiResponse<SiteIdentityDto>>(ok.Value);
+        Assert.True(body.Success);
+        Assert.Equal("test-site-2", body.Data!.SiteId);
+        Assert.True(body.Data.RestartRequired);
+        Assert.Equal("test-site-2", provider.Current);
+    }
 }
 
 // ═══════════ fakes ═══════════
@@ -469,53 +502,59 @@ public sealed class FakeSerialPorts : ISerialPortManager
     public IReadOnlyList<SerialPortInfo> GetStatus() => [];
 }
 
-public sealed class FakeSiteCatalog : ISiteCatalog
+public sealed class FakeSiteIdProvider : ISiteIdProvider
 {
-    private readonly IReadOnlyList<string> _sites;
+    public string Current { get; set; } = "test-site";
+    public SiteIdSource Source { get; set; } = SiteIdSource.Persisted;
 
-    public FakeSiteCatalog(IReadOnlyList<string> sites) => _sites = sites;
-
-    public int CallCount { get; private set; }
-
-    public Task<OperationResult<IReadOnlyList<string>>> GetSitesAsync(CancellationToken ct = default)
+    public OperationResult Save(string siteId)
     {
-        CallCount++;
-        return Task.FromResult(OperationResult<IReadOnlyList<string>>.Success(_sites));
+        // 与真实 SiteIdProvider 一致：先校验格式（供非法输入→400 用例）
+        if (!SiteOptions.IsValidSiteId(siteId))
+            return OperationResult.Failure(OperationalError.Validation("站点标识不合法"));
+        Current = siteId;
+        Source = SiteIdSource.Persisted;
+        return OperationResult.Success();
     }
 
-    /// <summary>注册调用记录（ADR-036）</summary>
-    public int RegisterCalls { get; private set; }
-    public string? LastSiteId { get; private set; }
-    public string? LastClientId { get; private set; }
-
-    public Task<OperationResult> RegisterSiteAsync(string siteId, string? sourceClientId, CancellationToken ct = default)
+    public string Regenerate()
     {
-        RegisterCalls++;
-        LastSiteId = siteId;
-        LastClientId = sourceClientId;
-        return Task.FromResult(OperationResult.Success());
+        Current = "test-site-2";
+        Source = SiteIdSource.Persisted;
+        return Current;
     }
+}
 
-    /// <summary>站点详情（ADR-036）：可注入返回值，供控制器用例断言。</summary>
-    public IReadOnlyList<SiteInfo> SiteInfos { get; set; } = Array.Empty<SiteInfo>();
-    public int InfoCalls { get; private set; }
-    public int RenameCalls { get; private set; }
-    public string? RenameSiteId { get; private set; }
-    public string? RenameDisplayName { get; private set; }
+public sealed class FakeConfigSyncOutboxStore : IConfigSyncOutboxStore
+{
+    public int RecordDeviceCalls { get; private set; }
+    public int RecordDeviceDeleteCalls { get; private set; }
+    public int RecordPointCalls { get; private set; }
+    public int RecordPointDeleteCalls { get; private set; }
 
-    public Task<OperationResult<IReadOnlyList<SiteInfo>>> GetSiteInfosAsync(CancellationToken ct = default)
-    {
-        InfoCalls++;
-        return Task.FromResult(OperationResult<IReadOnlyList<SiteInfo>>.Success(SiteInfos));
-    }
+    public Task<OperationResult> RecordDeviceAsync(Device device, CancellationToken ct = default)
+    { RecordDeviceCalls++; return Task.FromResult(OperationResult.Success()); }
 
-    public Task<OperationResult> RenameSiteAsync(string siteId, string displayName, CancellationToken ct = default)
-    {
-        RenameCalls++;
-        RenameSiteId = siteId;
-        RenameDisplayName = displayName;
-        return Task.FromResult(OperationResult.Success());
-    }
+    public Task<OperationResult> RecordDeviceDeleteAsync(Guid deviceId, CancellationToken ct = default)
+    { RecordDeviceDeleteCalls++; return Task.FromResult(OperationResult.Success()); }
+
+    public Task<OperationResult> RecordPointAsync(Guid deviceId, DevicePoint point, CancellationToken ct = default)
+    { RecordPointCalls++; return Task.FromResult(OperationResult.Success()); }
+
+    public Task<OperationResult> RecordPointDeleteAsync(Guid deviceId, Guid pointId, CancellationToken ct = default)
+    { RecordPointDeleteCalls++; return Task.FromResult(OperationResult.Success()); }
+
+    public Task<OperationResult<IReadOnlyList<ConfigSyncOutboxRow>>> GetPendingAsync(CancellationToken ct = default)
+        => Task.FromResult(OperationResult<IReadOnlyList<ConfigSyncOutboxRow>>.Success(Array.Empty<ConfigSyncOutboxRow>()));
+
+    public Task<OperationResult> ClearAsync(ConfigSyncOutboxKind kind, Guid deviceId, Guid? pointId = null, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+
+    public Task<OperationResult> ClearForDeviceAsync(Guid deviceId, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+
+    public Task<OperationResult> ClearAllAsync(CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
 }
 public sealed class FakeForwardBuffer : IForwardBuffer
 {

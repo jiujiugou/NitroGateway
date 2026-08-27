@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System.Net.Http;
 using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Services.Connectivity;
@@ -53,6 +54,12 @@ public static class DesktopServiceCollectionExtensions
 
         // ADR-044：桌面端连接测试（Connect+Ping，复用协议驱动工厂），供设备编辑窗口「测试连接」按钮
         services.AddSingleton<IDeviceConnectionTester, DeviceConnectionTester>();
+
+        // ADR-067：MQTT Broker 连接测试——独立临时客户端（不碰运行中转发连接），供设置页「测试连接」按钮
+        services.AddSingleton<IMqttConnectionTester>(sp => new MqttConnectionTester(
+            sp.GetRequiredService<IConfiguration>(),
+            sp.GetRequiredService<ILogger<MqttConnectionTester>>(),
+            sp.GetRequiredService<ILogger<NitroGateway.Transport.MQTT.MqttClientWrapper>>()));
 
         // ADR-043：告警规则编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
         services.AddSingleton<IAlarmRuleDialogService, AlarmRuleDialogService>();

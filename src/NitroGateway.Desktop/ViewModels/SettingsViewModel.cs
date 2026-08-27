@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Configuration;
 using NitroGateway.Desktop.Messaging;
 using NitroGateway.Desktop.Hosting;
+using NitroGateway.Desktop.Services.Connectivity;
 using NitroGateway.Desktop.Services.Dialogs;
 using NitroGateway.Desktop.Services.Infrastructure;
 using NitroGateway.Desktop.Services.Settings;
@@ -32,6 +33,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly ISiteIdProvider _siteIdProvider;
     private readonly IDesktopSettingsStore _logSettingsStore;
     private readonly IForwardMqttToggle _forwardMqttToggle;
+    private readonly IMqttConnectionTester _mqttTester;
 
     [ObservableProperty] private string _mqttBroker = "";
     [ObservableProperty] private string _mqttClientId = "";
@@ -53,6 +55,32 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     /// <summary>MQTT 上云转发开关保存进行中：期间禁用开关，防重复点击</summary>
     [ObservableProperty] private bool _isSavingForwardMqtt;
+
+    /// <summary>MQTT Broker 地址（设置页可编辑，ADR-067；保存后重启生效）</summary>
+    [ObservableProperty] private string _mqttHost = "";
+
+    /// <summary>
+    /// MQTT Broker 端口（字符串绑定——非法输入不阻塞 int 双向绑定，校验时统一解析；保存/测试用解析值）。
+    /// </summary>
+    [ObservableProperty] private string _mqttPortText = "1883";
+
+    /// <summary>是否启用 TLS（端口通常 8883）</summary>
+    [ObservableProperty] private bool _mqttUseTls;
+
+    /// <summary>MQTT 用户名（可选）</summary>
+    [ObservableProperty] private string _mqttUsername = "";
+
+    /// <summary>MQTT 密码（可选，PasswordBox 遮蔽；仅内存，落盘 DPAPI）</summary>
+    [ObservableProperty] private string _mqttPassword = "";
+
+    /// <summary>MQTT 连接设置测试/保存状态提示</summary>
+    [ObservableProperty] private string _mqttSettingsStatus = "";
+
+    /// <summary>测试连接进行中：期间禁用按钮，防重复点击</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(TestMqttCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveMqttSettingsCommand))]
+    private bool _isTestingMqtt;
 
     /// <summary>站点标识（ADR-036）：生效值展示，可编辑/重新生成；保存后重启生效</summary>
     [ObservableProperty] private string _siteId = "";
@@ -90,7 +118,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         IDeviceDialogService dialogs,
         ISiteIdProvider siteIdProvider,
         IDesktopSettingsStore logSettingsStore,
-        IForwardMqttToggle forwardMqttToggle)
+        IForwardMqttToggle forwardMqttToggle,
+        IMqttConnectionTester mqttTester)
     {
         _bridge = bridge;
         _ui = ui;
@@ -102,6 +131,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         _siteIdProvider = siteIdProvider;
         _logSettingsStore = logSettingsStore;
         _forwardMqttToggle = forwardMqttToggle;
+        _mqttTester = mqttTester;
         _configuration = configuration;
 
         MqttBroker = $"{mqtt.Host}:{mqtt.Port}" + (mqtt.UseTls ? " (TLS)" : "");
@@ -119,6 +149,25 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
         SiteId = siteIdProvider.Current;
         ForwardMqttEnabled = _forwardMqttToggle.IsEnabled;
+
+        // ADR-067：MQTT 连接参数——已保存过（desktop-settings.json）用保存值，否则用当前生效值（appsettings/环境变量）
+        var persistedMqtt = _logSettingsStore.Load();
+        if (!string.IsNullOrWhiteSpace(persistedMqtt.MqttHost))
+        {
+            MqttHost = persistedMqtt.MqttHost;
+            MqttPortText = (persistedMqtt.MqttPort is >= 1 and <= 65535 ? persistedMqtt.MqttPort : mqtt.Port).ToString();
+            MqttUseTls = persistedMqtt.MqttUseTls;
+            MqttUsername = persistedMqtt.MqttUsername;
+            MqttPassword = persistedMqtt.MqttPassword;
+        }
+        else
+        {
+            MqttHost = mqtt.Host;
+            MqttPortText = mqtt.Port.ToString();
+            MqttUseTls = mqtt.UseTls;
+            MqttUsername = mqtt.Username ?? "";
+            MqttPassword = mqtt.Password ?? "";
+        }
 
         _bridge.FrameReady += OnFrame;
     }
@@ -217,6 +266,77 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         saved.LogDirectory = directory;
         _logSettingsStore.Save(saved);
         LogDirectoryStatus = $"已保存：{directory}（重启后生效）";
+    }
+
+    private bool CanTestMqtt => !IsTestingMqtt;
+
+    /// <summary>
+    /// 测试 MQTT 连接（ADR-067）：校验输入后用独立临时客户端 Connect + 发布测试消息，
+    /// 不影响正在运行的上报/告警连接；成功提示耗时，失败展示 broker 返回原因。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanTestMqtt))]
+    private async Task TestMqttAsync()
+    {
+        if (!TryValidateMqttInput(out var port))
+            return;
+
+        IsTestingMqtt = true;
+        MqttSettingsStatus = "正在测试连接…";
+        try
+        {
+            var result = await _mqttTester.TestAsync(MqttHost, port, MqttUseTls, MqttUsername, MqttPassword);
+            MqttSettingsStatus = result.Success
+                ? $"连接成功（{result.ElapsedMs}ms）：Broker 可连通，测试消息已发布。"
+                : $"连接失败：{result.Message}";
+        }
+        catch (Exception ex)
+        {
+            // 兜底：测试器意外异常不崩 UI（ADR-029 错误路径有提示）
+            MqttSettingsStatus = $"连接失败：{ex.Message}";
+        }
+        finally
+        {
+            IsTestingMqtt = false;
+        }
+    }
+
+    /// <summary>
+    /// 保存 MQTT 连接参数到 desktop-settings.json（ADR-067）；重启后由 GatewayHost 启动时加载生效
+    /// （环境变量 MQTT__* 仍优先）。只改 MQTT 字段，保留日志目录/转发开关（合并写）。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanTestMqtt))]
+    private void SaveMqttSettings()
+    {
+        if (!TryValidateMqttInput(out var port))
+            return;
+
+        var saved = _logSettingsStore.Load();
+        saved.MqttHost = MqttHost.Trim();
+        saved.MqttPort = port;
+        saved.MqttUseTls = MqttUseTls;
+        saved.MqttUsername = MqttUsername.Trim();
+        saved.MqttPassword = MqttPassword;
+        saved.MqttPasswordConfigured = true;
+        _logSettingsStore.Save(saved);
+        MqttSettingsStatus = "已保存：Broker 地址/端口/凭证将在重启后生效。";
+    }
+
+    /// <summary>校验 MQTT 输入：Host 非空 + 端口 1-65535；失败写状态提示并返回 false。</summary>
+    private bool TryValidateMqttInput(out int port)
+    {
+        if (string.IsNullOrWhiteSpace(MqttHost))
+        {
+            MqttSettingsStatus = "请填写 Broker 地址（Host）。";
+            port = 0;
+            return false;
+        }
+
+        if (!int.TryParse(MqttPortText, out port) || port is < 1 or > 65535)
+        {
+            MqttSettingsStatus = "端口必须是 1-65535 之间的整数。";
+            return false;
+        }
+        return true;
     }
 
     private bool CanImport => !IsImporting && !string.IsNullOrWhiteSpace(CenterUrl);

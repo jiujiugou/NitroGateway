@@ -28,4 +28,7 @@ public static class GatewayActivities
 
     /// <summary>MQTT 发布操作（MqttClientWrapper）</summary>
     public const string MqttPublish = "MqttPublish";
+
+    /// <summary>下行命令处理（CommandProcessor）</summary>
+    public const string CommandProcess = "CommandProcess";
 }

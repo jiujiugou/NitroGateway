@@ -138,4 +138,21 @@ public static class NitroMetrics
         {
             LabelNames = ["kind"]
         });
+
+    // ── 命令（ADR-069）──
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>命令处理次数。label: result (success|failure)</summary>
+    public static readonly Counter CommandProcessedTotal = Metrics.CreateCounter(
+        "nitro_command_processed_total",
+        "命令处理总次数",
+        new CounterConfiguration
+        {
+            LabelNames = ["result"]
+        });
+
+    /// <summary>命令回执发布失败次数（云侧重试兜底）</summary>
+    public static readonly Counter CommandAckPublishFailuresTotal = Metrics.CreateCounter(
+        "nitro_command_ack_publish_failures_total",
+        "命令回执发布失败总次数");
 }

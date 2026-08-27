@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Desktop.Messaging;
+using NitroGateway.Desktop.Services.Connectivity;
 using NitroGateway.Desktop.Services.Infrastructure;
 using NitroGateway.Desktop.Services.Settings;
 using NitroGateway.Desktop.Services.Sync;
@@ -29,6 +30,7 @@ public sealed class SettingsViewModelTests : IDisposable
     private readonly StubDeviceDialogService _dialogs = new();
     private readonly StubConfigSyncOutboxStore _outbox = new();
     private readonly StubForwardMqttToggle _forwardMqttToggle = new();
+    private readonly StubMqttConnectionTester _mqttTester = new();
 
     public SettingsViewModelTests()
     {
@@ -256,6 +258,153 @@ public sealed class SettingsViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Constructor_loads_saved_mqtt_settings()
+    {
+        new DesktopSettingsStore(_settingsFile).Save(new DesktopSettings
+        {
+            MqttHost = "broker.local",
+            MqttPort = 8883,
+            MqttUseTls = true,
+            MqttUsername = "user1",
+            MqttPassword = "pw1",
+            MqttPasswordConfigured = true
+        });
+
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+
+        Assert.Equal("broker.local", vm.MqttHost);
+        Assert.Equal("8883", vm.MqttPortText);
+        Assert.True(vm.MqttUseTls);
+        Assert.Equal("user1", vm.MqttUsername);
+        Assert.Equal("pw1", vm.MqttPassword);
+    }
+
+    [Fact]
+    public void Constructor_falls_back_to_effective_options_when_not_saved()
+    {
+        // 未保存过 MQTT 连接参数：用当前生效配置（appsettings 默认 localhost:1883）
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+
+        Assert.Equal("localhost", vm.MqttHost);
+        Assert.Equal("1883", vm.MqttPortText);
+        Assert.False(vm.MqttUseTls);
+    }
+
+    [Fact]
+    public async Task TestMqtt_success_shows_ok_and_passes_input()
+    {
+        _mqttTester.NextResult = new MqttConnectionTestResult(true, 12, null);
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        vm.MqttHost = "broker.local";
+        vm.MqttPortText = "8883";
+        vm.MqttUseTls = true;
+        vm.MqttUsername = "user";
+        vm.MqttPassword = "pass";
+
+        await vm.TestMqttCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, _mqttTester.Calls);
+        Assert.Equal("broker.local", _mqttTester.LastHost);
+        Assert.Equal(8883, _mqttTester.LastPort);
+        Assert.True(_mqttTester.LastUseTls);
+        Assert.Equal("user", _mqttTester.LastUsername);
+        Assert.Equal("pass", _mqttTester.LastPassword);
+        Assert.Contains("连接成功", vm.MqttSettingsStatus);
+    }
+
+    [Fact]
+    public async Task TestMqtt_failure_shows_error()
+    {
+        _mqttTester.NextResult = new MqttConnectionTestResult(false, 0, "拒绝连接：Unauthorized");
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        vm.MqttHost = "broker.local";
+        vm.MqttPortText = "1883";
+
+        await vm.TestMqttCommand.ExecuteAsync(null);
+
+        Assert.Contains("连接失败", vm.MqttSettingsStatus);
+        Assert.Contains("Unauthorized", vm.MqttSettingsStatus);
+    }
+
+    [Fact]
+    public async Task TestMqtt_empty_host_shows_error_and_does_not_call_tester()
+    {
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        vm.MqttHost = "";
+        vm.MqttPortText = "1883";
+
+        await vm.TestMqttCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, _mqttTester.Calls);
+        Assert.Contains("请填写 Broker 地址", vm.MqttSettingsStatus);
+    }
+
+    [Fact]
+    public async Task TestMqtt_invalid_port_shows_error_and_does_not_call_tester()
+    {
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        vm.MqttHost = "broker.local";
+        vm.MqttPortText = "abc";
+
+        await vm.TestMqttCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, _mqttTester.Calls);
+        Assert.Contains("端口必须是", vm.MqttSettingsStatus);
+    }
+
+    [Fact]
+    public void SaveMqttSettings_persists_and_encrypts_password()
+    {
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        vm.MqttHost = " broker.local ";
+        vm.MqttPortText = "8883";
+        vm.MqttUseTls = true;
+        vm.MqttUsername = "user";
+        vm.MqttPassword = "secret";
+
+        vm.SaveMqttSettingsCommand.Execute(null);
+
+        var saved = new DesktopSettingsStore(_settingsFile).Load();
+        Assert.Equal("broker.local", saved.MqttHost);
+        Assert.Equal(8883, saved.MqttPort);
+        Assert.True(saved.MqttUseTls);
+        Assert.Equal("user", saved.MqttUsername);
+        Assert.Equal("secret", saved.MqttPassword); // 明文只回读解密值
+        Assert.True(saved.MqttPasswordConfigured);
+        Assert.NotEqual("", saved.MqttPasswordEncrypted);
+        Assert.Contains("重启后生效", vm.MqttSettingsStatus);
+    }
+
+    [Fact]
+    public void SaveMqttSettings_invalid_port_does_not_persist()
+    {
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        vm.MqttHost = "broker.local";
+        vm.MqttPortText = "70000";
+
+        vm.SaveMqttSettingsCommand.Execute(null);
+
+        Assert.Contains("端口必须是", vm.MqttSettingsStatus);
+        Assert.Equal("", new DesktopSettingsStore(_settingsFile).Load().MqttHost);
+    }
+
+    [Fact]
+    public void SaveMqttSettings_preserves_forward_toggle_in_file()
+    {
+        // 合并写：只改 MQTT 字段，保留 ForwarderMqttEnabled，避免互相覆盖（ADR-059 同语义）
+        new DesktopSettingsStore(_settingsFile).Save(new DesktopSettings { ForwarderMqttEnabled = false });
+        var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
+        vm.MqttHost = "broker.local";
+        vm.MqttPortText = "1883";
+
+        vm.SaveMqttSettingsCommand.Execute(null);
+
+        var saved = new DesktopSettingsStore(_settingsFile).Load();
+        Assert.Equal("broker.local", saved.MqttHost);
+        Assert.False(saved.ForwarderMqttEnabled);
+    }
+
+    [Fact]
     public async Task ToggleForwardMqtt_persists_and_shows_status()
     {
         var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
@@ -293,7 +442,8 @@ public sealed class SettingsViewModelTests : IDisposable
         _dialogs,
         siteIdProvider ?? new StubSiteIdProvider(),
         new DesktopSettingsStore(_settingsFile),
-        _forwardMqttToggle);
+        _forwardMqttToggle,
+        _mqttTester);
 
     /// <summary>ADR-036 测试替身：站点标识提供者（记录调用，可编程校验失败）。</summary>
     private sealed class StubSiteIdProvider : ISiteIdProvider
@@ -349,6 +499,31 @@ internal sealed class StubForwardMqttToggle : IForwardMqttToggle
 
     public Task<OperationResult> InitializeAsync(CancellationToken ct = default)
         => Task.FromResult(OperationResult.Success());
+}
+
+/// <summary>ADR-067 测试替身：MQTT 连接测试（可编程结果，记录输入）。</summary>
+internal sealed class StubMqttConnectionTester : IMqttConnectionTester
+{
+    public MqttConnectionTestResult NextResult { get; set; } = new(true, 5, null);
+
+    public int Calls { get; private set; }
+    public string? LastHost { get; private set; }
+    public int LastPort { get; private set; }
+    public bool LastUseTls { get; private set; }
+    public string? LastUsername { get; private set; }
+    public string? LastPassword { get; private set; }
+
+    public Task<MqttConnectionTestResult> TestAsync(
+        string host, int port, bool useTls, string? username, string? password, CancellationToken ct = default)
+    {
+        Calls++;
+        LastHost = host;
+        LastPort = port;
+        LastUseTls = useTls;
+        LastUsername = username;
+        LastPassword = password;
+        return Task.FromResult(NextResult);
+    }
 }
 
 /// <summary>ADR-033 测试替身：中心快照客户端（可编程结果 + 记录调用）。</summary>

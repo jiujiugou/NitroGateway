@@ -4,9 +4,11 @@ using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Protocols;
 using NitroGateway.Protocols.Modbus;
+using NitroGateway.Shared;
 using NitroGateway.Webapi.Models;
 
 using NitroGateway.Security;
+using NitroGateway.Webapi.Services;
 
 namespace NitroGateway.Webapi.Controllers;
 
@@ -19,19 +21,28 @@ public class DevicesController : ControllerBase
     private readonly IDeviceHealthMonitor _healthMonitor;
     private readonly IProtocolDriverFactory _driverFactory;
     private readonly ISerialPortManager _serialPorts;
+    private readonly ISiteIdProvider _siteId;
+    private readonly IConfigSyncOutboxStore _outbox;
+    private readonly ILogger<DevicesController> _logger;
 
     public DevicesController(
         IDeviceManager devices,
         IPointManager points,
         IDeviceHealthMonitor healthMonitor,
         IProtocolDriverFactory driverFactory,
-        ISerialPortManager serialPorts)
+        ISerialPortManager serialPorts,
+        ISiteIdProvider siteId,
+        IConfigSyncOutboxStore outbox,
+        ILogger<DevicesController> logger)
     {
         _devices = devices;
         _points = points;
         _healthMonitor = healthMonitor;
         _driverFactory = driverFactory;
         _serialPorts = serialPorts;
+        _siteId = siteId;
+        _outbox = outbox;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -63,8 +74,11 @@ public class DevicesController : ControllerBase
     [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<DeviceDto>>> Create(DeviceDto d)
     {
-        var device = ToDomain(d);
+        // ADR-054：web 作为纯边缘单一身份——前端不传 siteId，设备归属=本站点（SiteIdProvider.Current）。
+        var device = ToDomain(d, EffectiveSiteId(d.SiteId));
         var r = await _devices.RegisterAsync(device);
+        if (r.IsSuccess)
+            await RecordOutboxAsync(() => _outbox.RecordDeviceAsync(r.Value!));
         return r.IsSuccess ? Ok(ApiResponse<DeviceDto>.Ok(Map(r.Value!))) : BadRequest(ApiResponse<DeviceDto>.Fail("Create", r.Error!.Message));
     }
 
@@ -74,8 +88,11 @@ public class DevicesController : ControllerBase
     {
         var existing = await _devices.GetAsync(id);
         if (existing.IsFailure) return NotFound(ApiResponse<DeviceDto>.Fail("NotFound", "设备不存在"));
-        var device = new Device { Id = id, Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown, SiteId = d.SiteId ?? "" };
+        // ADR-054：与 Create 一致，站点 ID 缺省时以本站点身份落库
+        var device = new Device { Id = id, Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown, SiteId = EffectiveSiteId(d.SiteId) };
         var r = await _devices.RegisterAsync(device);
+        if (r.IsSuccess)
+            await RecordOutboxAsync(() => _outbox.RecordDeviceAsync(r.Value!));
         return r.IsSuccess ? Ok(ApiResponse<DeviceDto>.Ok(Map(r.Value!))) : BadRequest(ApiResponse<DeviceDto>.Fail("Update", r.Error!.Message));
     }
 
@@ -86,6 +103,8 @@ public class DevicesController : ControllerBase
         // ADR-033 阶段 3/4：中心删除=权威删除（tombstone 软删），同步下发驱动现场删除；
         // 现场上报不能复活（同步接收端拒绝 tombstone 设备的 upsert）
         var r = await _devices.SoftDeleteAsync(id);
+        if (r.IsSuccess)
+            await RecordOutboxAsync(() => _outbox.RecordDeviceDeleteAsync(id));
         return r.IsSuccess ? Ok(ApiResponse<object>.Ok(new { })) : BadRequest(ApiResponse<object>.Fail("Delete", r.Error!.Message));
     }
 
@@ -121,6 +140,8 @@ public class DevicesController : ControllerBase
             return BadRequest(ApiResponse<PointDto>.Fail("AddPoint", $"无效的 Access: {d.Access}"));
         var p = new DevicePoint { Id = Guid.NewGuid(), Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset, MinLimit = d.MinLimit, MaxLimit = d.MaxLimit };
         var r = await _points.AddAsync(deviceId, p);
+        if (r.IsSuccess)
+            await RecordOutboxAsync(() => _outbox.RecordPointAsync(deviceId, r.Value!));
         return r.IsSuccess ? Ok(ApiResponse<PointDto>.Ok(MapPoint(r.Value!))) : BadRequest(ApiResponse<PointDto>.Fail("AddPoint", r.Error!.Message));
     }
 
@@ -135,6 +156,8 @@ public class DevicesController : ControllerBase
             return BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", $"无效的 Access: {d.Access}"));
         var p = new DevicePoint { Id = pointId, Name = d.Name ?? "", Address = d.Address ?? "", Description = d.Description, DataType = dataType, Access = access, Enabled = d.Enabled, ScanIntervalMs = d.ScanIntervalMs, Deadband = d.Deadband, ScaleFactor = d.ScaleFactor, ScaleOffset = d.ScaleOffset, MinLimit = d.MinLimit, MaxLimit = d.MaxLimit };
         var r = await _points.UpdateAsync(deviceId, p);
+        if (r.IsSuccess)
+            await RecordOutboxAsync(() => _outbox.RecordPointAsync(deviceId, p));
         return r.IsSuccess ? Ok(ApiResponse<PointDto>.Ok(MapPoint(p))) : BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", r.Error!.Message));
     }
 
@@ -143,6 +166,8 @@ public class DevicesController : ControllerBase
     public async Task<ActionResult<ApiResponse<object>>> DeletePoint(Guid deviceId, Guid pointId)
     {
         var r = await _points.RemoveAsync(deviceId, pointId);
+        if (r.IsSuccess)
+            await RecordOutboxAsync(() => _outbox.RecordPointDeleteAsync(deviceId, pointId));
         return r.IsSuccess ? Ok(ApiResponse<object>.Ok(new { })) : BadRequest(ApiResponse<object>.Fail("DeletePoint", r.Error!.Message));
     }
 
@@ -217,7 +242,18 @@ public class DevicesController : ControllerBase
     };
     static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset, MinLimit = p.MinLimit, MaxLimit = p.MaxLimit, UpdatedAt = p.UpdatedAt == default ? "" : p.UpdatedAt.ToUniversalTime().ToString("O"), IsDeleted = p.IsDeleted };
     // ADR-022 P2-4：创建路径一律服务端生成新 ID，忽略客户端传入的 Id（仓储 SaveAsync 为 upsert，防 POST 覆盖既有设备）
-    static Device ToDomain(DeviceDto d) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), SiteId = d.SiteId ?? "", Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
+    static Device ToDomain(DeviceDto d, string siteId) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), SiteId = siteId, Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
+
+    /// <summary>站点 ID 缺省/空白时回退本站点身份（ADR-054：web 作为纯边缘网关）。</summary>
+    private string EffectiveSiteId(string? siteId) => string.IsNullOrWhiteSpace(siteId) ? _siteId.Current : siteId;
+
+    /// <summary>outbox 写入失败不阻断主操作（本地库照常），仅记调试日志。</summary>
+    private async Task RecordOutboxAsync(Func<Task<OperationResult>> record)
+    {
+        var result = await record();
+        if (result.IsFailure)
+            _logger.LogDebug("配置同步 outbox 记录失败：{Error}", result.Error!.Message);
+    }
 
     private static DeviceConnection BuildConnection(ConnectionDto? c) => c is null
         ? new DeviceConnection { Endpoint = "" }

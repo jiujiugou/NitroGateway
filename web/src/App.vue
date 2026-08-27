@@ -36,6 +36,10 @@
         <router-link v-if="currentUser?.role === 'Admin'" to="/users" class="nav-item" active-class="nav-active">
           <span class="nav-icon">👥</span><span>用户管理</span>
         </router-link>
+        <!-- ADR-036：站点身份管理（查看/修改/重新生成，与桌面设置页对齐） -->
+        <router-link to="/site" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">🏷️</span><span>站点身份</span>
+        </router-link>
         <router-link to="/system" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🖥️</span><span>系统状态</span>
         </router-link>

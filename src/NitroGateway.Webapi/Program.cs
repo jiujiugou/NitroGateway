@@ -3,6 +3,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
 using NitroGateway.Alarm;
 using NitroGateway.Collection;
+using NitroGateway.Command;
 using NitroGateway.DeviceManagement;
 using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Events;
@@ -20,6 +21,7 @@ using NitroGateway.Transport.MQTT;
 using NitroGateway.Webapi;
 using NitroGateway.Webapi.HealthChecks;
 using NitroGateway.Webapi.Hubs;
+using NitroGateway.Webapi.Services;
 using Prometheus;
 using Serilog;
 
@@ -55,8 +57,6 @@ builder.Services.AddNitroSqlite(builder.Configuration);
 builder.Services.AddNitroDevice();
 builder.Services.AddNitroProtocol();
 builder.Services.AddNitroSignalR();
-// ADR-033 阶段 3/4：配置同步接收（现场离线改动上报，UpdatedAt 合并 + tombstone 拒绝复活）
-builder.Services.AddScoped<NitroGateway.Webapi.Services.ConfigSyncService>();
 // ADR-054：web 收敛为纯边缘（Linux 网关管理端，Gateway 单一形态），不再有 Center 模式。
 // 采集/转发/MQTT 发布/告警评估无条件注册——中心（如需多现场）另立独立项目，不复用 webapi 双模式。
 // ADR-016 P1-1：Forwarder 必须先于 Collection 注册——HostedService 按注册序反向停止，
@@ -67,6 +67,20 @@ builder.Services.AddNitroAlarm();
 builder.Services.AddNitroForwarder(builder.Configuration);
 builder.Services.AddNitroCollection(builder.Configuration);
 builder.Services.AddNitroMqtt(builder.Configuration);
+// ADR-069：命令回写（云→网关→PLC，带回执）——订阅 commands topic，与转发共用同一 IMqttClient 单例。
+builder.Services.AddNitroCommand();
+
+// ── 站点标识 + 配置同步（ADR-036 / ADR-033 阶段 4：边缘→中心 push）──
+// 站点 ID：配置/环境变量 Site:Id → app_meta 持久化 → 自动生成并持久化；Singleton 构造时解析。
+// 首解析发生在 Program 启动（InitializeDatabase 建表后）写回配置，供采集/转发/告警/状态页统一取用。
+builder.Services.AddSingleton<ISiteIdProvider, SiteIdProvider>();
+// 中心配置客户端：独立 HttpClient（非 Forwarder 的 IHttpClient），统一 15s 超时，避免每次请求建连接。
+builder.Services.AddSingleton<HttpClient>(_ => new HttpClient { Timeout = TimeSpan.FromSeconds(15) });
+builder.Services.AddSingleton<ICenterConfigClient, CenterConfigClient>();
+// outbox：边缘设备/点位增删改先入队，同步服务联网后按序上报中心；写入失败不阻断主操作。
+builder.Services.AddSingleton<IConfigSyncOutboxStore>(_ => new ConfigSyncOutboxStore(dbConnectionString));
+// 周期同步：拉中心快照双向 UpdatedAt 合并 + 上报 outbox；未配置 ConfigSync:CenterUrl 时静默跳过。
+builder.Services.AddHostedService<WebConfigSyncService>();
 
 // ADR-056：启用 OpenTelemetry 追踪（OTLP/Console 导出），service.name=nitrogateway-webapi；
 // 配置见 appsettings Telemetry:Tracing，可用环境变量覆盖（Endpoint 空时走 OTEL_EXPORTER_OTLP_ENDPOINT）。
@@ -132,6 +146,11 @@ var app = builder.Build();
 
 // ── 建表 ──
 app.InitializeDatabase();
+
+// ADR-036：站点标识解析并写回配置——建表（app_meta 持久化可用）后首次 resolve；
+// 解析结果写回 Configuration，使构造期读 Site:Id 的采集/转发/告警/StatusController 拿到真实值而非 default。
+var siteId = app.Services.GetRequiredService<ISiteIdProvider>().Current;
+app.Configuration["Site:Id"] = siteId;
 
 // ADR-059：MQTT 转发总开关——迁移完成后把持久值（app_meta）加载进内存，
 // 供 DataDispatcher 采集热路径与 ForwarderController 读取；缺省/失败按启用处理，不阻断启动。

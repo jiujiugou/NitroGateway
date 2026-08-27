@@ -6,7 +6,7 @@
 
 | 文件夹 | 模块 | 份数 | 一句话 |
 |---|---|---|---|
-| [architecture/](architecture/) | 架构 / 角色拆分 | 10 | 边缘↔中心分工、web/桌面定位、配置同步、模式裁剪、面试可见性缺口 |
+| [architecture/](architecture/) | 架构 / 角色拆分 | 11 | 边缘↔中心分工、web/桌面定位、配置同步、模式裁剪、面试可见性缺口、命令处理器 |
 | [forwarder/](forwarder/) | 转发 MQTT/HTTP | 6 | 断点续传、AIMD 节流、转发开关、HTTP 通道 |
 | [collection/](collection/) | 采集引擎 | 4 | 熔断/drain、降频、假在线、可维护性 |
 | [performance/](performance/) | 性能 / 数据量 | 3 | 死区抑制、性能瓶颈、极限优先级 |
@@ -17,7 +17,7 @@
 | [telemetry/](telemetry/) | 可观测 | 4 | Prometheus、OTel 追踪 |
 | [deploy/](deploy/) | CI/CD / 运维 | 4 | CI/CD 流水线、试运行审计 |
 | [web/](web/) | Vue 前端 / Web 排障 | 3 | 前端巡检、连接测试、IPv6 502 |
-| [desktop/](desktop/) | WPF 桌面端 | 16 | 桌面壳、配置、实时性能、UI 打磨 |
+| [desktop/](desktop/) | WPF 桌面端 | 17 | 桌面壳、配置、实时性能、UI 打磨、MQTT 连接设置 |
 | [transport/](transport/) | 传输层 | 1 | Transport review |
 | [misc/](misc/) | 文档 / 其它 | 1 | Domain 文档漂移 |
 
@@ -77,6 +77,7 @@
 | 034 | 中心模式别跑采集引擎（Deployment:Mode=Center 裁剪） | 已并入 035 实施 | 🚫 |
 | 044 | 中心 Web 功能裁剪 + 连接测试 | A 阶段已实施，B 阶段前置 | 📖 |
 | 065 | 面试可见性缺口：仪表盘/转发看板/操作日志已补（A1/A2/A3 落地）；剩 A4 告警通知 UI + B1 用户管理 | A1/A2/A3 已落地；B1/A5 已实施（ADR-066）；A4 待实施 | 🎯 |
+| 069 | 网关命令处理器：云→网关→PLC 反向写值闭环（订阅 commands + 幂等 + 回执） | 已实施 | 🎯 |
 
 ### forwarder/（转发 / MQTT：断点续传、节流、开关）
 | ADR | 一句话 | 现状 | 读? |
@@ -166,6 +167,7 @@
 | 036 | 桌面 RTU 配置缺口 / siteId | 已修复 | 🚫 |
 | 037/038/039 | UI 打磨路线图/视觉系统/打磨 2 | 已实施 | 🚫 |
 | 040/041 | 表格文字垂直居中 / 单元格水平对齐 | 已实施 | 🚫 |
+| 067 | 桌面 MQTT 地址/端口可编辑 + 测试连接（独立临时客户端，DPAPI 密码） | 已实施 | 📖 |
 
 ### transport/ + misc/（传输层 / 文档其它）
 | ADR | 一句话 | 现状 | 读? |

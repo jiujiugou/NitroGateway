@@ -62,6 +62,56 @@ public sealed class DesktopSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Mqtt_fields_roundtrip_with_encrypted_password()
+    {
+        new DesktopSettingsStore(_file).Save(new DesktopSettings
+        {
+            MqttHost = "broker.local",
+            MqttPort = 8883,
+            MqttUseTls = true,
+            MqttUsername = "user1",
+            MqttPassword = "pw-secret",
+            MqttPasswordConfigured = true
+        });
+
+        var loaded = new DesktopSettingsStore(_file).Load();
+
+        Assert.Equal("broker.local", loaded.MqttHost);
+        Assert.Equal(8883, loaded.MqttPort);
+        Assert.True(loaded.MqttUseTls);
+        Assert.Equal("user1", loaded.MqttUsername);
+        Assert.Equal("pw-secret", loaded.MqttPassword);
+        Assert.True(loaded.MqttPasswordConfigured);
+        Assert.NotEqual("", loaded.MqttPasswordEncrypted);
+    }
+
+    [Fact]
+    public void Mqtt_password_not_written_in_plaintext_to_disk()
+    {
+        new DesktopSettingsStore(_file).Save(new DesktopSettings
+        {
+            MqttHost = "broker.local",
+            MqttPassword = "pw-secret",
+            MqttPasswordConfigured = true
+        });
+
+        var raw = File.ReadAllText(_file);
+
+        Assert.DoesNotContain("pw-secret", raw);
+        // JsonSerializerDefaults.Web 使用 camelCase：落盘字段为 mqttPasswordEncrypted
+        Assert.Contains("mqttPasswordEncrypted", raw);
+    }
+
+    [Fact]
+    public void Mqtt_defaults_host_empty_and_port_1883()
+    {
+        // 未保存过 MQTT 连接参数：Host 为空 → 启动回退 appsettings/环境变量
+        Assert.Equal("", new DesktopSettings().MqttHost);
+        Assert.Equal(1883, new DesktopSettings().MqttPort);
+        Assert.False(new DesktopSettings().MqttPasswordConfigured);
+    }
+
+    [Fact]
     public void DesktopToggle_Default_IsEnabled_true()
     {
         Assert.True(new DesktopForwardMqttToggle(
