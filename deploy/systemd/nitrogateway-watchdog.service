@@ -1,0 +1,16 @@
+[Unit]
+Description=NitroGateway host-level health watchdog
+Documentation=https://github.com/jiujiugou/NitroGateway
+After=nitrogateway.service docker.service
+
+[Service]
+Type=simple
+# 看门狗参数（栈目录 / 健康地址 / 阈值）写在 /etc/default/nitrogateway，由 install.sh 生成
+EnvironmentFile=-/etc/default/nitrogateway
+ExecStart=/usr/local/bin/nitrogateway-watchdog.sh
+Restart=always
+RestartSec=10
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
