@@ -386,6 +386,41 @@ public class DataDispatcherTests
         Assert.Equal(true, record.Value);
     }
 
+    /// <summary>快照携带的读写权限必须透传到 MeasurementRecord（转发 payload 契约字段）</summary>
+    [Fact]
+    public async Task DispatchAsync_PreservesPointAccess()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+
+        var buffer = new FakeBuffer();
+        var dispatcher = new DataDispatcher(
+            new MeasurementWriteHost(new FakeStore(), NullLogger<MeasurementWriteHost>.Instance),
+            buffer,
+            new SinkDispatcher(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<SinkDispatcher>.Instance),
+            NullLogger<DataDispatcher>.Instance);
+
+        var deviceId = Guid.NewGuid();
+        var snapshot = new PointSnapshot
+        {
+            DeviceId = deviceId,
+            DevicePointId = Guid.NewGuid(),
+            PointName = "W1",
+            Value = 12.5d,
+            DataType = DataType.Float,
+            Access = PointAccess.ReadWrite,
+            Timestamp = DateTime.UtcNow,
+            Quality = QualityCode.Good
+        };
+
+        var result = await dispatcher.DispatchAsync(deviceId, [snapshot], CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var record = Assert.Single(buffer.Enqueued[0].Records);
+        Assert.Equal(PointAccess.ReadWrite, record.Access);
+    }
+
     /// <summary>ADR-016 P3-4：批次扫描窗口取快照时间戳 min/max，不再恒为分发时刻</summary>
     [Fact]
     public async Task DispatchAsync_BatchScanWindow_UsesSnapshotTimestamps()

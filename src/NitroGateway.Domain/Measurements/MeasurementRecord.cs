@@ -27,6 +27,12 @@ public sealed record MeasurementRecord
     /// <summary>数据类型（冗余字段，便于下游解析值时确定类型）</summary>
     public DataType DataType { get; init; }
 
+    /// <summary>
+    /// 点位读写权限（上行契约字段）。由快照 <see cref="PointSnapshot.Access"/> 透传，
+    /// 云端自动注册据此刻画点位可写性（ReadWrite/WriteOnly → 可写）。
+    /// </summary>
+    public PointAccess Access { get; init; } = PointAccess.ReadOnly;
+
     /// <summary>采集时间戳（数据源时间或设备本地时间）</summary>
     public DateTime Timestamp { get; init; }
 

@@ -177,6 +177,8 @@ public sealed class DataDispatcher : IDataDispatcher
                 // ADR-001 P1-5：转发 payload 携带点位真实类型（由快照透传），
                 // 不再恒为 Float，云端可正确解析 Bool/Int/String 点位。
                 DataType = s.DataType,
+                // 转发 payload 携带点位读写权限（由快照透传），云端自动注册据此识别可写点位
+                Access = s.Access,
                 Timestamp = s.Timestamp,
                 ReceivedAt = now,
                 Quality = s.Quality

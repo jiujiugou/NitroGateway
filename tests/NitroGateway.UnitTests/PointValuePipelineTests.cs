@@ -135,6 +135,29 @@ public class PointValuePipelineTests
         Assert.Equal(DataType.Bool, result[0].DataType);
     }
 
+    /// <summary>快照携带点位读写权限，供转发 payload 透传、云端自动注册识别可写点位</summary>
+    [Fact]
+    public void Access_PropagatedToSnapshot()
+    {
+        var pt = new DevicePoint
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            Address = "40001",
+            DataType = DataType.Float,
+            ScaleFactor = 1.0,
+            ScaleOffset = 0,
+            Access = PointAccess.ReadWrite
+        };
+        var result = _pipeline.Process(_deviceId, [MakeRaw(pt, 12.5d)]);
+        Assert.Equal(PointAccess.ReadWrite, result[0].Access);
+
+        // 默认只读：未配置 Access 的点位透传 ReadOnly
+        var ro = MakePoint(DataType.Float, 1.0, 0);
+        var roResult = _pipeline.Process(_deviceId, [MakeRaw(ro, 12.5d)]);
+        Assert.Equal(PointAccess.ReadOnly, roResult[0].Access);
+    }
+
     private static DevicePoint MakePoint(DataType type, double scale, double offset, double deadband = 0) =>
         new() { Id = Guid.NewGuid(), Name = "test", Address = "40001", DataType = type, ScaleFactor = scale, ScaleOffset = offset, Deadband = deadband };
 

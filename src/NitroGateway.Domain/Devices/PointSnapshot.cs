@@ -24,6 +24,12 @@ public sealed record PointSnapshot
     public DataType DataType { get; init; }
 
     /// <summary>
+    /// 点位读写权限（自描述冗余字段）。构造快照时由 <see cref="DevicePoint.Access"/> 填充，
+    /// 转发 payload 据此携带权限，云端自动注册可识别可写点位。
+    /// </summary>
+    public PointAccess Access { get; init; } = PointAccess.ReadOnly;
+
+    /// <summary>
     /// 驱动返回的原始值，未经缩放处理。
     /// 保留此字段用于现场调试（"PLC 到底返回了什么？"）。
     /// 示例：PLC 返回 Int16=1234 → RawValue=1234, Value=123.4（ScaleFactor=0.1）
