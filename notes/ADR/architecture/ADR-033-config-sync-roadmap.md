@@ -21,27 +21,22 @@
 - 版本字段: devices/points 现无 UpdatedAt（M003 建表），需 FluentMigrator 迁移加列；时间戳统一以中心时钟为准（上报携带现场时间、中心记录取 max；下发携带中心时间，防现场时钟回拨）；删除用 IsDeleted tombstone
 
 ## 阶段 2: 中心为准，手动导入（先落地）
-- 落地（2026-08-12）：中心 GET /api/devices/export（DevicesController.Export）；桌面设置页中心地址/Token 输入 + 「从中心导入」（SettingsViewModel + CenterConfigClient/CenterConfigImporter/CenterSyncSettingsStore，Token 存 %LocalAppData%\NitroGateway\center-sync.json）；单测覆盖导出/覆盖/取消/鉴权失败
 - 中心: DevicesController 加只读快照导出端点（GET /api/devices/export，含 devices+points 全量，JWT 鉴权）——现有 GET /api/devices 与 GET /{deviceId}/points 可直接支撑
 - 桌面: SettingsViewModel 加中心地址/Token 输入 + 「从中心导入」按钮；导入语义为「以中心为准重置本地」，覆盖前提示会覆盖本地未上报改动（用户确认）
 - 验收: 空库现场导入中心配置后立即出数据
 
 ## 阶段 3: 自动下发（中心 → 桌面）
-- 落地（2026-08-12）：桌面新增 SiteConfigSyncService（BackgroundService，GatewayHost 注册）：定时（默认 60s，ConfigSync:PollIntervalSeconds 可配，下限 5s）拉取中心快照
+- 桌面: 新增 SiteConfigSyncService（BackgroundService，GatewayHost 注册）：定时（默认 60s，ConfigSync:PollIntervalSeconds 可配，下限 5s）拉取中心快照
 - 中心: ConfigSyncController.Export（GET /api/configsync/export，JWT/RBAC）返回全量设备（含 tombstone）+ 中心服务器时间；M010 迁移为 devices/points 加 UpdatedAt/IsDeleted 列
 - 合并策略: 按 Id + UpdatedAt 双向比对——中心较新则覆盖本地；本地较新（现场未上报改动）保留并标记待上报；中心显式 tombstone（IsDeleted）才删本地；中心快照缺失但本地存在视为现场临时设备，保留待上报
 - 通道先 HTTP 轮询（Transport.HTTP 现成）；MQTT 下行 topic 推送（IMqttClient.SubscribeAsync 已支持，Ingest 同款）作可选实时增强，重连后需全量补拉
-- 断网失败静默跳过下次补拉，不阻塞采集；变更日志降 Debug 防刷屏（延续 ADR-030 方向）
+- 断网失败静默跳过下次补拉，不阻塞采集；变更日志降 Debug 防刷屏（延续采集热路径日志降级约定）
 
 ## 阶段 4: 现场编辑上报（桌面 → 中心）
-- 落地（2026-08-12）：桌面设备/点位增删改后写 config_sync_outbox（M010 建表，DevicesViewModel/PointsViewModel 接入）；SiteConfigSyncService 每周期上报后清行
+- 桌面: 设备/点位增删改后写 config_sync_outbox（M010 建表，DevicesViewModel/PointsViewModel 接入）；SiteConfigSyncService 每周期上报后清行
 - 中心: ConfigSyncController.Push（POST /api/configsync/push，Admin/Operator 权限）按 Id UPSERT 并合并 tombstone（中心已删的设备拒绝现场复活）
 - 上报结论逐台返回 accepted / skipped（中心 UpdatedAt 较新）/ rejected（中心已删拒绝复活）；三种结论均视为已处理并清 outbox 行，避免死循环重报
 - 冲突: 按 UpdatedAt 合并，同时修改中心为准（中心版本更高覆盖现场）；现场上报被中心覆盖后，下次下发以中心版本回写本地并清 dirty
-
-## 验证
-- 阶段 2: 桌面单测（导入覆盖/取消/鉴权失败）+ 端到端（中心库配设备 → 桌面导入 → 采集 → Web 见数据）
-- 阶段 3/4（已落地 2026-08-12）: SiteConfigSyncServiceTests（双向 UpdatedAt 合并/现场临时设备保留/断网跳过/tombstone/outbox 清行）+ ConfigSyncServiceTests（中心侧合并裁决）+ CenterConfigClientTests 增补同步映射；单测 476 全绿、IntegrationTests 43 全绿、build 0 错误
 
 ## 风险
 - UpdatedAt 加列需新迁移，旧库默认值兼容

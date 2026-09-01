@@ -20,10 +20,6 @@
 - 复用现有 IDeviceManager/IPointManager（桌面端已注册 AddNitroDevice），不新增后端接口、不改数据模型
 - 设备状态新建默认 Unknown，由 HealthMonitor 驱动（不手填 Online 伪状态）
 
-## 验证（2026-08-10 已完成）
-- 新增 DevicesViewModelTests(8) + PointsViewModelTests(7) + DeviceEditorTests(5) + PointEditorTests(3) + DesktopViewSmokeTests 窗口冒烟(1)——fake dialog/manager，覆盖新增/编辑/删除/点位管理、取消不落库、RTU/S7 参数映射、往返回填
-- 收尾: build 0 错误；UnitTests 414（+24）+ IntegrationTests 43 全绿；STA 冒烟实例化 DeviceEditorWindow/PointEditorWindow/PointsWindow 无异常
-
 ## 风险
 - WPF 对话框绑定需 DeviceEditor 为 ObservableObject 才能在协议切换时联动显隐字段（非 POCO）
 - IDeviceManager/IPointManager 是 Scoped：ViewModel 命令内用 IServiceScopeFactory 建作用域解析（与 AlarmsViewModel 同法）

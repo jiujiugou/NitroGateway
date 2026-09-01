@@ -21,7 +21,7 @@
 - `GET /api/status/info` 结构稳定，B 可在此追加中心侧信息（下发队列、回执状态）
 
 ## 验收
-- `dotnet build` 0 错 + 全量单测通过；center 模式 /api/status/system 不再 500；test-connection center 返回 400
+- center 模式 /api/status/system 不再 500；test-connection center 返回 400
 - 前端 center 下：无死信菜单、SystemStatus 无采集侧段、DeviceForm 无测试连接/串口下拉；Gateway 下原样
 - 桌面 DeviceEditor 可发起测试连接并展示结果（Connect+Ping）
 

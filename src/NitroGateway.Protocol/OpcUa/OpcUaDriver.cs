@@ -18,8 +18,9 @@ namespace NitroGateway.Protocols.OpcUa;
 /// <summary>
 /// OPC UA 协议驱动（采集侧 Client），基于 OPC Foundation .NET Standard SDK 1.5.378.156。
 /// 生命周期：<c>ConnectAsync</c>（选端点 + 建 Session）→ Read/Write → <c>DisconnectAsync</c>。
-/// v1 轮询模式；v2 再评估 Subscription + Browse（<see cref="OpcUaDriverCapability"/> 的
-/// <c>SupportsSubscription=true</c> 为能力预留，采集引擎仍走轮询）。
+/// v1 轮询模式；Subscription 仍为能力预留（<see cref="OpcUaDriverCapability"/> 的
+/// <c>SupportsSubscription=true</c>，采集引擎仍走轮询，v2 再评估）；Browse
+/// （<see cref="IBrowseableDriver"/>，ADR-070）已实现，供配置工具/前端选点，采集引擎不调。
 /// </summary>
 /// <remarks>
 /// <para><b>并发闸门（ADR-019 P2-1）：</b>OPC UA Session 非线程安全，全部通信（读/写/连接/断开/Ping）
@@ -33,7 +34,7 @@ namespace NitroGateway.Protocols.OpcUa;
 /// 服务端证书一律自动接受（<c>AutoAcceptUntrustedCertificates=true</c> + 校验回调 Accept），
 /// 适合内网演示；现场生产应改为信任库白名单校验。</para>
 /// </remarks>
-public sealed class OpcUaDriver : IProtocolDriver, IDisposable
+public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, IDisposable
 {
     /// <summary>应用证书 SubjectName；首次连接自动生成到 opcua/pki/own 目录存储</summary>
     private const string AppSubjectName = "CN=NitroGateway, DC=localhost";
@@ -362,6 +363,130 @@ public sealed class OpcUaDriver : IProtocolDriver, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task<OperationResult<IReadOnlyList<BrowseNode>>> BrowseAsync(
+        string parentNodeId = "", CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_session is null || State != DriverState.Connected)
+                return OperationalError.Unavailable("OPC UA 未连接");
+
+            // ADR-070：parent 缺省 = Objects 目录（i=85）；否则复用现有解析器转 NodeId。
+            // 非法父地址走 OperationResult 错误（配置工具输入错误，非通信故障）。
+            NodeId parentNode;
+            try
+            {
+                parentNode = string.IsNullOrWhiteSpace(parentNodeId)
+                    ? ObjectIds.ObjectsFolder
+                    : ToNodeId((OpcUaAddress)_addressParser.Parse(parentNodeId));
+            }
+            catch (Exception ex)
+            {
+                return OperationalError.Validation($"非法 OPC UA 父节点地址: {ex.Message}");
+            }
+
+            // 只取层级引用（含子类型），NodeClass 限定 Object|Variable（属性/方法/类型节点滤掉），
+            // 结果属性覆盖 DisplayName / NodeClass / TypeDefinition。
+            var nodesToBrowse = new BrowseDescriptionCollection
+            {
+                new BrowseDescription
+                {
+                    NodeId = parentNode,
+                    BrowseDirection = BrowseDirection.Forward,
+                    ReferenceTypeId = ReferenceTypeIds.HierarchicalReferences,
+                    IncludeSubtypes = true,
+                    NodeClassMask = (uint)(NodeClass.Object | NodeClass.Variable),
+                    ResultMask = (uint)(BrowseResultMask.DisplayName | BrowseResultMask.NodeClass | BrowseResultMask.TypeDefinition)
+                }
+            };
+
+            // 一次 Browse + 循环 BrowseNext 展开分页（ContinuationPoint），直至无续页
+            var references = new List<ReferenceDescription>();
+            var first = await _session.BrowseAsync(null, null, 0, nodesToBrowse, ct);
+            if (first.Results is null || first.Results.Count == 0)
+                return OperationalError.Protocol("OPC UA 浏览无响应");
+            // 父节点不存在/无权限时服务器在 BrowseResult.StatusCode 返回 Bad（如 BadNodeIdUnknown）：
+            // 地址语法已通过解析，属服务端数据问题 → 返回 Protocol 错误（ADR-070，不置 Faulted）。
+            var firstResult = first.Results[0];
+            if (StatusCode.IsBad(firstResult.StatusCode))
+                return OperationalError.Protocol($"OPC UA 浏览失败: {firstResult.StatusCode}");
+            CollectReferences(firstResult, references);
+
+            var continuation = firstResult.ContinuationPoint;
+            while (continuation is { Length: > 0 })
+            {
+                var next = await _session.BrowseNextAsync(
+                    null, false, new ByteStringCollection { continuation }, ct);
+                if (next.Results is null || next.Results.Count == 0)
+                    return OperationalError.Protocol("OPC UA 浏览分页失败");
+                var nextResult = next.Results[0];
+                if (StatusCode.IsBad(nextResult.StatusCode))
+                    return OperationalError.Protocol($"OPC UA 浏览分页失败: {nextResult.StatusCode}");
+                CollectReferences(nextResult, references);
+                continuation = nextResult.ContinuationPoint;
+            }
+
+            // 变量节点批量补读 DataType + AccessLevel → 映射 TypeName / Access（一次 Read 请求）。
+            // 用与 variableNodes 同序的平行数组存映射，避免 ExpandedNodeId / NodeId 字典键类型混用。
+            var variableNodes = references.Where(r => r.NodeClass == NodeClass.Variable).ToList();
+            var typeNames = new string[variableNodes.Count];
+            var accesses = new string[variableNodes.Count];
+            if (variableNodes.Count > 0)
+            {
+                var readIds = new ReadValueIdCollection();
+                foreach (var v in variableNodes)
+                {
+                    readIds.Add(new ReadValueId { NodeId = (NodeId)v.NodeId, AttributeId = Attributes.DataType });
+                    readIds.Add(new ReadValueId { NodeId = (NodeId)v.NodeId, AttributeId = Attributes.AccessLevel });
+                }
+                var attrResults = await _session.ReadAsync(null, 0, TimestampsToReturn.Neither, readIds, ct);
+                for (var i = 0; i < variableNodes.Count && (2 * i + 1) < attrResults.Results.Count; i++)
+                {
+                    var typeDv = attrResults.Results[2 * i];
+                    var accessDv = attrResults.Results[2 * i + 1];
+                    if (StatusCode.IsGood(typeDv.StatusCode) && typeDv.Value is NodeId typeId)
+                        typeNames[i] = DataTypeName(typeId);
+                    if (StatusCode.IsGood(accessDv.StatusCode) && accessDv.Value is byte access)
+                        accesses[i] = AccessToString(access);
+                }
+            }
+
+            // ReferenceDescription → BrowseNode（NodeId 用 AddressParser 同格式序列化，可直接回填点位）
+            var results = new List<BrowseNode>(references.Count);
+            var varIndex = 0;
+            for (var i = 0; i < references.Count; i++)
+            {
+                var r = references[i];
+                var isVariable = r.NodeClass == NodeClass.Variable;
+                results.Add(new BrowseNode
+                {
+                    NodeId = SerializeNodeId(r.NodeId),
+                    Name = string.IsNullOrEmpty(r.DisplayName.Text) ? r.BrowseName.Name : r.DisplayName.Text,
+                    TypeName = isVariable ? (varIndex < typeNames.Length ? (typeNames[varIndex] ?? "Unknown") : "Unknown") : "",
+                    IsVariable = isVariable,
+                    Access = isVariable ? (varIndex < accesses.Length ? accesses[varIndex] ?? "" : "") : ""
+                });
+                if (isVariable) varIndex++;
+            }
+            return results;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // ADR-070：浏览是只读配置工具，失败/超时不置 Faulted（不污染采集状态机），只返回错误
+            return OperationalError.Protocol($"OPC UA 浏览失败: {ex.Message}");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
     public void Dispose()
     {
         try { _session?.CloseSession(null, true); } catch { }
@@ -530,4 +655,57 @@ public sealed class OpcUaDriver : IProtocolDriver, IDisposable
         double d => new Variant(d),
         _ => new Variant(Convert.ToDouble(value))
     };
+
+    /// <summary>收集 Browse 结果中的引用（过滤 null 项）</summary>
+    private static void CollectReferences(BrowseResult result, List<ReferenceDescription> references)
+    {
+        if (result is null || result.References is null) return;
+        foreach (var r in result.References)
+        {
+            if (r is not null) references.Add(r);
+        }
+    }
+
+    /// <summary>ExpandedNodeId → "ns=N;..." 格式（与 OpcUaAddressParser.Serialize 一致，可直接回填点位地址）</summary>
+    private static string SerializeNodeId(ExpandedNodeId id)
+    {
+        if (id is null) throw new ArgumentException("浏览结果缺少 NodeId");
+        var ns = id.NamespaceIndex;
+        var identifier = id.Identifier;
+        return identifier switch
+        {
+            string s => $"ns={ns};s={s}",
+            uint u => $"ns={ns};i={u}",
+            Guid g => $"ns={ns};g={g}",
+            byte[] b => $"ns={ns};b={Convert.ToBase64String(b)}",
+            _ => throw new ArgumentException($"不支持的 NodeId 标识符: {identifier}")
+        };
+    }
+
+    /// <summary>DataType 属性 NodeId → 前端 DataType 枚举名（仅映射领域支持的 11 种，其余 Unknown）</summary>
+    private static string DataTypeName(NodeId typeId)
+    {
+        if (typeId is null || typeId.IdType != IdType.Numeric || typeId.NamespaceIndex != 0)
+            return "Unknown";
+        if (typeId == DataTypeIds.Boolean) return "Bool";
+        if (typeId == DataTypeIds.Byte) return "Byte";
+        if (typeId == DataTypeIds.Int16) return "Int16";
+        if (typeId == DataTypeIds.UInt16) return "UInt16";
+        if (typeId == DataTypeIds.Int32) return "Int32";
+        if (typeId == DataTypeIds.UInt32) return "UInt32";
+        if (typeId == DataTypeIds.Int64) return "Int64";
+        if (typeId == DataTypeIds.UInt64) return "UInt64";
+        if (typeId == DataTypeIds.Float) return "Float";
+        if (typeId == DataTypeIds.Double) return "Double";
+        if (typeId == DataTypeIds.String) return "String";
+        return "Unknown";
+    }
+
+    /// <summary>AccessLevel 属性 byte → "Read"/"ReadWrite"/"Write"/"None"</summary>
+    private static string AccessToString(byte access)
+    {
+        var read = (AccessLevels.CurrentRead & access) != 0;
+        var write = (AccessLevels.CurrentWrite & access) != 0;
+        return read && write ? "ReadWrite" : read ? "Read" : write ? "Write" : "None";
+    }
 }

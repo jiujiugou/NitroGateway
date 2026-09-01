@@ -8,7 +8,7 @@
 1. 设置页新增「MQTT 连接设置」可编辑区（Host/端口/TLS/用户名/密码）+「测试连接」「保存」按钮。
 2. 持久化到 `%LocalAppData%\NitroGateway\desktop-settings.json`（`DesktopSettings` 扩展
    `MqttHost/MqttPort/MqttUseTls/MqttUsername/MqttPasswordEncrypted/MqttPasswordConfigured`），
-   密码 DPAPI（CurrentUser）落盘（复用 ADR-037 S5 的 `DpapiProtector`）。
+   密码 DPAPI（CurrentUser）落盘（复用 `DpapiProtector`）。
 3. 生效时机：保存后**重启生效**——`GatewayHost.Create` 在 `AddNitroMqtt` 前经
    `MqttDesktopConfig.Apply` 写回配置；优先级 **环境变量(MQTT__*) ＞ 持久化设置 ＞ appsettings 默认**
    （只在环境变量未提供时才写回，避免 ConfigurationManager 索引器 Set 覆盖更高优先级来源）。
@@ -34,4 +34,4 @@
   LogDirectory/SiteId 模式一致，避免运行期漂移（ADR-006 P3-5）。
 
 ## 状态
-已实施（2026-08-24），配套单测：tester 5、ViewModel 9、store 3、启动覆盖 4。
+已实施（2026-08-24）

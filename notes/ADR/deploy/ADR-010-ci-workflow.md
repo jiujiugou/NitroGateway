@@ -10,7 +10,3 @@
 - P2 集成测试另起 job `test-integration`：GitHub service container `eclipse-mosquitto:2`（端口 1883），跑 `dotnet test tests/NitroGateway.IntegrationTests`；依赖真实 broker 的用例（MqttClientWrapperTests 直连 localhost:1883）在容器下通过
 - P3 边界: 不构建 slnx 外工程（Verification/Mitsubishi/OpcUa 未入 slnx，遵循 AGENTS.md 雷区）
 - P4 README 补 CI 徽章与「本地验证 = build + 全量测试」说明（可选）
-
-## 验证
-- push 后 workflow 全绿；UnitTests 全部通过；IntegrationTests 在 mosquitto 容器下通过
-- 若个别集成用例依赖宿主机环境，记录后显式 `[Trait]` 排除，不在 CI 硬跑

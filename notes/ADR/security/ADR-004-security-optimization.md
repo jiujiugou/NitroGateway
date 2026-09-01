@@ -1,19 +1,30 @@
-# ADR-004: Security 模块优化清单（边缘网关适配范围）
+# ADR-004: Security 模块优化决策（边缘网关适配范围）
 
-- 日期: 2026-08-07
-- 状态: 全部条目已处理（2026-08-07）
-- 用途: 供后续 agent 直接使用，避免重复扫描；修复后在代码加注释并删除对应条目
-- 范围: src/NitroGateway.Security 全模块 + Webapi 接线（AuthController / Program.cs / 各 Controller 授权标注）；只做边缘网关适配所需，不做用户管理系统/OAuth/SSO/密码过期等超范围设计
+- 日期: 2026-08-07 | 状态: 已实施
 
-## 处理记录（2026-08-07）
+## Context
 
-- P1-1 写指令门控未接线：确认网关当前无需写操作 API，采用「预留能力」路线——SecurityServiceCollectionExtensions 注册处注释标记「写门控为预留能力，未接线」，docs/03-功能清单.md F-28 同步标注；后续如需下发控制指令，另起任务新增写端点并接入 WriteGuard
-- P1-2 密码明文回退：TokenGenerator.IssueToken 移除明文 Equals 兜底（仅保留 VerifyHashedPassword）；UserConfig.Password 注释改为「哈希存储」；appsettings.json 三个开发账号密码改为 PasswordHasher 哈希（明文口令不变：admin/admin123、operator/oper123、viewer/view123）
-- P2-1 登录限流：新增 LoginRateLimiter（内存实现，按「用户名|IP」计数，默认 5 次/10 分钟窗口触发 60 秒锁定）；AuthController 接线（锁定返回 429 + 剩余秒数，成功 Reset）；DI 注册
-- P2-2 JWT 配置校验：AddNitroSecurity fail-fast——JwtSecretKey 字节数 ≥32、ExpireHours ≥1，违规抛 InvalidOperationException
-- P2-3 角色校验：AddNitroSecurity 启动时校验 UserConfig.Role ∈ {Admin, Operator, Viewer}
-- P2-4 审计异常兜底：新增 ExceptionHandlingMiddleware（未处理异常统一转 500 JSON），Program.cs 注册在 AuditMiddleware 内层（后于其注册），异常先转 500 再被外层审计记录，避免审计丢失
-- P3-1 角色常量：Roles.cs 新增 AdminOperator/AllRoles 常量，7 个控制器共 8 处 [Authorize]（AlarmsController 类+方法各一处）全部改用 Roles 常量，避免角色改名漏改
-- P3-2 登录输入 Trim：AuthController.Login 用户名 Trim 后再校验
-- P3-3 审计不记请求体：按适配范围刻意不记 body（敏感数据），AuditMiddleware 注释说明决策
-- 验证: build 0 错；UnitTests 193 通过（上轮 174 + 19）；IntegrationTests 14 通过（上轮 12 + 2）
+Security 模块存在写指令门控未接线、密码明文回退、登录无限流、JWT 配置无校验、审计异常丢失等问题；范围限定为边缘网关适配所需，不做用户管理系统/OAuth/SSO/密码过期等超范围设计。
+
+## Decision
+
+- D1 写指令门控为预留能力：网关当前无写操作 API，不接线；注册处注释标记「写门控为预留能力」+ 功能清单同步标注；后续需下发控制指令时另起任务接入 WriteGuard。
+- D2 密码只用哈希校验：TokenGenerator.IssueToken 移除明文 Equals 兜底；UserConfig.Password 注释「哈希存储」；appsettings 默认账号密码为哈希（明文口令 admin/admin123、operator/oper123、viewer/view123）。
+- D3 登录限流：LoginRateLimiter 内存实现，按「用户名|IP」计数，默认 5 次/10 分钟窗口触发 60 秒锁定；锁定返回 429 + 剩余秒数。
+- D4 JWT 配置 fail-fast：JwtSecretKey 字节数 ≥32、ExpireHours ≥1，违规启动抛 InvalidOperationException。
+- D5 角色启动校验：UserConfig.Role ∈ {Admin, Operator, Viewer}。
+- D6 审计异常兜底：ExceptionHandlingMiddleware 未处理异常统一转 500 JSON，注册在 AuditMiddleware 内层，异常先转 500 再被外层审计记录。
+- D7 审计刻意不记请求体（敏感数据），注释说明决策。
+
+## Alternatives
+
+- D3 备选：无登录限流（简单但易被暴力破解）；分布式限流（超范围）。
+- D7 备选：记录 body（便于排查，但泄露敏感数据）。
+
+## Rationale
+
+- 边缘网关适配范围最小化；哈希校验杜绝明文凭据；限流/校验/兜底提升安全与可用性；审计不记 body 遵循最小化原则。
+
+## Consequences
+
+- 默认测试口令仅存在于本地哈希配置；登录暴力尝试被限流；配置错误启动即暴露；异常统一 500 JSON 且审计不丢；审计日志不含请求体。

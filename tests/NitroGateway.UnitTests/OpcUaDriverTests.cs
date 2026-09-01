@@ -45,7 +45,18 @@ public class OpcUaDriverTests
         Assert.True(driver.Capability.SupportsBatchRead);
         Assert.True(driver.Capability.SupportsBatchWrite);
         Assert.True(driver.Capability.SupportsSubscription);
+        Assert.True(driver.Capability.SupportsBrowse);   // ADR-070 层次1：OPC UA 支持节点浏览
         Assert.Equal(0, driver.Capability.MaxBatchSize); // 0 = 无限制
+    }
+
+    /// <summary>ADR-070 层次1：未连接时浏览返回 Unavailable（与读写一致，不抛异常）</summary>
+    [Fact]
+    public async Task BrowseAsync_NotConnected_ReturnsUnavailable()
+    {
+        var driver = CreateDriver();
+        var r = await driver.BrowseAsync("ns=2;i=5001");
+        Assert.True(r.IsFailure);
+        Assert.Equal("ResourceUnavailable", r.Error!.Code);
     }
 
     /// <summary>ADR-019 P1-1：未连接读单点返回 Unavailable，绝不产出 0.0 伪值</summary>

@@ -15,6 +15,9 @@ public sealed record DriverCapability
     /// <summary>是否支持订阅推送（服务端主动上报数据变更），OPC UA 支持，Modbus 不支持</summary>
     public bool SupportsSubscription { get; init; }
 
+    /// <summary>是否支持节点浏览（配置/导入工具用，ADR-070 层次 1）；OPC UA 支持，Modbus/S7 不支持</summary>
+    public bool SupportsBrowse { get; init; }
+
     /// <summary>单次批量请求的最大点位数量。0 表示无限制</summary>
     public int MaxBatchSize { get; init; }
 }

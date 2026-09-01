@@ -1,5 +1,5 @@
 # ADR-035: 架构角色分离——桌面端采集（边缘），Web 平台管理（中心）
-- 日期: 2026-08-12 | 状态: 第 0/1/2 步已实施（2026-08-12）；第 3 步待定 | 来源: 产品"开始出现错乱"讨论——ADR-034（中心也采集）+ ADR-033（配置不同步）+ 上行无 site 维度
+- 日期: 2026-08-12 | 状态: 第 0/1/2 步已实施（2026-08-12）；第 3 步待定 | 来源: 产品"开始出现错乱"讨论——中心也采集（第 0 步修复）+ ADR-033（配置不同步）+ 上行无 site 维度
 
 ## 拍板结论（2026-08-12 用户确认）
 - 桌面端（NitroGateway.Desktop）= 边缘采集角色：采集 PLC、本地库为运行时配置/缓存、断网续传、上行转发；现场 UI 以桌面端为准（离线可用）
@@ -19,10 +19,10 @@
   - forward_buffer = 待转发队列（发布成功即 Commit 删除），不是全量复制
   - 中心库 = 平台权威数据（长期、跨现场汇总），数据写点唯一 = Ingest；桌面只采不存平台数据，Web 只读中心库
   - 配置：桌面本地运行配置（可离线编辑，dirty 后上报）+ 中心权威配置（ADR-033 阶段 3/4 同步）
-- 结论：边缘缓存 + 中心存储是行业标准（离线优先），不是"复写浪费"；中心重复采集/双写才是失误（ADR-034，第 0 步修复）
+- 结论：边缘缓存 + 中心存储是行业标准（离线优先），不是"复写浪费"；中心重复采集/双写才是失误（第 0 步修复）
 
 ## 调整路线（按风险从低到高）
-- 第 0 步 · 止血（✅ 2026-08-12）：Webapi 加 `Deployment:Mode`（Gateway | Center），Center 模式不注册采集/转发/MQTT 发布（连带跳过 MqttHealthCheck）；docker-compose.center.yml 的 gateway 设 `Deployment:Mode=Center`，修正"唯一写点是 ingest"注释 → 即 ADR-034 修复
+- 第 0 步 · 止血（✅ 2026-08-12）：Webapi 加 `Deployment:Mode`（Gateway | Center），Center 模式不注册采集/转发/MQTT 发布（连带跳过 MqttHealthCheck）；docker-compose.center.yml 的 gateway 设 `Deployment:Mode=Center`，修正"唯一写点是 ingest"注释 → 即修复中心重复采集问题
 - 第 1 步 · 数据流契约（✅ 2026-08-12）：上行 topic 统一 `nitrogateway/{siteId}/{deviceId}/measurements`（告警同理 `…/alarms`），Ingest 从 topic 第三段解析 site 并入库（M009 迁移加 site_id 列），Web 按 site 过滤；siteId 从配置读（桌面 %LocalAppData%，中心 appsettings），SiteOptions.Resolve 保证缺省不产生坏 topic
 - 第 2 步 · 配置同步（✅ 2026-08-12）：ADR-033 阶段 3/4 落地（中心下发 UpdatedAt 双向合并 + 现场 outbox 上报 + tombstone；M010 迁移；ConfigSyncController 导出/接收 + SiteConfigSyncService 周期同步）
 - 第 3 步 · 可选物理拆分：边缘 Agent 独立进程/镜像（采集+转发+本地诊断），Webapi 瘦身为纯平台管理；单现场一体机保留为 Gateway 模式演示

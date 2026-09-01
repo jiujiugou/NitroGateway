@@ -1,4 +1,4 @@
-﻿# ADR-026: WPF 现场采集端设计（B 方案）
+# ADR-026: WPF 现场采集端设计（B 方案）
 
 - 日期: 2026-08-10 | 状态: 已实施（P0/P1 完成，P2 待办） | 来源: 上位机方向——B 方案（多现场 → 一中心）现场侧桌面；采集/协议/转发/告警复用现有类库；云端侧见 ADR-025
 - 范围: 新增 `src/NitroGateway.Desktop`（WPF 现场采集端）；MQTT 上报对接 ADR-025 契约；无内嵌 Web（远程查看走中心 Webapi/Vue）
@@ -46,16 +46,5 @@ src/NitroGateway.Desktop/
 - 几千点 1s: EventBridge 200ms 帧刷新足够；10 万点: 虚拟化 + 曲线降采样 + 分页查询（已有 `QueryPagedAsync`）
 - 演进: P2 加串口 Modbus RTU、配置界面（增删设备/点位写库）、元数据同步（对接 ADR-025 P2）
 
-## 实施记录（2026-08-10）
-- 已建 `src/NitroGateway.Desktop`（net10.0-windows + WPF）：App 单实例/全局异常、`Hosting/GatewayHost`（模块注册顺序对齐 Webapi + 启动迁移 + drain）、`Messaging/EventBridge`（200ms 帧节流 + 2s 水位轮询）、`Services/UiDispatcher`、五页 ViewModel/View（设备/实时/告警/历史/设置）+ LiveCharts2 实时曲线；appsettings 缺省路径落 `%LocalAppData%\NitroGateway`（`Hosting/DesktopPathConfig`，环境变量可覆盖）
-- ADR-025 契约零代码改动：topic `nitrogateway/{deviceId}/measurements` + `BatchMeasurements` 现成（Forwarder.cs），中心 broker 由 `MQTT__Host` 环境变量指向
-- 测试：EventBridge / DesktopPathConfig / DesktopShellRegistration 共 11 个单测，测试工程 TFM 调整 `net10.0-windows` + UseWPF；全量 357 通过；冒烟启动通过（建库 + 日志重定向 + 窗口正常）
-- 未实施：串口 Modbus RTU、配置界面（增删设备/点位写库）、元数据同步（依赖 ADR-025 P2）
-
-## 待办
-- [x] P0 项目骨架: WPF + 模块注册 + 迁移 + 采集跑通 + 设备/实时数据页（最小壳）
-- [x] P0 EventBridge + 200ms 节流
-- [x] P0 对接 ADR-025: `Forwarder` 指向中心 broker + topic/payload 契约校验（契约现成，仅配置指向中心）
-- [x] P1 实时曲线（LiveCharts2）+ 报警列表 + 历史查询页 + MQTT 连接状态/缓冲水位显示
-- [ ] P2 串口 Modbus RTU、配置界面、元数据同步
-
+## 后续
+- P2 串口 Modbus RTU、配置界面（增删设备/点位写库）、元数据同步（依赖 ADR-025 P2）——本 ADR 只定 P0/P1 现场采集壳形态，P2 属后续演进。

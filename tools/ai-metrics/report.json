@@ -1,0 +1,97 @@
+{
+  "period": {
+    "start": "2026-08-01",
+    "end": "2026-09-01"
+  },
+  "threads": {
+    "total_sessions": 194,
+    "user_eng_tasks": 185,
+    "subagent_reviews": 7,
+    "no_token_sessions": 2,
+    "completed": 180,
+    "completed_rate": 97.3,
+    "first_pass_clean": 133,
+    "first_pass_rate": 71.9,
+    "one_shot": 37,
+    "one_shot_rate": 20.0,
+    "aborted_or_rework": 52,
+    "aborted_rate": 28.1,
+    "not_completed": 5,
+    "heavy_multi_turn": 54
+  },
+  "tokens": {
+    "total": 1139567827,
+    "per_task": 6159826.1,
+    "by_model": {
+      "deepseek-v4-flash": 1115779658,
+      "deepseek-v4-pro": 23774075,
+      "gpt-5.6-luna": 14094
+    },
+    "on_clean": 696262665,
+    "on_aborted": 443305162,
+    "on_heavy": 682484592
+  },
+  "cost": {
+    "estimate_cny": 171.97,
+    "detail": {
+      "deepseek-v4-flash": 165.033189,
+      "deepseek-v4-pro": 6.9038613,
+      "gpt-5.6-luna": 0.029328
+    },
+    "input_ratio": 0.9
+  },
+  "usage": {
+    "miss": 37455644,
+    "cached": 1089512832,
+    "output": 12599351
+  },
+  "git": {
+    "commits": 86,
+    "types": {
+      "docs": 37,
+      "feat": 29,
+      "refactor": 2,
+      "config": 1,
+      "fix": 9,
+      "ci": 3,
+      "chore": 1,
+      "other": 3,
+      "perf": 1
+    },
+    "bugs": 21,
+    "strict_fix": 9,
+    "lines": {
+      "code": [
+        30298,
+        6709
+      ],
+      "test": [
+        19494,
+        1631
+      ],
+      "docs": [
+        10327,
+        2087
+      ],
+      "other": [
+        7069,
+        2189
+      ]
+    },
+    "files": {
+      "docs": 312,
+      "code": 908,
+      "test": 283,
+      "other": 130
+    },
+    "test_files": 283
+  },
+  "productivity": {
+    "code_lines_per_mtok": 26.6,
+    "code_test_lines_per_mtok": 43.7,
+    "test_to_code_ratio": 64.3,
+    "tokens_per_task": 6159826.1,
+    "cost_per_task": 0.93,
+    "code_lines_per_100cny": 28954.5
+  }
+}

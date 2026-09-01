@@ -43,7 +43,14 @@
     <el-form :model="pf" label-position="top">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
         <el-form-item label="名称"><el-input v-model="pf.name" /></el-form-item>
-        <el-form-item label="地址"><el-input v-model="pf.address" /></el-form-item>
+        <!-- ADR-070 层次1：OPC UA 设备在地址输入框追加"浏览"按钮，从节点树点选回填 -->
+        <el-form-item label="地址">
+          <el-input v-model="pf.address">
+            <template v-if="deviceProtocol === 'OPC UA'" #append>
+              <el-button @click="showBrowse = true">浏览</el-button>
+            </template>
+          </el-input>
+        </el-form-item>
         <el-form-item label="数据类型">
           <el-select v-model="pf.dataType" style="width:100%">
             <el-option v-for="t in types" :key="t" :label="t" :value="t" />
@@ -87,13 +94,28 @@
     </el-form>
     <template #footer><el-button @click="showGen=false">取消</el-button><el-button type="primary" @click="generate">生成</el-button></template>
   </el-dialog>
+
+  <!-- ADR-070 层次1：OPC UA 节点浏览树（懒加载，点选 Variable 叶子回填地址/类型/权限） -->
+  <el-dialog v-model="showBrowse" title="OPC UA 节点浏览" width="560px">
+    <el-tree
+      v-loading="browseLoading"
+      lazy
+      node-key="nodeId"
+      highlight-current
+      :load="loadBrowseNode"
+      :props="{ label: 'name', isLeaf: 'isLeaf' }"
+      style="max-height:480px;overflow:auto"
+      @node-click="onBrowseNodeClick"
+    />
+    <div class="hint">点击变量节点（叶子）自动回填地址、类型与权限。</div>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getDevice, getPoints, addPoint, updatePoint, deletePoint, generatePoints, exportPoints, importPoints } from '../../api/devices'
+import { getDevice, getPoints, addPoint, updatePoint, deletePoint, generatePoints, exportPoints, importPoints, browseNodes } from '../../api/devices'
 import type { DevicePoint } from '../../api/types'
 
 const route = useRoute()
@@ -101,6 +123,8 @@ const deviceId = route.params.deviceId as string
 const points = ref<DevicePoint[]>([])
 const showForm = ref(false)
 const showGen = ref(false)
+const showBrowse = ref(false)
+const browseLoading = ref(false)
 const editingId = ref<string | null>(null)
 const importInputRef = ref<HTMLInputElement>()
 const types = ['Bool','Byte','Int16','UInt16','Int32','UInt32','Int64','UInt64','Float','Double','String']
@@ -213,6 +237,32 @@ async function generate() {
     const count = await generatePoints(deviceId, { ...gf.value, protocol: deviceProtocol.value })
     if (count > 0) { points.value = await getPoints(deviceId); showGen.value=false }
   } catch {}
+}
+
+// ADR-070 层次1：懒加载某一层子节点。根（level 0）parent 缺省 = Objects 目录。
+async function loadBrowseNode(node: any, resolve: (data: any[]) => void) {
+  browseLoading.value = true
+  try {
+    const parent = node.level === 0 ? '' : node.data.nodeId
+    const list = await browseNodes(deviceId, parent)
+    // isLeaf 决定树是否显示展开箭头：仅变量节点是叶子
+    resolve(list.map(n => ({ ...n, isLeaf: n.isVariable })))
+  } catch (err: any) {
+    ElMessage.error(`浏览失败: ${err?.response?.data?.error?.message ?? err?.message ?? '未知错误'}`)
+    resolve([])
+  } finally {
+    browseLoading.value = false
+  }
+}
+
+// ADR-070 层次1 D6：点选变量叶子回填 Address/DataType/Access。
+// Access 映射：Read→ReadOnly / ReadWrite→ReadWrite / Write→WriteOnly / 其余→ReadOnly。
+function onBrowseNodeClick(node: any) {
+  if (!node.isVariable) return
+  pf.value.address = node.nodeId
+  if (types.includes(node.typeName)) pf.value.dataType = node.typeName
+  pf.value.access = node.access === 'ReadWrite' ? 'ReadWrite' : node.access === 'Write' ? 'WriteOnly' : 'ReadOnly'
+  showBrowse.value = false
 }
 </script>
 

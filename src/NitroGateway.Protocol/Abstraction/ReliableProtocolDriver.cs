@@ -27,7 +27,7 @@ namespace NitroGateway.Protocol.Abstractions
     /// 写入操作（Write / WriteBatch）和单点读取（ReadAsync）透传到内层，不经过 Polly。
     /// </para>
     /// </remarks>
-    internal class ReliableProtocolDriver : IProtocolDriver
+    internal class ReliableProtocolDriver : IProtocolDriver, IBrowseableDriver
     {
         /// <summary>默认最大重试次数；生产由 DeviceConnection.RetryCount 注入（ADR-030 P1）</summary>
         private const int DefaultMaxRetryAttempts = 3;
@@ -161,6 +161,18 @@ namespace NitroGateway.Protocol.Abstractions
         /// <summary>透传到内层驱动（不经过 Polly，由上层控制重试）</summary>
         public Task<OperationResult> WriteBatchAsync(IEnumerable<KeyValuePair<DevicePoint, object>> entries, CancellationToken ct = default)
             => _inner.WriteBatchAsync(entries, ct);
+
+        /// <summary>
+        /// 透传节点浏览（ADR-070 层次 1）：内层驱动支持时转发，否则返回明确失败。
+        /// 浏览是配置工具，不经 Polly、不自动建连（由调用方按 WriteService 同范式先连接）；
+        /// 用后不断连，长连接留给采集复用。
+        /// </summary>
+        public Task<OperationResult<IReadOnlyList<BrowseNode>>> BrowseAsync(
+            string parentNodeId = "", CancellationToken ct = default)
+            => _inner is IBrowseableDriver browseable
+                ? browseable.BrowseAsync(parentNodeId, ct)
+                : Task.FromResult<OperationResult<IReadOnlyList<BrowseNode>>>(
+                    OperationalError.Protocol("协议不支持节点浏览"));
 
         /// <summary>释放内层驱动资源（TCP socket、底层客户端等）</summary>
         public void Dispose() => _inner.Dispose();

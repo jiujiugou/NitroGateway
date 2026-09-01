@@ -1,5 +1,5 @@
 import client from './client'
-import type { ApiResponse, Device, DevicePoint } from './types'
+import type { ApiResponse, BrowseNode, Device, DevicePoint } from './types'
 
 // ADR-054：web 收敛为纯边缘（Linux 网关管理端），单一站点，设备列表不再按站点过滤
 export async function getDevices(): Promise<Device[]> {
@@ -90,6 +90,14 @@ export async function exportPoints(deviceId: string): Promise<void> {
   const url = URL.createObjectURL(new Blob([r.data]))
   const a = document.createElement('a'); a.href = url; a.download = `points_${deviceId}.csv`; a.click()
   URL.revokeObjectURL(url)
+}
+
+// ADR-070 层次1：OPC UA 节点浏览（前端树点选）。parent 缺省 = Objects 目录（根）。
+export async function browseNodes(deviceId: string, parent = ''): Promise<BrowseNode[]> {
+  const { data } = await client.get<ApiResponse<BrowseNode[]>>(`/devices/${deviceId}/browse`, {
+    params: parent ? { parent } : {}
+  })
+  return data.data ?? []
 }
 
 export async function testConnection(d: Partial<Device>): Promise<{ success: boolean; latencyMs: number; ping?: string; error?: string }> {

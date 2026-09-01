@@ -1,0 +1,4 @@
+interface:
+  display_name: "Acceptance Review"
+  short_description: "Execute acceptance checks from a document"
+  default_prompt: "Use $acceptance-review to execute the acceptance checks in the supplied document."

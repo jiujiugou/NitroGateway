@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Domain.Protocols;
 using NitroGateway.Protocols.OpcUa;
 using Opc.Ua;
 using Opc.Ua.Configuration;
@@ -99,6 +100,88 @@ public sealed class OpcUaDriverIntegrationTests
         Assert.Equal(42, r.Value!.Value);
 
         await driver.DisconnectAsync();
+    }
+
+    // ── ADR-070 层次1：节点浏览（Browse）──
+
+    [Fact]
+    public async Task Browse_Root_ReturnsSimulationFolder()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+        try
+        {
+            // parent 缺省 = Objects 目录（i=85）：应能看到 ns=2 下的 Simulation 文件夹
+            var result = await driver.BrowseAsync("", CancellationToken.None);
+            Assert.True(result.IsSuccess, result.Error?.Message);
+
+            var sim = result.Value!.FirstOrDefault(n => n.NodeId == "ns=2;i=5001");
+            Assert.NotNull(sim);
+            Assert.Equal("Simulation", sim!.Name);
+            Assert.False(sim.IsVariable);
+            Assert.Equal("", sim.TypeName);
+            Assert.Equal("", sim.Access);
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Browse_Folder_ReturnsVariablesWithTypeAndAccess()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+        try
+        {
+            // 浏览 Simulation 文件夹（i=5001）→ 4 个变量；NodeId 序列化格式可直接回填点位地址
+            var result = await driver.BrowseAsync("ns=2;i=5001", CancellationToken.None);
+            Assert.True(result.IsSuccess, result.Error?.Message);
+
+            var nodes = result.Value!;
+            Assert.Equal(4, nodes.Count);
+
+            var intVar = nodes.First(n => n.NodeId == "ns=2;i=1001");
+            Assert.Equal("Int32Var", intVar.Name);
+            Assert.True(intVar.IsVariable);
+            Assert.Equal("Int32", intVar.TypeName);
+            Assert.Equal("ReadWrite", intVar.Access);
+
+            Assert.Equal("Float", nodes.First(n => n.NodeId == "ns=2;i=1002").TypeName);
+            Assert.Equal("Bool", nodes.First(n => n.NodeId == "ns=2;i=1003").TypeName);
+            Assert.Equal("String", nodes.First(n => n.NodeId == "ns=2;i=1004").TypeName);
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Browse_InvalidParent_ReturnsValidationError_AndKeepsConnected()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+        try
+        {
+            // 非法父地址 → OperationResult.Validation（Error.Code = "ValidationError"），不置 Faulted
+            var result = await driver.BrowseAsync("not-an-address", CancellationToken.None);
+            Assert.True(result.IsFailure);
+            Assert.Equal("ValidationError", result.Error!.Code);
+            Assert.Equal(DriverState.Connected, driver.State);
+
+            // 浏览失败不影响会话：仍可正常读取
+            var r = await driver.ReadAsync(Point("Int1", "ns=2;i=1001", DataType.Int32), CancellationToken.None);
+            Assert.True(r.IsSuccess, r.Error?.Message);
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
     }
 
     // ── Helpers ──

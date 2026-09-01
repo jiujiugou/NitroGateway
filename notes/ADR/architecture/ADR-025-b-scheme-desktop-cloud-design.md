@@ -27,9 +27,5 @@
 - broker 重启 → `MqttClientWrapper` 自动重连重订阅（ADR-006 P1-2 已有）
 - 消息损坏 → 反序列化失败丢弃 + 日志 + 指标，不阻塞后续
 
-## 待办
-- P0 遥测入库（已实施 2026-08-10）: src/NitroGateway.Ingest——BackgroundService 订阅 `nitrogateway/+/measurements` → 反序列化 → 批量 INSERT OR IGNORE → 指标（ingest_received_total / ingest_dedup_total / ingest_failures_total）；单测红绿对照（IngestServiceTests 6 个，375+40 全绿）
-- P0 compose（已实施 2026-08-10）: docker-compose.yml 新增 ingest 服务（端口 5200，build args 切换 Dockerfile 入口）+ center-data/center-logs 卷；2026-08-10 补中心形态 `docker-compose.center.yml`（mqtt + ingest 写 center.db + 中心 Webapi 读 center.db + web），端到端验证流程定义于 FACTORY-TEST T7（现场 → broker → ingest → 中心库 → 中心 Web）
-- P2 告警上行契约已一并修复（ADR-028 P2-1，2026-08-10）: 中心订阅 `nitrogateway/+/alarms`，按 AlarmId UPSERT 到 alarms（状态迁移覆盖，非 INSERT OR IGNORE）；现场侧 MqttAlarmNotifier 契约不变
-- P1 payload 顶层 `v` 版本字段 + 兼容读取（已实施 2026-08-10）: BatchMeasurements.V 默认 1，序列化输出顶层 `v:1`；Ingest 旧载荷（无 v，反序列化 V=0）按 v1 兼容读取，未知更高版本记 Debug 按 v1 尽力解析；红绿: IngestServiceTests.Payload_version_field_is_emitted_and_legacy_payload_accepted
-- P2 元数据同步/配置下发、WPF 桌面壳（另立 ADR）
+## 后续
+- P2 元数据同步/配置下发、WPF 桌面壳（另立 ADR-026/ADR-033）——本 ADR 只定遥测上行与中心入库形态，配置下发与桌面壳属后续演进。

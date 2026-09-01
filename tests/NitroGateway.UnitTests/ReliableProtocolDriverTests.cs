@@ -109,4 +109,79 @@ public class ReliableProtocolDriverTests
         Assert.True(r.IsSuccess, r.Error?.Message);
         Assert.Equal(3, inner.ReadCalls);   // 初始 1 + 重试 2
     }
+
+    // ── ADR-070 层次1：节点浏览经装饰器转发（复用长连接，不经 Polly）──
+
+    /// <summary>内层不支持浏览（如 Modbus/S7）→ 装饰器返回明确失败，不抛异常</summary>
+    [Fact]
+    public async Task BrowseAsync_InnerNotBrowseable_ReturnsProtocolError()
+    {
+        var driver = new ReliableProtocolDriver(
+            new FakeInner(),
+            NullLogger<ReliableProtocolDriver>.Instance,
+            requestTimeout: TimeSpan.FromSeconds(5),
+            maxRetryAttempts: 0);
+
+        var r = await driver.BrowseAsync("ns=2;i=5001");
+
+        Assert.True(r.IsFailure);
+        Assert.Equal("ProtocolError", r.Error!.Code);
+        Assert.Contains("不支持节点浏览", r.Error.Message);
+    }
+
+    /// <summary>内层支持浏览 → 透传 parentNodeId，返回内层结果（长连接复用）</summary>
+    [Fact]
+    public async Task BrowseAsync_InnerBrowseable_ForwardsToInner()
+    {
+        var inner = new FakeBrowseInner();
+        var driver = new ReliableProtocolDriver(
+            inner,
+            NullLogger<ReliableProtocolDriver>.Instance,
+            requestTimeout: TimeSpan.FromSeconds(5),
+            maxRetryAttempts: 0);
+
+        var r = await driver.BrowseAsync("ns=2;i=5001");
+
+        Assert.True(r.IsSuccess, r.Error?.Message);
+        Assert.Equal("ns=2;i=5001", inner.LastParent);
+        var node = Assert.Single(r.Value!);
+        Assert.Equal("Int32Var", node.Name);
+    }
+}
+
+/// <summary>支持浏览的内层驱动（ADR-070 装饰器转发测试用）</summary>
+internal sealed class FakeBrowseInner : IProtocolDriver, IBrowseableDriver
+{
+    public string? LastParent { get; private set; }
+
+    public DriverState State => DriverState.Connected;
+    public DriverCapability Capability { get; } = new() { SupportsBrowse = true };
+    public Task<OperationResult> ConnectAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult> DisconnectAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult> PingAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult<RawPointValue>> ReadAsync(DevicePoint point, CancellationToken ct = default)
+        => Task.FromResult(OperationResult<RawPointValue>.Failure(OperationalError.Protocol("不支持")));
+    public Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadBatchAsync(IEnumerable<DevicePoint> points, CancellationToken ct = default)
+        => Task.FromResult<OperationResult<IReadOnlyList<RawPointValue>>>(Array.Empty<RawPointValue>());
+    public Task<OperationResult> WriteAsync(DevicePoint point, object value, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult> WriteBatchAsync(IEnumerable<KeyValuePair<DevicePoint, object>> entries, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+    public void Dispose() { }
+
+    public Task<OperationResult<IReadOnlyList<BrowseNode>>> BrowseAsync(string parentNodeId = "", CancellationToken ct = default)
+    {
+        LastParent = parentNodeId;
+        return Task.FromResult(OperationResult<IReadOnlyList<BrowseNode>>.Success(new[]
+        {
+            new BrowseNode
+            {
+                NodeId = "ns=2;i=1001",
+                Name = "Int32Var",
+                TypeName = "Int32",
+                IsVariable = true,
+                Access = "ReadWrite"
+            }
+        }));
+    }
 }

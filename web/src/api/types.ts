@@ -47,6 +47,15 @@ export interface DevicePoint {
 export type DataType = 'Bool' | 'Byte' | 'Int16' | 'UInt16' | 'Int32' | 'UInt32' | 'Int64' | 'UInt64' | 'Float' | 'Double' | 'String'
 export type PointAccess = 'ReadOnly' | 'WriteOnly' | 'ReadWrite'
 
+/// ADR-070 层次1：OPC UA 节点浏览结果（前端树点选回填点位）
+export interface BrowseNode {
+  nodeId: string
+  name: string
+  typeName: string
+  isVariable: boolean
+  access: string
+}
+
 export interface PointSnapshot {
   deviceId: string
   devicePointId: string

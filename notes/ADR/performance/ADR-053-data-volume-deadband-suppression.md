@@ -65,24 +65,12 @@
 - 需要"每秒连续历史"的点，保持 `Deadband=0` 即可——**死区本身就是每点的开关**。
 - 已配置死区的既有点位，升级后立刻开始抑制（符合你设死区的预期），旧历史不清、不回改。
 
-## 五、测试计划
-
-- 新增 `ChangeDetector` 单测（纯类，红绿对照）：
-  - 死区内不写 / 超死区写 / **恰好等于死区写**（边界，与管线 `<` 语义一致）；
-  - 首样本必写（含重启=新实例）；
-  - 质量变化必写（Good→Bad、Bad→Good）；
-  - 心跳超时强制写（值未变也写）；
-  - Bool/String 值变化判定；Uncertain/NaN 落库；
-  - Deadband=0 时全部照写（向后兼容回归）。
-- `DataDispatcherTests` 增补：抑制后 store/buffer 只收变化点、sink 事件仍收全量（`PersistedSnapshots` 只含变化点；全抑制时空列表）。
-- 全量回归 `dotnet test`（基线 612 + 新增）。
-
-## 六、配置
+## 五、配置
 
 - `Collection:DeadbandHeartbeatMs`（毫秒，默认 300000）——心跳兜底间隔，`> 0` 校验；Webapi 与 Desktop 的 `appsettings.json` 同步。
 - 死区本身是**点位级**配置（`DevicePoint.Deadband`，已有），无需全局配置；0=全量、>0=变化抑制。
 
-## 七、本轮明确不做
+## 六、本轮明确不做
 
 - 不换存储引擎（InfluxDB/TimescaleDB——600 点规模 SQLite + 抑制足够）；
 - 不清/不回改既有历史；
