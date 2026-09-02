@@ -12,6 +12,8 @@ const router = createRouter({
     { path: '/devices/:id', name: 'DeviceDetail', component: () => import('../views/Devices/DeviceDetailView.vue') },
     { path: '/devices/:id/edit', name: 'DeviceEdit', component: () => import('../views/Devices/DeviceForm.vue') },
     { path: '/devices/:deviceId/points', name: 'Points', component: () => import('../views/Points/PointList.vue') },
+    // ADR-073 D8：OPC UA 证书信任管理（仅 Admin/Operator；后端 AdminOperator 策略兜底，前端仅 UX）
+    { path: '/opcua/certificates', name: 'OpcUaCertificates', component: () => import('../views/OpcUa/OpcUaCertificatesView.vue'), meta: { roles: ['Admin', 'Operator'] } },
     { path: '/monitoring', name: 'Monitoring', component: () => import('../views/Monitoring/MonitoringView.vue') },
     { path: '/alarms', name: 'Alarms', component: () => import('../views/Alarms/AlarmListView.vue') },
     { path: '/alarmrules', name: 'AlarmRules', component: () => import('../views/Alarms/AlarmRulesView.vue') },

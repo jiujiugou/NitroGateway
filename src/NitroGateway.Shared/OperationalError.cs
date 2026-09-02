@@ -89,6 +89,21 @@ public sealed class OperationalError
         };
     }
 
+    /// <summary>
+    /// 创建一个安全配置错误（OPC UA 层4：应用证书生成/加载失败、证书信任库不可用等环境配置问题，
+    /// 区别于用户可修输入校验错误 —— ADR-073 D7/AC-6）。
+    /// </summary>
+    public static OperationalError SecurityConfiguration(string message)
+    {
+        return new()
+        {
+            Category = ErrorCategory.General,
+            Code = "SecurityConfigurationError",
+            Severity = OperationalSeverity.Error,
+            Message = message
+        };
+    }
+
     /// <summary>创建一个资源不可用错误</summary>
     public static OperationalError Unavailable(string message)
     {

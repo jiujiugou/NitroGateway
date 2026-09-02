@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using NitroGateway.Alarm.Repository;
 using NitroGateway.Security.Audit;
 using NitroGateway.Security.Auth;
+using NitroGateway.Persistence.Security;
 using NitroGateway.Storage.Disk;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.Configuration;
@@ -36,6 +37,9 @@ public static class SqliteServiceCollectionExtensions
         services.AddDbContext<NitroGatewayDbContext>(options =>
             options.UseSqlite(connectionString));
 
+        // ADR-073 D5：OPC UA 连接凭据保护（AES-256-GCM + env 主密钥 OpcUa:CredentialKey）。
+        // 无状态单例（仅持有密钥串）；无 OPC UA 凭据的部署无需配置密钥，使用路径才 fail-fast。
+        services.AddSingleton<ICredentialProtector>(_ => new AesGcmCredentialProtector(configuration));
         services.AddScoped<IDeviceRepository, SqliteDeviceRepository>();
         services.AddScoped<IPointRepository, SqlitePointRepository>();
 

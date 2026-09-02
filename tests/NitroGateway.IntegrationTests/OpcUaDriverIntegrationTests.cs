@@ -103,6 +103,48 @@ public sealed class OpcUaDriverIntegrationTests
         await driver.DisconnectAsync();
     }
 
+    /// <summary>
+    /// AC-2/AC-4（ADR-072 层3 会话自愈）：服务器硬断链后，KeepAlive 检测触发
+    /// <c>SessionReconnectHandler</c> 自愈；断链窗口内驱动保持 <c>Connected</c>（D5），
+    /// 服务器同端口重启后**不调用 ConnectAsync** 即自动恢复读取（无需上层整轮重建）。
+    /// </summary>
+    [Fact]
+    public async Task ServerStop_KeepAliveSelfHeal_RecoversWithoutManualReconnect()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        var point = Point("Int1", "ns=2;i=1001", DataType.Int32);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+        Assert.True((await driver.EnsureSubscriptionAsync([point], 200)).IsSuccess);
+        Assert.True(driver.IsSubscriptionActive);
+
+        try
+        {
+            // 服务器硬断链：此后不再手动 ConnectAsync，自愈接管"已连接后的断线"（D2）
+            await scope.StopServerAsync();
+
+            // 等 KeepAlive 检测到断链并启动自愈（最多 15s）；期间不做读（避免读失败先置 Faulted
+            // 抢在自愈前），驱动状态保持 Connected
+            var started = await WaitUntilAsync(TimeSpan.FromSeconds(15), () => driver.IsReconnectActiveForTesting);
+            Assert.True(started, "KeepAlive 未在预期时间内触发会话自愈");
+            Assert.Equal(DriverState.Connected, driver.State);
+
+            // 服务器同端口重启 → 轮询读直至恢复（自愈完成自动续采），全程不调用 ConnectAsync
+            await scope.StartServerAsync();
+            var recovered = await WaitUntilAsync(TimeSpan.FromSeconds(30), async () =>
+            {
+                var r = await driver.ReadAsync(point, CancellationToken.None);
+                return r.IsSuccess;
+            });
+            Assert.True(recovered, "服务器重启后会话自愈未在预期时间内恢复读取");
+            Assert.Equal(DriverState.Connected, driver.State);
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
+    }
+
     // ── ADR-070 层次1：节点浏览（Browse）──
 
     [Fact]
@@ -364,6 +406,28 @@ public sealed class OpcUaDriverIntegrationTests
             RequestTimeoutMs = 5000
         },
         NullLogger<OpcUaDriver>.Instance);
+
+    private static async Task<bool> WaitUntilAsync(TimeSpan timeout, Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return true;
+            await Task.Delay(250);
+        }
+        return condition();
+    }
+
+    private static async Task<bool> WaitUntilAsync(TimeSpan timeout, Func<Task<bool>> condition)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await condition()) return true;
+            await Task.Delay(250);
+        }
+        return await condition();
+    }
 
     /// <summary>
     /// 进程内 OPC UA 服务器作用域：动态端口 + 独立 PKI 目录，支持停止后同端口重启。

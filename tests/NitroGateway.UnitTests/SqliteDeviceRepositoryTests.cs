@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Persistence;
+using NitroGateway.Persistence.Security;
 using NitroGateway.Persistence.Sqlite;
 using NitroGateway.Shared;
 using Xunit;
@@ -14,6 +15,9 @@ namespace NitroGateway.UnitTests;
 /// </summary>
 public class SqliteDeviceRepositoryTests
 {
+    /// <summary>固定测试主密钥（≥32 字节，绕过配置读取直接构造保护器）</summary>
+    private static readonly ICredentialProtector TestProtector = new AesGcmCredentialProtector(new string('k', 32));
+
     /// <summary>临时文件库：按 M003 迁移结构建 devices/points 表，释放时删除文件。</summary>
     private sealed class TempDeviceDb : IDisposable
     {
@@ -92,7 +96,7 @@ public class SqliteDeviceRepositoryTests
     {
         using var db = new TempDeviceDb();
         await using var context = CreateContext(db.ConnectionString);
-        var repo = new SqliteDeviceRepository(context);
+        var repo = new SqliteDeviceRepository(context, TestProtector);
 
         var device = NewDevice(Guid.NewGuid());
         device.Name = null!;   // 违反 devices.Name NOT NULL
@@ -117,7 +121,7 @@ public class SqliteDeviceRepositoryTests
         }
 
         await using var context = CreateContext(db.ConnectionString);
-        var repo = new SqliteDeviceRepository(context);
+        var repo = new SqliteDeviceRepository(context, TestProtector);
 
         var result = await repo.GetByIdAsync(Guid.NewGuid());
 
@@ -144,7 +148,7 @@ public class SqliteDeviceRepositoryTests
         });
         await context.SaveChangesAsync();
 
-        var repo = new SqliteDeviceRepository(context);
+        var repo = new SqliteDeviceRepository(context, TestProtector);
 
         var result = await repo.GetByIdAsync(id);
 

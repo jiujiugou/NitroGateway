@@ -327,7 +327,8 @@ public sealed class CenterConfigClient : ICenterConfigClient
             RequestTimeoutMs = device.Connection.RequestTimeoutMs,
             RetryCount = device.Connection.RetryCount,
             RetryIntervalMs = device.Connection.RetryIntervalMs,
-            Parameters = device.Connection.Parameters
+            // ADR-073 D5：上报中心绝不携带明文密码（中心侧无解密密钥），只保留其余参数
+            Parameters = DeviceParamRedaction.WithoutPassword(device.Connection.Parameters)
         },
         Status = device.Status.ToString(),
         SiteId = device.SiteId ?? "",

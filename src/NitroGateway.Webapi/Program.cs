@@ -77,6 +77,17 @@ builder.Services.AddSingleton<ISiteIdProvider, SiteIdProvider>();
 // 中心配置客户端：独立 HttpClient（非 Forwarder 的 IHttpClient），统一 15s 超时，避免每次请求建连接。
 builder.Services.AddSingleton<HttpClient>(_ => new HttpClient { Timeout = TimeSpan.FromSeconds(15) });
 builder.Services.AddSingleton<ICenterConfigClient, CenterConfigClient>();
+// ADR-073 D8：OPC UA 服务器证书信任管理（操作 pki 目录，信任状态唯一权威，不入 SQLite）。
+// pki 根目录默认相对进程工作目录（与 OpcUaDriver BuildConfiguration 目录 StorePath 同源）；
+// 可用配置 OpcUa:PkiDirectory 覆盖（如把 pki 卷挂载到持久化目录）。
+builder.Services.AddSingleton<IOpcUaCertificateManager>(sp =>
+{
+    var pkiRoot = builder.Configuration["OpcUa:PkiDirectory"]
+        ?? System.IO.Path.Combine(Directory.GetCurrentDirectory(), "opcua", "pki");
+    return new OpcUaCertificateManager(
+        pkiRoot,
+        sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<OpcUaCertificateManager>>());
+});
 // outbox：边缘设备/点位增删改先入队，同步服务联网后按序上报中心；写入失败不阻断主操作。
 builder.Services.AddSingleton<IConfigSyncOutboxStore>(_ => new ConfigSyncOutboxStore(dbConnectionString));
 // 周期同步：拉中心快照双向 UpdatedAt 合并 + 上报 outbox；未配置 ConfigSync:CenterUrl 时静默跳过。

@@ -16,6 +16,10 @@
         <router-link to="/devices" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🔌</span><span>设备管理</span>
         </router-link>
+        <!-- ADR-073 D8：OPC UA 证书信任管理（仅 Admin/Operator 可见；后端 AdminOperator 策略兜底） -->
+        <router-link v-if="canManageCertificates" to="/opcua/certificates" class="nav-item" active-class="nav-active">
+          <span class="nav-icon">🔐</span><span>OPC UA 证书</span>
+        </router-link>
         <router-link to="/monitoring" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📡</span><span>实时监控</span>
         </router-link>
@@ -100,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSystemStatus } from './api/status'
 import { createLiveConnection } from './api/signalr'
@@ -115,6 +119,8 @@ let conn: HubConnection | null = null
 
 // ADR-066：当前登录用户（顶部栏显示 + 侧边栏菜单门控）
 const currentUser = ref<CurrentUser | null>(null)
+// ADR-073 D8：证书信任面板仅对可写角色（Admin/Operator）展示（后端 AdminOperator 策略兜底）
+const canManageCertificates = computed(() => currentUser.value != null && ['Admin', 'Operator'].includes(currentUser.value.role))
 const pwdVisible = ref(false)
 const pwdForm = ref({ current: '', next: '' })
 const pwdLoading = ref(false)

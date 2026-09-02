@@ -90,6 +90,9 @@ public class DevicesController : ControllerBase
         if (existing.IsFailure) return NotFound(ApiResponse<DeviceDto>.Fail("NotFound", "设备不存在"));
         // ADR-054：与 Create 一致，站点 ID 缺省时以本站点身份落库
         var device = new Device { Id = id, Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), Status = Enum.TryParse<DeviceStatus>(d.Status, out var st2) ? st2 : DeviceStatus.Unknown, SiteId = EffectiveSiteId(d.SiteId) };
+        // ADR-073 D5：OPC UA 编辑态密码框留空 = 不改——前端不回传明文，这里从库内既有凭据合并保留，
+        // 避免整段覆盖 Connection 时把既有密码清成未配置
+        PreserveExistingCredentialOnEdit(existing.Value!, device);
         var r = await _devices.RegisterAsync(device);
         if (r.IsSuccess)
             await RecordOutboxAsync(() => _outbox.RecordDeviceAsync(r.Value!));
@@ -183,6 +186,10 @@ public class DevicesController : ControllerBase
         // 连接测试不重试：RetryCount/RetryIntervalMs 置 0，避免失败重试拖长页面等待
         var connection = BuildConnection(d.Connection) with { RetryCount = 0, RetryIntervalMs = 0 };
 
+        // ADR-073 D5：编辑态测试连接——表单不携带明文密码（留空=未改），从库内既有配置取回凭据合并，
+        // 使"改策略后原密码测试"可用；新建（无既有设备）不受影响
+        await MergeExistingCredentialForTestAsync(d, connection);
+
         try
         {
             using var driver = _driverFactory.Create(protocol, connection);
@@ -235,7 +242,8 @@ public class DevicesController : ControllerBase
     {
         Id = d.Id.ToString(), Name = d.Name, Description = d.Description,
         Protocol = new ProtocolDto { Name = d.Protocol.Name, Dialect = d.Protocol.Dialect },
-        Connection = new ConnectionDto { Endpoint = d.Connection.Endpoint, ConnectTimeoutMs = d.Connection.ConnectTimeoutMs, RequestTimeoutMs = d.Connection.RequestTimeoutMs, RetryCount = d.Connection.RetryCount, RetryIntervalMs = d.Connection.RetryIntervalMs, Parameters = d.Connection.Parameters },
+        // ADR-073 D5：对外响应永不返回 Parameters["Password"] 明文，只回填 hasPassword 标志
+        Connection = new ConnectionDto { Endpoint = d.Connection.Endpoint, ConnectTimeoutMs = d.Connection.ConnectTimeoutMs, RequestTimeoutMs = d.Connection.RequestTimeoutMs, RetryCount = d.Connection.RetryCount, RetryIntervalMs = d.Connection.RetryIntervalMs, Parameters = DeviceParamRedaction.WithoutPassword(d.Connection.Parameters), HasPassword = DeviceParamRedaction.HasPassword(d.Connection.Parameters) },
         Status = d.Status.ToString(), SiteId = d.SiteId ?? "", Points = d.Points.Select(MapPoint).ToList(),
         UpdatedAt = d.UpdatedAt == default ? "" : d.UpdatedAt.ToUniversalTime().ToString("O"),
         IsDeleted = d.IsDeleted
@@ -258,6 +266,44 @@ public class DevicesController : ControllerBase
     private static DeviceConnection BuildConnection(ConnectionDto? c) => c is null
         ? new DeviceConnection { Endpoint = "" }
         : new DeviceConnection { Endpoint = c.Endpoint ?? "", ConnectTimeoutMs = c.ConnectTimeoutMs, RequestTimeoutMs = c.RequestTimeoutMs, RetryCount = c.RetryCount, RetryIntervalMs = c.RetryIntervalMs, Parameters = c.Parameters };
+
+    /// <summary>
+    /// 编辑保存时保留既有凭据（ADR-073 D5）：入参为新 DTO 构建的设备（OPC UA 且未带非空 Password），
+    /// 从 <paramref name="existing"/>（仓储读取已解密）复制既有密码，防止"留空=不改"覆盖成未配置。
+    /// </summary>
+    private static void PreserveExistingCredentialOnEdit(Device existing, Device incoming)
+    {
+        if (!IsOpcUa(existing.Protocol.Name))
+            return;
+        if (HasNonEmptyPassword(incoming.Connection.Parameters))
+            return;
+        if (existing.Connection.Parameters.TryGetValue(DeviceParamRedaction.PasswordKey, out var pwd)
+            && pwd is string existingPwd && !string.IsNullOrEmpty(existingPwd))
+            incoming.Connection.Parameters[DeviceParamRedaction.PasswordKey] = existingPwd;
+    }
+
+    /// <summary>测试连接合并既有凭据：OPC UA 编辑态、未带非空密码且可定位既有设备时从库内取回。</summary>
+    private async Task MergeExistingCredentialForTestAsync(DeviceDto d, DeviceConnection connection)
+    {
+        if (!string.Equals(d.Protocol?.Name, "OPC UA", StringComparison.OrdinalIgnoreCase))
+            return;
+        if (HasNonEmptyPassword(connection.Parameters))
+            return;
+        if (!Guid.TryParse(d.Id, out var deviceId))
+            return;
+        var existing = await _devices.GetAsync(deviceId);
+        if (existing.IsFailure)
+            return;
+        if (existing.Value!.Connection.Parameters.TryGetValue(DeviceParamRedaction.PasswordKey, out var pwd)
+            && pwd is string existingPwd && !string.IsNullOrEmpty(existingPwd))
+            connection.Parameters[DeviceParamRedaction.PasswordKey] = existingPwd;
+    }
+
+    private static bool HasNonEmptyPassword(Dictionary<string, object> parameters)
+        => DeviceParamRedaction.HasPassword(parameters);
+
+    private static bool IsOpcUa(string protocolName)
+        => string.Equals(protocolName, "OPC UA", StringComparison.OrdinalIgnoreCase);
 }
 
 

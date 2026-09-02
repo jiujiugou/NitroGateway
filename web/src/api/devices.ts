@@ -1,5 +1,5 @@
 import client from './client'
-import type { ApiResponse, BrowseNode, Device, DevicePoint } from './types'
+import type { ApiResponse, BrowseNode, Device, DevicePoint, OpcUaCertificate } from './types'
 
 // ADR-054：web 收敛为纯边缘（Linux 网关管理端），单一站点，设备列表不再按站点过滤
 export async function getDevices(): Promise<Device[]> {
@@ -123,5 +123,30 @@ export async function getSerialPorts(): Promise<string[]> {
 export async function getSerialPortStatus(): Promise<SerialPortInfo[]> {
   const { data } = await client.get<ApiResponse<SerialPortInfo[]>>('/devices/serial-port-status')
   return data.data ?? []
+}
+
+// ADR-073 D8：OPC UA 服务器证书信任管理（pki/rejected、pki/trusted 白名单）。信任状态以 pki 目录为唯一权威。
+export async function getRejectedCertificates(): Promise<OpcUaCertificate[]> {
+  const { data } = await client.get<ApiResponse<OpcUaCertificate[]>>('/opcua/certificates/rejected')
+  return data.data ?? []
+}
+
+export async function getTrustedCertificates(): Promise<OpcUaCertificate[]> {
+  const { data } = await client.get<ApiResponse<OpcUaCertificate[]>>('/opcua/certificates/trusted')
+  return data.data ?? []
+}
+
+/// 信任指定指纹的服务器证书（从 rejected 移入 trusted 白名单）。可选 deviceId 触发该设备驱动驱逐 → 下一轮以新信任状态重连。
+export async function trustCertificate(thumbprint: string, deviceId?: string): Promise<boolean> {
+  const { data } = await client.post<ApiResponse<unknown>>(`/opcua/certificates/${thumbprint}/trust`, undefined, {
+    params: deviceId ? { deviceId } : {}
+  })
+  return data.success
+}
+
+/// 撤销信任（把 trusted 白名单中的证书移除，回到未信任状态）。
+export async function revokeCertificate(thumbprint: string): Promise<boolean> {
+  const { data } = await client.delete<ApiResponse<unknown>>(`/opcua/certificates/${thumbprint}`)
+  return data.success
 }
 

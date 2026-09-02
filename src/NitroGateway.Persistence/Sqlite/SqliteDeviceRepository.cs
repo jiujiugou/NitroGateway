@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Persistence.Security;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Configuration;
 
@@ -14,10 +16,21 @@ namespace NitroGateway.Persistence.Sqlite;
 /// </summary>
 public sealed class SqliteDeviceRepository : IDeviceRepository
 {
-    private readonly NitroGatewayDbContext _db;
+    /// <summary>OPC UA 连接参数中的密码键（PascalCase，与设备参数字典约定一致，ADR-073 D1）</summary>
+    internal const string PasswordKey = "Password";
 
-    /// <summary>注入 EF 上下文；依赖 DI 保证上下文生命周期不超出仓储</summary>
-    public SqliteDeviceRepository(NitroGatewayDbContext db) => _db = db;
+    private readonly NitroGatewayDbContext _db;
+    private readonly ICredentialProtector _protector;
+
+    /// <summary>
+    /// 注入 EF 上下文与凭据保护器。凭据保护器在写库前加密 OPC UA Password、读库后解密（ADR-073 D5），
+    /// 使 SQLite <c>ConnectionParams</c> 只存密文而域内/驱动路径为内存明文；依赖 DI 保证上下文生命周期不超出仓储。
+    /// </summary>
+    public SqliteDeviceRepository(NitroGatewayDbContext db, ICredentialProtector protector)
+    {
+        _db = db;
+        _protector = protector;
+    }
 
     /// <summary>
     /// 保存或更新设备：按 Id 查重，存在则用领域值覆盖当前实体（upsert）。
@@ -34,11 +47,11 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
             var existing = await _db.Devices.FindAsync([device.Id], ct);
             if (existing is null)
             {
-                _db.Devices.Add(DomainMapper.ToEntity(device));
+                _db.Devices.Add(DomainMapper.ToEntity(device, p => Protect(device, p)));
             }
             else
             {
-                var updated = DomainMapper.ToEntity(device);
+                var updated = DomainMapper.ToEntity(device, p => Protect(device, p));
                 _db.Entry(existing).CurrentValues.SetValues(updated);
             }
             await _db.SaveChangesAsync(ct);
@@ -88,6 +101,7 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
                 return OperationalError.General("设备不存在");
 
             var device = DomainMapper.ToDomain(entity);
+            Unprotect(device);
             foreach (var pe in entity.Points)
                 device.AddPoint(DomainMapper.ToDomain(pe));
 
@@ -112,6 +126,7 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
             return entities.Select(e =>
             {
                 var d = DomainMapper.ToDomain(e);
+                Unprotect(d);
                 foreach (var pe in e.Points) d.AddPoint(DomainMapper.ToDomain(pe));
                 return d;
             }).ToList();
@@ -141,6 +156,7 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
             return entities.Select(e =>
             {
                 var d = DomainMapper.ToDomain(e);
+                Unprotect(d);
                 foreach (var pe in e.Points) d.AddPoint(DomainMapper.ToDomain(pe));
                 return d;
             }).ToList();
@@ -150,5 +166,62 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
             // ADR-018 P2-2：查询异常归类返回
             return SqliteErrorClassifier.Classify(ex, "设备查询失败");
         }
+    }
+
+    /// <summary>
+    /// 写库前加密变换（ADR-073 D5）：仅 OPC UA 设备、且存在非空 Password 时，将其替换为保护器密文。
+    /// 返回新字典，不改动入参域对象的明文参数（调用方后续 Map/outbox 仍按明文走剔除逻辑）。
+    /// 非 OPC UA / 无密码参数原样返回（Modbus/S7 协议参数互不污染，ADR-073 D1）。
+    /// </summary>
+    private Dictionary<string, object> Protect(Device device, Dictionary<string, object> parameters)
+    {
+        if (!IsOpcUa(device.Protocol.Name)
+            || !TryGetParamString(parameters, PasswordKey, out var password)
+            || string.IsNullOrEmpty(password))
+            return parameters;
+        var copy = new Dictionary<string, object>(parameters, StringComparer.Ordinal);
+        copy[PasswordKey] = _protector.Protect(password);
+        return copy;
+    }
+
+    /// <summary>
+    /// 读库后解密（ADR-073 D5）：OPC UA 设备且存在本保护器格式密文时还原为内存明文供驱动使用。
+    /// 密钥缺失/错误在 <see cref="ICredentialProtector.Unprotect"/> 抛出（fail-fast，禁止明文回写兜底），
+    /// 由方法外层 try 归类为 OperationResult 返回。
+    /// </summary>
+    private void Unprotect(Device device)
+    {
+        if (!IsOpcUa(device.Protocol.Name))
+            return;
+        var parameters = device.Connection.Parameters;
+        if (!TryGetParamString(parameters, PasswordKey, out var stored) || stored.Length == 0)
+            return;
+        parameters[PasswordKey] = _protector.Unprotect(stored);
+    }
+
+    private static bool IsOpcUa(string protocolName)
+        => string.Equals(protocolName, "OPC UA", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 从连接参数字典读取字符串值：兼容内存 string 与 SQLite JSON 反序列化的
+    /// <see cref="JsonElement"/>（DomainMapper.DeserializeParams 产出的字典值为 JsonElement），
+    /// 与 OpcUaSecurityParameters 读参口径一致（ADR-073 D1）。键缺失 → false。
+    /// </summary>
+    private static bool TryGetParamString(Dictionary<string, object> parameters, string key, out string value)
+    {
+        if (parameters.TryGetValue(key, out var raw))
+        {
+            switch (raw)
+            {
+                case string s:
+                    value = s;
+                    return true;
+                case JsonElement { ValueKind: JsonValueKind.String } element:
+                    value = element.GetString() ?? "";
+                    return true;
+            }
+        }
+        value = "";
+        return false;
     }
 }

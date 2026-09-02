@@ -46,25 +46,38 @@ public static class DomainMapper
         SiteId = entity.SiteId ?? ""
     };
 
-    /// <summary>领域模型 → EF 实体</summary>
-    public static DeviceEntity ToEntity(Device domain) => new()
+    /// <summary>
+    /// 领域模型 → EF 实体。
+    /// <paramref name="parameterTransform"/> 为可选连接参数变换（ADR-073 D5：仓储在写库前用它加密
+    /// OPC UA Password，实现"落库密文、域内明文"边界）；缺省不传保持原行为，既有直接调用方不受影响。
+    /// 变换仅作用于序列化前的参数副本，不修改入参 <paramref name="domain"/>。
+    /// </summary>
+    public static DeviceEntity ToEntity(
+        Device domain,
+        Func<Dictionary<string, object>, Dictionary<string, object>>? parameterTransform = null)
     {
-        Id = domain.Id,
-        Name = domain.Name,
-        Description = domain.Description,
-        ProtocolName = domain.Protocol.Name,
-        ProtocolDialect = domain.Protocol.Dialect,
-        Endpoint = domain.Connection.Endpoint,
-        ConnectTimeoutMs = domain.Connection.ConnectTimeoutMs,
-        RequestTimeoutMs = domain.Connection.RequestTimeoutMs,
-        RetryCount = domain.Connection.RetryCount,
-        ConnectionParams = SerializeParams(domain.Connection.Parameters),
-        Status = domain.Status.ToString(),
-        UpdatedAt = FormatUpdatedAt(domain.UpdatedAt),
-        IsDeleted = domain.IsDeleted,
-        // ADR-035 方案 A：设备站点归属
-        SiteId = domain.SiteId ?? ""
-    };
+        var parameters = parameterTransform is null
+            ? domain.Connection.Parameters
+            : parameterTransform(domain.Connection.Parameters);
+        return new DeviceEntity
+        {
+            Id = domain.Id,
+            Name = domain.Name,
+            Description = domain.Description,
+            ProtocolName = domain.Protocol.Name,
+            ProtocolDialect = domain.Protocol.Dialect,
+            Endpoint = domain.Connection.Endpoint,
+            ConnectTimeoutMs = domain.Connection.ConnectTimeoutMs,
+            RequestTimeoutMs = domain.Connection.RequestTimeoutMs,
+            RetryCount = domain.Connection.RetryCount,
+            ConnectionParams = SerializeParams(parameters),
+            Status = domain.Status.ToString(),
+            UpdatedAt = FormatUpdatedAt(domain.UpdatedAt),
+            IsDeleted = domain.IsDeleted,
+            // ADR-035 方案 A：设备站点归属
+            SiteId = domain.SiteId ?? ""
+        };
+    }
 
     /// <summary>EF 实体 → 领域模型</summary>
     public static DevicePoint ToDomain(PointEntity entity) => new()

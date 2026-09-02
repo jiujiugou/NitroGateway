@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 暴露自愈测试探针（ShouldStartSelfHeal / 防重入位）给测试程序集，与 S7/Modbus 同范式 -->
+    <InternalsVisibleTo Include="NitroGateway.UnitTests" />
+    <InternalsVisibleTo Include="NitroGateway.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
   </ItemGroup>
 

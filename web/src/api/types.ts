@@ -22,6 +22,8 @@ export interface DeviceConnection {
   retryCount: number
   retryIntervalMs: number
   parameters: Record<string, unknown>
+  /// ADR-073 D5：响应回填标志——是否已配置连接凭据密码（对外永不返回明文）。编辑态用于"留空=不改"提示。
+  hasPassword?: boolean
 }
 
 export type DeviceStatus = 'Unknown' | 'Online' | 'Offline' | 'Error' | 'Maintenance'
@@ -91,5 +93,17 @@ export interface AlarmRule {
   severity: string
   messageTemplate?: string
   enabled: boolean
+}
+
+/// ADR-073 D8：OPC UA 服务器对等方证书条目（pki 目录只读投影）。信任状态以 pki 为唯一权威，不入 SQLite。
+export interface OpcUaCertificate {
+  /// 证书主题（如 CN=opcua-server）
+  subject: string
+  /// 40 位大写十六进制指纹（无分隔符）
+  thumbprint: string
+  /// 进入该目录的时间（O 格式 UTC）
+  importedAt: string
+  /// 证书有效期截止（O 格式 UTC，供运维评估轮换）
+  notAfter: string
 }
 

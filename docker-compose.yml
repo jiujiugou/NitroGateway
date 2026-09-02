@@ -44,6 +44,9 @@ services:
       # 否则 AddNitroSecurity 生产校验会拒启（此前仅覆盖 admin 导致网关启动崩溃，2026-08-19 实测发现）
       - Security__Users__1__Password=${OPERATOR_PASSWORD:?OPERATOR_PASSWORD 环境变量必须设置（生产禁用默认测试账号 operator/oper123）}
       - Security__Users__2__Password=${VIEWER_PASSWORD:?VIEWER_PASSWORD 环境变量必须设置（生产禁用默认测试账号 viewer/view123）}
+      # ADR-073 D5：OPC UA 连接凭据落库加密主密钥（AES-256-GCM）。仅当配置了带密码的 OPC UA 设备
+      # 才必需（≥32 字节强随机）；未使用 OPC UA 凭据时可留空（保护器仅在加解密路径 fail-fast）
+      - OpcUa__CredentialKey=${OPCUA_CREDENTIAL_KEY:-}
     depends_on:
       - mqtt
     restart: unless-stopped

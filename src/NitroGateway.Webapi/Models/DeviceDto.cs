@@ -27,6 +27,11 @@ public sealed class ConnectionDto
     public int RetryCount { get; init; }
     public int RetryIntervalMs { get; init; }
     public Dictionary<string, object> Parameters { get; init; } = [];
+    /// <summary>
+    /// 是否已配置连接凭据密码（仅响应回填，ADR-073 D5）。对外响应永不返回 <c>Parameters["Password"]</c>
+    /// 明文，只以本标志提示前端"已设密码，留空=不改"。
+    /// </summary>
+    public bool HasPassword { get; init; }
 }
 
 public sealed class PointDto

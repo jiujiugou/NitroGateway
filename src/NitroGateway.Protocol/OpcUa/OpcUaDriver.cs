@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
@@ -28,10 +29,13 @@ namespace NitroGateway.Protocols.OpcUa;
 /// <para><b>失败读不产伪值（ADR-019 P1-1）：</b>Read 响应显式检查 <c>StatusCode</c>，
 /// Bad/Uncertain 状态跳过该点位（SDK 在 Bad 时 <c>WrappedValue</c> 为默认值，直接取会把故障读当作
 /// 0.0 + Good 写入时序库并上云）；全部失败复位 <see cref="DriverState.Faulted"/>，让上层重试管线重新建连。</para>
-/// <para><b>应用证书尽力而为：</b>首次连接尝试在 <c>opcua/pki/own</c> 生成应用证书（SubjectName
-/// <c>CN=NitroGateway</c>）；生成失败降级为 None 安全策略 + 匿名身份（无需客户端证书即可连通演示服务器）。
-/// 服务端证书一律自动接受（<c>AutoAcceptUntrustedCertificates=true</c> + 校验回调 Accept），
-/// 适合内网演示；现场生产应改为信任库白名单校验。</para>
+/// <para><b>连接安全（ADR-073 层4）：</b>安全档位（<c>SecurityPolicy</c>/<c>SecurityMode</c>/
+/// <c>UserName</c>/<c>Password</c>）由 <see cref="DeviceConnection.Parameters"/> 显式声明，None 仅
+/// 显式配置才允许；建连前 GetEndpoints 手工按策略/模式选端点，无隐式 None 回退。应用证书在
+/// <c>opcua/pki/own</c> 生成，失败显式返回 <see cref="OperationalError"/> 而非静默降级。服务端证书按
+/// <c>opcua/pki/trusted</c> 白名单校验（<c>AutoAcceptUntrustedCertificates=false</c>，无 Accept 回调）；
+/// 未信任证书由 SDK 判 <c>BadCertificateUntrusted</c> 拒绝并进入 <c>opcua/pki/rejected</c>，经证书管理
+/// API 信任后重试（D8）。</para>
 /// </remarks>
 public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscriptionSource, IDisposable
 {
@@ -48,8 +52,12 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
     private Subscription? _subscription;
     private string? _subscriptionSignature;
 
-    /// <summary>是否已就绪应用证书；false 时仅选择 None 安全策略端点（匿名身份无需客户端证书）</summary>
-    private bool _hasAppCertificate;
+    /// <summary>会话自愈（ADR-072）：当前活动的重连 handler；null 表示无进行中自愈。</summary>
+    private SessionReconnectHandler? _reconnectHandler;
+    /// <summary>已绑定 <c>KeepAlive</c> 事件的会话；用于幂等解绑（ADR-072 D1/D6）。</summary>
+    private Session? _keepAliveSession;
+    /// <summary>自愈防重入位（0/1，经 Interlocked 访问）：1 表示已有活动重连（ADR-072 D3）。</summary>
+    private int _reconnectActive;
 
     /// <inheritdoc />
     public DriverState State { get; private set; } = DriverState.Disconnected;
@@ -86,6 +94,16 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 return OperationalError.Validation("OPC UA 端点（opc.tcp://host:port）不能为空");
             }
 
+            // ADR-073 D1：安全参数契约与校验（空值/类型错误/非法枚举/冲突组合 → Validation 400，绝不 500）
+            var security = OpcUaSecurityParameters.Parse(_connection.Parameters);
+            if (!security.IsValid)
+            {
+                State = DriverState.Faulted;
+                return OperationalError.Validation(
+                    $"OPC UA 安全参数配置错误: {string.Join("；", security.Errors)}");
+            }
+            var requirement = security.Requirement!;
+
             State = DriverState.Connecting;
             ct.ThrowIfCancellationRequested();
 
@@ -97,10 +115,12 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 // 1) 程序化构建 ApplicationConfiguration（不依赖 XML 配置文件，SDK 1.5 支持直接构造）
                 var config = BuildConfiguration(requestTimeout);
                 await config.Validate(ApplicationType.Client);
-                // 服务端证书一律接受（演示/内网；现场可改为按信任库白名单校验）
-                config.CertificateValidator!.CertificateValidation += (_, e) => e.Accept = true;
+                // ADR-073 D6：不挂任何 CertificateValidation 订阅，避免 SDK 事件语义覆盖信任库校验；
+                // AutoAcceptUntrustedCertificates=false（见 BuildConfiguration）。服务端证书按
+                // opcua/pki/trusted 白名单校验，未信任证书由 SDK 判 BadCertificateUntrusted 并写入
+                // opcua/pki/rejected，前端可经证书管理 API “信任→重试”。
 
-                // 2) 应用证书：尽力而为。生成失败降级 false → 走 None 安全策略 + 匿名，仍可连通演示服务器
+                // 2) 应用证书（ADR-073 D7）：失败不再静默降级 None，显式返回 SecurityConfigurationError
                 try
                 {
                     var app = new ApplicationInstance
@@ -109,27 +129,32 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                         ApplicationType = ApplicationType.Client,
                         ApplicationConfiguration = config
                     };
-                    _hasAppCertificate = await app.CheckApplicationInstanceCertificates(silent: true);
+                    var ok = await app.CheckApplicationInstanceCertificates(silent: true);
+                    if (!ok)
+                    {
+                        State = DriverState.Faulted;
+                        return OperationalError.SecurityConfiguration(
+                            "OPC UA 应用证书初始化失败：无法生成或加载应用证书（opcua/pki/own），" +
+                            "请检查该目录是否可写后重试。");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _hasAppCertificate = false;
-                    _logger.LogDebug("应用证书不可用，将使用无加密（None）连接: {Error}", ex.Message);
+                    State = DriverState.Faulted;
+                    return OperationalError.SecurityConfiguration(
+                        $"OPC UA 应用证书初始化失败: {ex.Message}（opcua/pki/own 目录不可写或证书生成失败）");
                 }
 
-                // 3) 选端点：优先安全端点；无应用证书时强制 None，避免带证书握手失败
-                EndpointDescription selected;
-                try
+                // 3) 选端点（ADR-073 D2/D3）：GetEndpoints 拉端点后按策略/模式手工过滤
+                // （SDK 无策略过滤 SelectEndpoint 重载，见 ADR-073 Context 更正）；无隐式 None 回退
+                var (selected, selectionError) = await DiscoverAndSelectEndpointAsync(config, requirement, ct);
+                if (selected is null)
                 {
-                    selected = CoreClientUtils.SelectEndpoint(config, _connection.Endpoint, useSecurity: _hasAppCertificate);
-                }
-                catch
-                {
-                    // 安全端点发现失败（如服务器不支持加密/证书不被接受）→ 回退 None 端点
-                    selected = CoreClientUtils.SelectEndpoint(config, _connection.Endpoint, useSecurity: false);
+                    State = DriverState.Faulted;
+                    return OperationalError.Validation(selectionError ?? "OPC UA 无可用的匹配端点");
                 }
 
-                // 4) 建会话（匿名身份 v1；updateBeforeConnect=false 不重复发现）
+                // 4) 建会话（身份按 ADR-073 D4；updateBeforeConnect=false 不重复发现）
                 var configuredEndpoint = new ConfiguredEndpoint(selected.Server, EndpointConfiguration.Create(config));
                 configuredEndpoint.Update(selected);
                 var session = await Session.Create(
@@ -139,13 +164,15 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                     checkDomain: false,
                     "NitroGateway",
                     (uint)Math.Max(5000, requestTimeout),
-                    new UserIdentity(),
+                    BuildUserIdentity(requirement),
                     null,
                     ct);
 
                 ct.ThrowIfCancellationRequested();
                 _session = session;
                 State = DriverState.Connected;
+                // ADR-072 D1：连接成功即绑定 KeepAlive，作为"已连接后断线"的自愈检测入口
+                BindKeepAlive(session);
                 _logger.LogInformation("OPC UA 已连接: {Endpoint} 安全={SecurityMode}/{SecurityPolicy}",
                     _connection.Endpoint,
                     selected.SecurityMode,
@@ -156,6 +183,14 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
             {
                 State = DriverState.Faulted;
                 return OperationalError.Timeout("OPC UA 连接已取消");
+            }
+            catch (ServiceResultException ex)
+            {
+                // ADR-073：SDK 服务级拒绝（证书未信任 BadCertificateUntrusted / 认证拒绝
+                // BadUserAccessDenied / BadIdentityTokenRejected 等）映射为 Communication，
+                // 消息内含 SDK 状态码供前端区分；不吞成 Timeout。绝不静默落到 None。
+                State = DriverState.Faulted;
+                return OperationalError.Communication($"OPC UA 连接被拒绝: {ex.Message}");
             }
             catch (Exception ex)
             {
@@ -175,6 +210,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         await _gate.WaitAsync(ct);
         try
         {
+            // ADR-072 D6：先停自愈重连 handler、解绑 KeepAlive，再关会话
+            // （顺序不可反，防止重连回调/保活事件访问已关闭会话）
+            CancelReconnectHandler();
+            UnbindKeepAlive();
             await DeleteSubscriptionAsync(ct);
             var session = _session;
             _session = null;
@@ -403,10 +442,11 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 });
             }
 
-            // ADR-019 P3-1：全部失败复位 Faulted，让重试管线重新建连（与 Modbus/S7 对齐）
+            // ADR-019 P3-1 + ADR-072 D5：全部失败复位 Faulted，让重试管线重新建连
+            // （与 Modbus/S7 对齐）；自愈重连窗口内不置 Faulted（保持 Connected，防与上层抢道）
             if (results.Count == 0)
             {
-                State = DriverState.Faulted;
+                EnterFaultedIfNotSelfHealing();
                 return OperationalError.Protocol($"批量读取失败：{validPoints.Count} 个点位均未返回数据");
             }
 
@@ -417,7 +457,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
         catch (Exception ex)
         {
-            State = DriverState.Faulted;
+            EnterFaultedIfNotSelfHealing();
             return OperationalError.Protocol($"OPC UA 读取失败: {ex.Message}");
         }
         finally
@@ -605,6 +645,9 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
     /// <inheritdoc />
     public void Dispose()
     {
+        // ADR-072 D6：先停自愈重连 handler、解绑 KeepAlive，再关会话（幂等，单条各自吞异常）
+        try { CancelReconnectHandler(); } catch { }
+        try { UnbindKeepAlive(); } catch { }
         try { DeleteSubscriptionAsync(CancellationToken.None).GetAwaiter().GetResult(); } catch { }
         try { _session?.CloseSession(null, true); } catch { }
         _session?.Dispose();
@@ -624,6 +667,266 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         try { await subscription.DeleteAsync(true, ct); } catch { }
         subscription.Dispose();
     }
+
+    // ── ADR-072：会话自愈（KeepAlive → SessionReconnectHandler → 订阅核验 → 生命周期清理）──
+
+    /// <summary>
+    /// 把 <c>KeepAlive</c> 事件绑定到指定会话（ADR-072 D1）。幂等：同一会话重复绑定跳过；
+    /// 换会话时先解绑旧绑定再绑新会话，避免重复委托。须在 <c>_gate</c> 内调用。
+    /// </summary>
+    private void BindKeepAlive(Session session)
+    {
+        if (ReferenceEquals(_keepAliveSession, session))
+            return;
+        UnbindKeepAlive();
+        session.KeepAlive += OnSessionKeepAlive;
+        _keepAliveSession = session;
+    }
+
+    /// <summary>解绑 <c>KeepAlive</c> 事件（ADR-072 D1/D6）。幂等：未绑定/已解绑时无动作。</summary>
+    private void UnbindKeepAlive()
+    {
+        var bound = _keepAliveSession;
+        _keepAliveSession = null;
+        if (bound is not null)
+            bound.KeepAlive -= OnSessionKeepAlive;
+    }
+
+    /// <summary>
+    /// 停止活动自愈重连并清理（ADR-072 D6）。幂等、可从任意线程调用；
+    /// 调用后即便重连回调迟到，也会因会话已置空/关闭而直接返回。
+    /// </summary>
+    private void CancelReconnectHandler()
+    {
+        Interlocked.Exchange(ref _reconnectActive, 0);
+        var handler = Interlocked.Exchange(ref _reconnectHandler, null);
+        if (handler is null)
+            return;
+        try { handler.CancelReconnect(); } catch { }
+        try { handler.Dispose(); } catch { }
+    }
+
+    /// <summary>
+    /// <c>Session.KeepAlive</c> 事件处理（ADR-072 D1）。运行在 SDK 保活线程：
+    /// 只做事件分类，不手写恢复路径；仅在确认"当前会话 + Connected + 无进行中重连"后，
+    /// 用有界等待取得 <c>_gate</c> 复核并启动 <see cref="SessionReconnectHandler"/>。
+    /// </summary>
+    private void OnSessionKeepAlive(ISession session, KeepAliveEventArgs e)
+    {
+        // Good/空状态 = 会话存活，无动作（D1）
+        if (e.Status is null || StatusCode.IsGood(e.Status.Code))
+            return;
+
+        // 已有活动自愈重连：忽略重复 Bad 触发（防重入，D3）——快速路径，不争闸门
+        if (Volatile.Read(ref _reconnectActive) != 0)
+        {
+            _logger.LogDebug("OPC UA 保活中断（{Code}）但已有自愈重连进行中，忽略", e.Status.Code);
+            return;
+        }
+
+        // 与 Disconnect/Dispose 串行（D6）：有界等待 _gate，闸门内复核后再启动自愈。
+        // 等不到（驱动正断开/闸门被长时间占用）则跳过，由下一次保活或上层重试管线兜底。
+        bool acquired;
+        try { acquired = _gate.Wait(TimeSpan.FromSeconds(2)); }
+        catch { acquired = false; }
+        if (!acquired)
+        {
+            _logger.LogDebug("OPC UA 保活中断（{Code}）但无法取得闸门，暂不启动自愈", e.Status.Code);
+            return;
+        }
+        try
+        {
+            // 闸门内复核：会话已被置空/替换、状态已迁移、事件来自旧会话 → 放弃（D6 幂等）
+            if (!ShouldStartSelfHeal(e.Status, session, _session, State, Volatile.Read(ref _reconnectActive)))
+            {
+                _logger.LogDebug("OPC UA 保活中断但不触发自愈（非当前会话/未连接/已有重连）: {Code}",
+                    e.Status.Code);
+                return;
+            }
+
+            var current = _session;
+            if (current is null)
+                return;
+            // 闸门内无并发启动，直接置位（防重入位，D3）
+            Interlocked.Exchange(ref _reconnectActive, 1);
+            _logger.LogWarning("OPC UA 保活中断（{Code}），启动会话自愈重连（当前状态 {State}）",
+                e.Status.Code, e.CurrentState);
+            var telemetry = current.SessionFactory.Telemetry;
+            var handler = new SessionReconnectHandler(telemetry);
+            _reconnectHandler = handler;
+            // 第二参数为毫秒重连周期（SDK 1.5.378.156 语义，非重试次数；ADR-072 已更正 docs/07）
+            handler.BeginReconnect(current, SessionReconnectHandler.DefaultReconnectPeriod, OnReconnectComplete);
+        }
+        catch (Exception ex)
+        {
+            var pending = Interlocked.Exchange(ref _reconnectHandler, null);
+            try { pending?.Dispose(); } catch { }
+            Interlocked.Exchange(ref _reconnectActive, 0);
+            _logger.LogError(ex, "启动 OPC UA 会话自愈重连失败");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// ADR-072 D1 保活事件分类（纯判定，便于无 SDK 会话的单测）：是否应启动会话自愈。
+    /// false 情形：Good/空状态（存活）；已有重连进行中（防重入，D3）；事件非当前会话
+    /// （旧会话迟到事件，D6）；驱动未处于 <see cref="DriverState.Connected"/>（自愈只接管
+    /// "已连接后的断线"，D2）。
+    /// </summary>
+    internal static bool ShouldStartSelfHeal(
+        ServiceResult? status,
+        object? session,
+        object? currentSession,
+        DriverState state,
+        int reconnectActive)
+    {
+        if (status is null || ServiceResult.IsGood(status))
+            return false;
+        if (reconnectActive != 0)
+            return false;
+        if (session is null || currentSession is null || !ReferenceEquals(session, currentSession))
+            return false;
+        if (state != DriverState.Connected)
+            return false;
+        return true;
+    }
+
+    /// <summary>SDK 重连完成回调（原地保住或重建成功各回调一次；SDK 定时器/线程池线程）。
+    /// 不在回调线程内同步持 <c>_gate</c>，转发到后台异步处理（ADR-072 D6）。</summary>
+    private void OnReconnectComplete(object? sender, EventArgs e)
+    {
+        if (sender is not SessionReconnectHandler handler)
+        {
+            // 无法定位恢复结果：清防重入位兜底，交由既有恢复路径
+            Interlocked.Exchange(ref _reconnectActive, 0);
+            return;
+        }
+        _ = HandleReconnectCompleteAsync(handler);
+    }
+
+    /// <summary>后台处理重连完成结果：状态对齐、会话引用替换、订阅核验（ADR-072 D3/D4/D5）。</summary>
+    private async Task HandleReconnectCompleteAsync(SessionReconnectHandler handler)
+    {
+        try
+        {
+            // 回调已触发即表示 handler 完成，驱动不再持有其引用
+            Interlocked.CompareExchange(ref _reconnectHandler, null, handler);
+            var replacement = handler.Session;
+
+            if (replacement is null)
+            {
+                // 自愈被取消/无可用会话：清防重入位，交给既有重试管线（D7 兜底）
+                Interlocked.Exchange(ref _reconnectActive, 0);
+                _logger.LogWarning("OPC UA 会话自愈未获可用会话（可能已被取消），交由上层重试管线");
+                return;
+            }
+
+            // 原地重连成功：会话实例未换，订阅原样保留（D3），仅记日志并清防重入位
+            if (ReferenceEquals(replacement, Volatile.Read(ref _session)))
+            {
+                Interlocked.Exchange(ref _reconnectActive, 0);
+                _logger.LogInformation("OPC UA 会话自愈成功（原地重连，会话与订阅保留）");
+                return;
+            }
+
+            if (replacement is not Session newSession)
+            {
+                Interlocked.Exchange(ref _reconnectActive, 0);
+                return;
+            }
+
+            // 会话已重建：_gate 内有界等待后替换引用并核验订阅（防与 Disconnect 互等，D6）
+            bool acquired;
+            try { acquired = await _gate.WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch { acquired = false; }
+            if (!acquired)
+            {
+                Interlocked.Exchange(ref _reconnectActive, 0);
+                _logger.LogWarning("OPC UA 会话自愈回调等待闸门失败（驱动可能正在断开），放弃会话替换");
+                try { newSession.Dispose(); } catch { }
+                return;
+            }
+            try
+            {
+                if (_session is null || State != DriverState.Connected)
+                {
+                    _logger.LogInformation("OPC UA 会话自愈回调到达时驱动已断开/未连接，丢弃重建会话");
+                    try { newSession.Dispose(); } catch { }
+                    return;
+                }
+
+                _session = newSession;
+                // 重绑 KeepAlive（幂等：SDK 重建若已克隆委托则换绑后无重复，D1/D6）
+                BindKeepAlive(newSession);
+                RealignSubscription(newSession);
+                _logger.LogInformation("OPC UA 会话自愈成功：会话已重建并完成订阅核验");
+            }
+            finally
+            {
+                _gate.Release();
+                Interlocked.Exchange(ref _reconnectActive, 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Exchange(ref _reconnectActive, 0);
+            _logger.LogError(ex, "处理 OPC UA 会话自愈完成回调失败");
+        }
+    }
+
+    /// <summary>
+    /// 会话重建后的订阅核验（ADR-072 D4）。SDK 的 <c>Session.Recreate</c> 已内置
+    /// Transfer→Recreate 降级（禁止手写第二套迁移造成双 Transfer）；此处只做可观测核验：
+    /// Transfer 成功保住的同一 <see cref="Subscription"/> 对象随迁到新会话（保持激活，
+    /// 监控项 Handle/通知委托不变）；否则释放引用，交由既有订阅协调路径
+    /// （<see cref="EnsureSubscriptionAsync"/>，幂等）重建。须在 <c>_gate</c> 内调用。
+    /// </summary>
+    private void RealignSubscription(Session newSession)
+    {
+        var subscription = _subscription;
+        if (subscription is null)
+            return;
+
+        // 原订阅对象已随 Transfer 迁到新会话：保持激活即可
+        if (ReferenceEquals(subscription.Session, newSession) || newSession.Subscriptions.Contains(subscription))
+        {
+            var monitoredCount = Enumerable.Count(subscription.MonitoredItems);
+            _logger.LogInformation("OPC UA 会话重建后订阅已随 Transfer 迁移（{Count} 监控项）",
+                monitoredCount);
+            return;
+        }
+
+        // SDK 迁移未保住原订阅对象（如服务端不支持 Transfer → SDK 内部 Recreate 重建了新对象，
+        // Handle/通知接续不可靠）：不复用内部重建对象，释放并交还订阅协调器重建（D4/D7）。
+        _logger.LogWarning("OPC UA 会话重建后订阅未随 Transfer 迁移，将交由订阅协调器重建");
+        _subscription = null;
+        _subscriptionSignature = null;
+        foreach (var item in subscription.MonitoredItems)
+            item.Notification -= OnMonitoredItemNotification;
+        try { subscription.DeleteAsync(false, CancellationToken.None).GetAwaiter().GetResult(); } catch { }
+        subscription.Dispose();
+    }
+
+    /// <summary>
+    /// ADR-072 D5：失败读/链路探测在自愈重连窗口内不置 <see cref="DriverState.Faulted"/>
+    /// （保持 <c>Connected</c>，避免上层 ReliableProtocolDriver 整轮重建与自愈在同断点"双车抢道"）；
+    /// 自愈结束（回调触发或取消）后再次失败才复位，把后续交给既有重试管线。
+    /// </summary>
+    internal void EnterFaultedIfNotSelfHealing()
+    {
+        if (Volatile.Read(ref _reconnectActive) == 0)
+            State = DriverState.Faulted;
+    }
+
+    /// <summary>测试探针：是否处于自愈重连窗口（csproj InternalsVisibleTo 暴露给测试）。</summary>
+    internal bool IsReconnectActiveForTesting => Volatile.Read(ref _reconnectActive) != 0;
+
+    /// <summary>测试探针：置位/复位自愈防重入位（供无 SDK 会话的单测驱动 D3/D5 分支）。</summary>
+    internal void SetReconnectActiveForTesting(bool active) =>
+        Interlocked.Exchange(ref _reconnectActive, active ? 1 : 0);
 
     private void OnMonitoredItemNotification(MonitoredItem item, MonitoredItemNotificationEventArgs args)
     {
@@ -661,9 +964,52 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         $"{publishingIntervalMs}|{string.Join(';', points.OrderBy(p => p.Id).Select(p => $"{p.Id}:{p.Address}:{p.ScanIntervalMs}"))}";
 
     /// <summary>
+    /// ADR-073 D2/D3：GetEndpoints 拉取端点并按显式档位（策略/模式）手工选择。
+    /// 命中返回 (Endpoint, null)；无匹配返回 (null, 错误消息，含可用端点清单)；发现/握手异常
+    /// 原样抛出，由 <see cref="ConnectAsync"/> 统一映射（服务器不可达 → Timeout，服务级拒绝 → Communication）。
+    /// </summary>
+    private async Task<(EndpointDescription? Endpoint, string? Error)> DiscoverAndSelectEndpointAsync(
+        ApplicationConfiguration config, OpcUaSecurityRequirement requirement, CancellationToken ct)
+    {
+        EndpointDescriptionCollection endpoints;
+        var uri = new Uri(_connection.Endpoint);
+        using (var discovery = await DiscoveryClient.CreateAsync(config, uri, DiagnosticsMasks.None, ct))
+        {
+            // SDK 的 GetEndpointsAsync 内部已按连接地址重写端点 URL（PatchEndpointUrls 为 SDK 私有，
+            // 在服务调用内自动执行），返回的端点可直接用于建连。
+            endpoints = await discovery.GetEndpointsAsync(profileUris: null, ct);
+        }
+
+        if (endpoints is null || endpoints.Count == 0)
+            return (null, "OPC UA 端点发现未返回任何端点（GetEndpoints 结果为空）。");
+
+        var selection = OpcUaSecurityParameters.SelectEndpoint(endpoints, requirement);
+        if (selection.Endpoint is null)
+        {
+            _logger.LogWarning("OPC UA 无匹配端点: {Endpoint}\n{Error}", _connection.Endpoint, selection.Error);
+            return (null, selection.Error);
+        }
+
+        _logger.LogDebug(
+            "OPC UA 选中端点: {Url} 策略={Policy} 模式={Mode} 安全级别={Level}",
+            selection.Endpoint.EndpointUrl,
+            OpcUaSecurityParameters.PolicyDisplayName(selection.Endpoint.SecurityPolicyUri),
+            selection.Endpoint.SecurityMode,
+            selection.Endpoint.SecurityLevel);
+        return (selection.Endpoint, null);
+    }
+
+    /// <summary>ADR-073 D4：按解析出的凭据构建用户身份；无凭据 → 匿名。</summary>
+    private static UserIdentity BuildUserIdentity(OpcUaSecurityRequirement requirement) =>
+        requirement.HasCredentials
+            ? new UserIdentity(requirement.UserName!, Encoding.UTF8.GetBytes(requirement.Password!))
+            : new UserIdentity();
+
+    /// <summary>
     /// 构建客户端 ApplicationConfiguration。
-    /// PKI 目录相对路径（opcua/pki/...）相对进程工作目录；内网演示用目录存储 + 自动接受，
-    /// 生产应改为 Windows 证书库 + 信任白名单。
+    /// PKI 目录相对路径（opcua/pki/...）相对进程工作目录；信任状态以 pki 目录为唯一权威
+    /// （ADR-073 D6/D8）：服务端证书只信任 opcua/pki/trusted 白名单内的项，未信任证书被拒绝
+    /// （BadCertificateUntrusted）并落入 opcua/pki/rejected，由证书管理 API 移入 trusted 后重试。
     /// </summary>
     private ApplicationConfiguration BuildConfiguration(int requestTimeout)
     {
@@ -697,7 +1043,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                     StoreType = CertificateStoreType.Directory,
                     StorePath = "opcua/pki/rejected"
                 },
-                AutoAcceptUntrustedCertificates = true,
+                AutoAcceptUntrustedCertificates = false,
                 AddAppCertToTrustedStore = true,
                 MinimumCertificateKeySize = 2048
             },
@@ -728,7 +1074,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
             var response = await _session!.ReadAsync(null, 0, TimestampsToReturn.Neither, nodes, ct);
             if (response.Results.Count > 0 && StatusCode.IsGood(response.Results[0].StatusCode))
                 return Array.Empty<RawPointValue>();
-            State = DriverState.Faulted;
+            EnterFaultedIfNotSelfHealing();
             return OperationalError.Timeout("链路探测失败：ServerStatus 不可读");
         }
         catch (OperationCanceledException)
@@ -737,7 +1083,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
         catch (Exception ex)
         {
-            State = DriverState.Faulted;
+            EnterFaultedIfNotSelfHealing();
             return OperationalError.Timeout($"链路探测失败: {ex.Message}");
         }
     }

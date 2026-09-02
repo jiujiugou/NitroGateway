@@ -104,6 +104,44 @@
         <el-form-item label="Ping 地址"><el-input v-model="s7.pingAddress" placeholder="DB1.DBW0" /></el-form-item>
       </div>
 
+      <!-- ADR-073 层4：OPC UA 安全参数（SecurityPolicy/SecurityMode/UserName/Password）。
+           None 需显式选择；策略/模式留空=未声明（键不落库，后端按安全优先默认）。
+           编辑态密码框留空=不修改（响应 hasPassword 指示是否已设；密文永不回填）。 -->
+      <div v-if="f.protocol.name === 'OPC UA'" class="ua-security">
+        <div class="ua-security-title">OPC UA 安全（ADR-073 层4）</div>
+        <div class="form-row">
+          <el-form-item label="安全策略">
+            <el-select v-model="uaSec.securityPolicy" style="width:100%" clearable placeholder="自动（默认安全优先）">
+              <el-option label="None（无加密，仅显式声明才允许连接）" value="None" />
+              <el-option label="Basic128Rsa15" value="Basic128Rsa15" />
+              <el-option label="Basic256" value="Basic256" />
+              <el-option label="Basic256Sha256（推荐）" value="Basic256Sha256" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="安全模式">
+            <el-select v-model="uaSec.securityMode" style="width:100%" clearable placeholder="自动">
+              <el-option label="None（无签名/加密）" value="None" />
+              <el-option label="Sign（仅签名）" value="Sign" />
+              <el-option label="SignAndEncrypt（签名+加密，推荐）" value="SignAndEncrypt" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <div class="form-row">
+          <el-form-item label="用户名">
+            <el-input v-model="uaSec.userName" placeholder="服务器用户名（匿名请留空）" autocomplete="off" />
+          </el-form-item>
+          <el-form-item label="密码">
+            <el-input
+              v-model="uaSec.password"
+              type="password"
+              show-password
+              autocomplete="new-password"
+              :placeholder="hasPassword ? '已设密码，留空=不修改' : '服务器密码'"
+            />
+          </el-form-item>
+        </div>
+      </div>
+
       <el-form-item label="描述"><el-input v-model="f.description" type="textarea" rows="2" /></el-form-item>
       <div style="display:flex;gap:12px;margin-top:8px">
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
@@ -154,6 +192,10 @@ const s7CpuTypes = [
   { value: 'S-400', label: 'S7-400（Rack 0 / Slot 2）' }
 ]
 const s7 = ref({ rack: 0, slot: 1, cpuType: 'S-1200', pingAddress: 'DB1.DBW0' })
+// ADR-073 层4：OPC UA 安全参数（对应后端 OpcUaSecurityParameters 键 SecurityPolicy/SecurityMode/UserName/Password）。
+// 空串 = 未声明（键不落库，后端默认安全优先）；hasPassword 由响应回填（密文永不回填），编辑态密码留空 = 不修改。
+const uaSec = ref({ securityPolicy: '', securityMode: '', userName: '', password: '' })
+const hasPassword = ref(false)
 const isRtu = computed(() => f.value.protocol.name === 'Modbus' && f.value.protocol.dialect === 'RTU')
 // 连接地址占位按协议区分：S7 默认 102 端口，OPC UA 走 opc.tcp:// 端点（12-OPC-UA接入设计.md S6）
 const endpointPlaceholder = computed(() =>
@@ -171,6 +213,11 @@ function syncParams() {
     delete p.Slot
     delete p.CpuType
     delete p.PingAddress
+    // 离开 OPC UA 时清掉层4 安全键，避免凭据残留进 Modbus 设备（12-OPC-UA接入设计.md S6）
+    delete p.SecurityPolicy
+    delete p.SecurityMode
+    delete p.UserName
+    delete p.Password
   } else if (f.value.protocol.name === 'S7') {
     // ADR-024 P3-1：S7 必须落库 Rack/Slot/CpuType/PingAddress，否则后端只能用默认值（S7-300/400 必连不上）
     delete p.DataFormat
@@ -179,14 +226,28 @@ function syncParams() {
     p.Slot = s7.value.slot
     p.CpuType = s7.value.cpuType
     p.PingAddress = s7.value.pingAddress
+    // 离开 OPC UA 时清掉层4 安全键，避免凭据残留进 S7 设备
+    delete p.SecurityPolicy
+    delete p.SecurityMode
+    delete p.UserName
+    delete p.Password
   } else {
-    // OPC UA 无协议特有参数：清掉切换协议时残留的 Modbus/S7 参数，避免 Rack/Slot 等污染连接（12-OPC-UA接入设计.md S6）
+    // OPC UA（12-OPC-UA接入设计.md S6）：清掉切换协议时残留的 Modbus/S7 参数，避免 Rack/Slot 等污染连接；
+    // 再同步层4 安全参数（ADR-073 D1）。安全策略/模式/用户名空串 → 删键（未声明）；密码空串 → 删键（编辑态"留空=不改"，由后端 PreserveExistingCredentialOnEdit 保留既有）
     delete p.DataFormat
     delete p.UnitId
     delete p.Rack
     delete p.Slot
     delete p.CpuType
     delete p.PingAddress
+    if (uaSec.value.securityPolicy) p.SecurityPolicy = uaSec.value.securityPolicy
+    else delete p.SecurityPolicy
+    if (uaSec.value.securityMode) p.SecurityMode = uaSec.value.securityMode
+    else delete p.SecurityMode
+    if (uaSec.value.userName) p.UserName = uaSec.value.userName
+    else delete p.UserName
+    if (uaSec.value.password) p.Password = uaSec.value.password
+    else delete p.Password
   }
   if (isRtu.value) {
     p.Transport = 'RTU'
@@ -225,6 +286,16 @@ function loadS7FromParams() {
   }
 }
 
+function loadUaFromParams() {
+  const p = f.value.connection.parameters ?? {}
+  uaSec.value = {
+    securityPolicy: String(p.SecurityPolicy || ''),
+    securityMode: String(p.SecurityMode || ''),
+    userName: String(p.UserName || ''),
+    password: '' // 密文永不回填；编辑态留空 = 不修改（后端合并既有凭据）
+  }
+}
+
 function onProtocolChange() {
   const ep = f.value.connection.endpoint
   if (f.value.protocol.name === 'Modbus') {
@@ -259,6 +330,10 @@ onMounted(async () => {
       loadSerialFromParams()
       // OPC UA 无 Rack/Slot 参数，S7 参数仅在 S7 协议下回填（12-OPC-UA接入设计.md S6）
       if (f.value.protocol.name === 'S7') loadS7FromParams()
+      if (f.value.protocol.name === 'OPC UA') {
+        hasPassword.value = !!(d as any).connection?.hasPassword
+        loadUaFromParams()
+      }
     }
   }
 })
@@ -301,6 +376,8 @@ async function testConn() {
 .test-result { padding:10px 14px; border-radius:6px; font-size:13px; }
 .test-ok { background:#f0fdf4; border:1px solid #86efac; color:#166534; }
 .test-fail { background:#fef2f2; border:1px solid #fca5a5; color:#991b1b; }
+.ua-security { margin-bottom:18px; padding:14px 16px 4px; border:1px dashed var(--border); border-radius:8px; }
+.ua-security-title { font-size:13px; font-weight:600; color:#4a5568; margin-bottom:12px; }
 </style>
 
 
