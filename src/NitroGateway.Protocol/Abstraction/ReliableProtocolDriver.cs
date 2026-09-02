@@ -27,7 +27,7 @@ namespace NitroGateway.Protocol.Abstractions
     /// 写入操作（Write / WriteBatch）和单点读取（ReadAsync）透传到内层，不经过 Polly。
     /// </para>
     /// </remarks>
-    internal class ReliableProtocolDriver : IProtocolDriver, IBrowseableDriver
+    internal class ReliableProtocolDriver : IProtocolDriver, IBrowseableDriver, ISubscriptionSource
     {
         /// <summary>默认最大重试次数；生产由 DeviceConnection.RetryCount 注入（ADR-030 P1）</summary>
         private const int DefaultMaxRetryAttempts = 3;
@@ -96,6 +96,50 @@ namespace NitroGateway.Protocol.Abstractions
 
         /// <inheritdoc />
         public DriverCapability Capability => _inner.Capability;
+
+        /// <inheritdoc />
+        public event Func<IReadOnlyList<RawPointValue>, Task>? ValuesReceived
+        {
+            add
+            {
+                if (_inner is ISubscriptionSource source)
+                    source.ValuesReceived += value;
+            }
+            remove
+            {
+                if (_inner is ISubscriptionSource source)
+                    source.ValuesReceived -= value;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool IsSubscriptionActive =>
+            _inner is ISubscriptionSource source && source.IsSubscriptionActive;
+
+        /// <inheritdoc />
+        public async Task<OperationResult> EnsureSubscriptionAsync(
+            IReadOnlyList<DevicePoint> points,
+            int publishingIntervalMs,
+            CancellationToken ct = default)
+        {
+            if (_inner is not ISubscriptionSource source)
+                return OperationalError.Protocol("协议不支持订阅采集");
+
+            if (_inner.State != DriverState.Connected)
+            {
+                var connect = await _inner.ConnectAsync(ct);
+                if (connect.IsFailure)
+                    return connect;
+            }
+
+            return await source.EnsureSubscriptionAsync(points, publishingIntervalMs, ct);
+        }
+
+        /// <inheritdoc />
+        public Task<OperationResult> StopSubscriptionAsync(CancellationToken ct = default)
+            => _inner is ISubscriptionSource source
+                ? source.StopSubscriptionAsync(ct)
+                : Task.FromResult<OperationResult>(OperationalError.Protocol("协议不支持订阅采集"));
 
         /// <summary>透传到内层驱动</summary>
         public Task<OperationResult> ConnectAsync(CancellationToken ct = default)

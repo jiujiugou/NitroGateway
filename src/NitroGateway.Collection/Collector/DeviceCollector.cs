@@ -23,6 +23,7 @@ internal sealed class DeviceCollector : IDeviceCollector
     private readonly IHealthReporter _reporter;
     private readonly ICircuitBreakerRegistry _circuitBreakerRegistry;
     private readonly IDeviceHealthMonitor _healthMonitor;
+    private readonly ISubscriptionCoordinator? _subscriptionCoordinator;
     private readonly ILogger<DeviceCollector> _logger;
     /// <summary>单轮并发限流信号量，上限由构造参数 <c>maxConcurrency</c> 决定，默认 5。</summary>
     private readonly SemaphoreSlim _concurrencyGate;
@@ -46,7 +47,8 @@ internal sealed class DeviceCollector : IDeviceCollector
         ICircuitBreakerRegistry circuitBreakerRegistry,
         IDeviceHealthMonitor healthMonitor,
         ILogger<DeviceCollector> logger,
-        int maxConcurrency = 5)
+        int maxConcurrency = 5,
+        ISubscriptionCoordinator? subscriptionCoordinator = null)
     {
         _deviceManager = deviceManager;
         _reader = reader;
@@ -55,6 +57,7 @@ internal sealed class DeviceCollector : IDeviceCollector
         _reporter = reporter;
         _circuitBreakerRegistry = circuitBreakerRegistry;
         _healthMonitor = healthMonitor;
+        _subscriptionCoordinator = subscriptionCoordinator;
         _logger = logger;
         _concurrencyGate = new SemaphoreSlim(maxConcurrency);
     }
@@ -73,7 +76,12 @@ internal sealed class DeviceCollector : IDeviceCollector
         // ADR-016 P2-1：1s 热路径只打 Debug，避免每设备每轮 6+ 行 Info 刷屏
         _logger.LogDebug("开始采集设备 {Device}", device.Name);
 
-        // ── 0. 点位级采样间隔调度（ADR-062）：先于熔断检查——
+        // ── 0. OPC UA Subscription（ADR-071）：活跃时由通知驱动共享管道，跳过轮询。
+        //    订阅不可用/启动失败时协调器返回 false，本轮保持原轮询行为。
+        if (_subscriptionCoordinator is not null && await _subscriptionCoordinator.TryActivateAsync(device, ct))
+            return;
+
+        // ── 1. 点位级采样间隔调度（ADR-062）：先于熔断检查——
         //    全部 enabled 点未到 ScanIntervalMs → 跳过本轮：不调驱动、不触发熔断
         //    （TryEnterProbe/RecordSuccess/RecordFailure 全不碰）、不更新健康快照
         //    （保持上次状态，既不误报在线也不误判离线）。

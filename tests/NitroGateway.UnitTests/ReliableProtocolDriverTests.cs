@@ -147,6 +147,112 @@ public class ReliableProtocolDriverTests
         var node = Assert.Single(r.Value!);
         Assert.Equal("Int32Var", node.Name);
     }
+
+    // ── ADR-071：订阅（ISubscriptionSource）经装饰器透传 ──
+
+    private static ReliableProtocolDriver CreateDriver(IProtocolDriver inner) => new(
+        inner,
+        NullLogger<ReliableProtocolDriver>.Instance,
+        requestTimeout: TimeSpan.FromSeconds(5),
+        maxRetryAttempts: 0);
+
+    /// <summary>内层支持订阅 → 点位与发布间隔透传，返回内层成功结果。</summary>
+    [Fact]
+    public async Task EnsureSubscriptionAsync_InnerSupportsSubscription_ForwardsPointsAndInterval()
+    {
+        var inner = new FakeSubscriptionInner { IsSubscriptionActive = true };
+        var driver = CreateDriver(inner);
+        var point = new DevicePoint
+        {
+            Id = Guid.NewGuid(),
+            Name = "T",
+            Address = "ns=2;i=1001",
+            DataType = DataType.Float
+        };
+
+        var r = await driver.EnsureSubscriptionAsync([point], 500);
+
+        Assert.True(r.IsSuccess, r.Error?.Message);
+        Assert.Equal(1, inner.EnsureCallCount);
+        Assert.Equal(point, Assert.Single(inner.LastEnsurePoints!));
+        Assert.Equal(500, inner.LastPublishingIntervalMs);
+    }
+
+    /// <summary>内层不支持订阅（非 ISubscriptionSource，如 Modbus/S7）→ 返回 ProtocolError，不抛异常。</summary>
+    [Fact]
+    public async Task EnsureSubscriptionAsync_InnerNotSubscriptionSource_ReturnsProtocolError()
+    {
+        var driver = CreateDriver(new FakeInner());
+
+        var r = await driver.EnsureSubscriptionAsync([], 500);
+
+        Assert.True(r.IsFailure);
+        Assert.Equal("ProtocolError", r.Error!.Code);
+        Assert.Contains("不支持订阅采集", r.Error.Message);
+    }
+
+    /// <summary>内层未连接 → Ensure 前自动建连（与 ReadBatchAsync 自动建连语义一致）。</summary>
+    [Fact]
+    public async Task EnsureSubscriptionAsync_InnerDisconnected_AutoConnectsBeforeEnsure()
+    {
+        var inner = new FakeSubscriptionInner { State = DriverState.Disconnected };
+        var driver = CreateDriver(inner);
+
+        var r = await driver.EnsureSubscriptionAsync([], 500);
+
+        Assert.True(r.IsSuccess, r.Error?.Message);
+        Assert.Equal(1, inner.ConnectCallCount);
+        Assert.Equal(1, inner.EnsureCallCount);
+    }
+
+    /// <summary>ValuesReceived 事件 add/remove 透传至内层订阅源。</summary>
+    [Fact]
+    public void ValuesReceived_AddRemove_ForwardsToInner()
+    {
+        var inner = new FakeSubscriptionInner();
+        var driver = CreateDriver(inner);
+        Func<IReadOnlyList<RawPointValue>, Task> handler = _ => Task.CompletedTask;
+
+        driver.ValuesReceived += handler;
+        Assert.Equal(1, inner.HandlerCount);
+
+        driver.ValuesReceived -= handler;
+        Assert.Equal(0, inner.HandlerCount);
+    }
+
+    /// <summary>IsSubscriptionActive 透传内层激活状态。</summary>
+    [Fact]
+    public void IsSubscriptionActive_TransparentToInner()
+    {
+        var inner = new FakeSubscriptionInner { IsSubscriptionActive = true };
+        var driver = CreateDriver(inner);
+        Assert.True(driver.IsSubscriptionActive);
+    }
+
+    /// <summary>内层不支持订阅 → StopSubscriptionAsync 返回 ProtocolError。</summary>
+    [Fact]
+    public async Task StopSubscriptionAsync_InnerNotSubscriptionSource_ReturnsProtocolError()
+    {
+        var driver = CreateDriver(new FakeInner());
+
+        var r = await driver.StopSubscriptionAsync();
+
+        Assert.True(r.IsFailure);
+        Assert.Equal("ProtocolError", r.Error!.Code);
+    }
+
+    /// <summary>内层支持订阅 → Stop 透传至内层。</summary>
+    [Fact]
+    public async Task StopSubscriptionAsync_InnerSupportsSubscription_ForwardsToInner()
+    {
+        var inner = new FakeSubscriptionInner();
+        var driver = CreateDriver(inner);
+
+        var r = await driver.StopSubscriptionAsync();
+
+        Assert.True(r.IsSuccess, r.Error?.Message);
+        Assert.Equal(1, inner.StopCallCount);
+    }
 }
 
 /// <summary>支持浏览的内层驱动（ADR-070 装饰器转发测试用）</summary>
@@ -184,4 +290,61 @@ internal sealed class FakeBrowseInner : IProtocolDriver, IBrowseableDriver
             }
         }));
     }
+}
+
+/// <summary>支持订阅的内层驱动（ADR-071 装饰器透传测试用）。</summary>
+internal sealed class FakeSubscriptionInner : IProtocolDriver, ISubscriptionSource
+{
+    public DriverState State { get; set; } = DriverState.Connected;
+    public DriverCapability Capability { get; init; } = new() { SupportsSubscription = true };
+    public bool IsSubscriptionActive { get; set; }
+    public int ConnectCallCount { get; private set; }
+    public int EnsureCallCount { get; private set; }
+    public IReadOnlyList<DevicePoint>? LastEnsurePoints { get; private set; }
+    public int? LastPublishingIntervalMs { get; private set; }
+    public int StopCallCount { get; private set; }
+    public int HandlerCount => ValuesReceived?.GetInvocationList().Length ?? 0;
+
+    public event Func<IReadOnlyList<RawPointValue>, Task>? ValuesReceived;
+
+    public Task<OperationResult> EnsureSubscriptionAsync(
+        IReadOnlyList<DevicePoint> points, int publishingIntervalMs, CancellationToken ct = default)
+    {
+        EnsureCallCount++;
+        LastEnsurePoints = points;
+        LastPublishingIntervalMs = publishingIntervalMs;
+        return Task.FromResult(OperationResult.Success());
+    }
+
+    public Task<OperationResult> StopSubscriptionAsync(CancellationToken ct = default)
+    {
+        StopCallCount++;
+        return Task.FromResult(OperationResult.Success());
+    }
+
+    public Task<OperationResult> ConnectAsync(CancellationToken ct = default)
+    {
+        ConnectCallCount++;
+        State = DriverState.Connected;
+        return Task.FromResult(OperationResult.Success());
+    }
+
+    public Task<OperationResult> DisconnectAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult> PingAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult<RawPointValue>> ReadAsync(DevicePoint point, CancellationToken ct = default)
+        => Task.FromResult(OperationResult<RawPointValue>.Success(new RawPointValue
+        {
+            Point = point,
+            Value = 1,
+            Timestamp = DateTime.UtcNow
+        }));
+    public Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadBatchAsync(
+        IEnumerable<DevicePoint> points, CancellationToken ct = default)
+        => Task.FromResult<OperationResult<IReadOnlyList<RawPointValue>>>(Array.Empty<RawPointValue>());
+    public Task<OperationResult> WriteAsync(DevicePoint point, object value, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+    public Task<OperationResult> WriteBatchAsync(
+        IEnumerable<KeyValuePair<DevicePoint, object>> entries, CancellationToken ct = default)
+        => Task.FromResult(OperationResult.Success());
+    public void Dispose() { }
 }

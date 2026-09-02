@@ -18,8 +18,7 @@ namespace NitroGateway.Protocols.OpcUa;
 /// <summary>
 /// OPC UA 协议驱动（采集侧 Client），基于 OPC Foundation .NET Standard SDK 1.5.378.156。
 /// 生命周期：<c>ConnectAsync</c>（选端点 + 建 Session）→ Read/Write → <c>DisconnectAsync</c>。
-/// v1 轮询模式；Subscription 仍为能力预留（<see cref="OpcUaDriverCapability"/> 的
-/// <c>SupportsSubscription=true</c>，采集引擎仍走轮询，v2 再评估）；Browse
+/// 同时支持轮询与 Subscription；订阅通知仅作为原始值来源，仍复用 Collection 既有管道。Browse
 /// （<see cref="IBrowseableDriver"/>，ADR-070）已实现，供配置工具/前端选点，采集引擎不调。
 /// </summary>
 /// <remarks>
@@ -34,7 +33,7 @@ namespace NitroGateway.Protocols.OpcUa;
 /// 服务端证书一律自动接受（<c>AutoAcceptUntrustedCertificates=true</c> + 校验回调 Accept），
 /// 适合内网演示；现场生产应改为信任库白名单校验。</para>
 /// </remarks>
-public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, IDisposable
+public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscriptionSource, IDisposable
 {
     /// <summary>应用证书 SubjectName；首次连接自动生成到 opcua/pki/own 目录存储</summary>
     private const string AppSubjectName = "CN=NitroGateway, DC=localhost";
@@ -46,6 +45,8 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, IDisposabl
 
     /// <summary>当前会话；null 表示未连接。会话非线程安全，全部通信经 <see cref="_gate"/> 串行化</summary>
     private Session? _session;
+    private Subscription? _subscription;
+    private string? _subscriptionSignature;
 
     /// <summary>是否已就绪应用证书；false 时仅选择 None 安全策略端点（匿名身份无需客户端证书）</summary>
     private bool _hasAppCertificate;
@@ -55,6 +56,12 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, IDisposabl
 
     /// <inheritdoc />
     public DriverCapability Capability => OpcUaDriverCapability.Instance;
+
+    /// <inheritdoc />
+    public event Func<IReadOnlyList<RawPointValue>, Task>? ValuesReceived;
+
+    /// <inheritdoc />
+    public bool IsSubscriptionActive => _subscription is not null;
 
     /// <summary>创建 OPC UA 驱动。由 <see cref="OpcUaRegistration"/> 注册到复合工厂（ILogger 非泛型，匹配工厂 CreateLogger(protocol.Name)）</summary>
     public OpcUaDriver(DeviceConnection connection, ILogger logger)
@@ -168,6 +175,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, IDisposabl
         await _gate.WaitAsync(ct);
         try
         {
+            await DeleteSubscriptionAsync(ct);
             var session = _session;
             _session = null;
             if (session is not null)
@@ -178,6 +186,114 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, IDisposabl
             }
             State = DriverState.Disconnected;
             return OperationResult.Success();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationResult> EnsureSubscriptionAsync(
+        IReadOnlyList<DevicePoint> points,
+        int publishingIntervalMs,
+        CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_session is null || State != DriverState.Connected)
+                return OperationalError.Unavailable("OPC UA 未连接，无法创建订阅");
+            if (points.Count == 0)
+                return OperationalError.Validation("OPC UA 订阅至少需要一个启用点位");
+
+            var interval = Math.Max(1, publishingIntervalMs);
+            var signature = BuildSubscriptionSignature(points, interval);
+            if (_subscription is not null && _subscriptionSignature == signature)
+                return OperationResult.Success();
+
+            await DeleteSubscriptionAsync(ct);
+            try
+            {
+                // 预解析所有点位的地址，非法地址直接失败，避免产生半成品订阅泄漏到 Session
+                var parsed = new List<(DevicePoint Point, OpcUaAddress Address)>(points.Count);
+                foreach (var point in points)
+                {
+                    if (_addressParser.Parse(point.Address) is not OpcUaAddress address)
+                        return OperationalError.Validation($"OPC UA 订阅点位地址格式不合法: {point.Address}");
+                    parsed.Add((point, address));
+                }
+
+                // SDK 1.5.378 起 Session.CreateSubscription 被移除：改用
+                // new Subscription(TelemetryContext, options) + Session.AddSubscription + CreateAsync；
+                // SessionFactory 由 Session 构造函数始终初始化，Telemetry 恒非空（MonitoredItem 要求非空）。
+                var telemetry = _session.SessionFactory.Telemetry;
+                var subscription = new Subscription(telemetry, new SubscriptionOptions
+                {
+                    DisplayName = "NitroGateway.Collection",
+                    PublishingInterval = interval,
+                    KeepAliveCount = 10,
+                    LifetimeCount = 30,
+                    MaxNotificationsPerPublish = 0
+                });
+                _session.AddSubscription(subscription);
+
+                foreach (var (point, address) in parsed)
+                {
+                    var item = new MonitoredItem(telemetry, new MonitoredItemOptions
+                    {
+                        DisplayName = point.Name,
+                        StartNodeId = ToNodeId(address),
+                        AttributeId = Attributes.Value,
+                        SamplingInterval = point.ScanIntervalMs > 0 ? point.ScanIntervalMs : interval,
+                        QueueSize = 1,
+                        DiscardOldest = true
+                    });
+                    item.Handle = point;
+                    item.Notification += OnMonitoredItemNotification;
+                    subscription.AddItem(item);
+                }
+
+                _subscription = subscription;
+                await subscription.CreateAsync(ct);
+                _subscriptionSignature = signature;
+                _logger.LogInformation("OPC UA 订阅已创建：{PointCount} 点，发布间隔 {IntervalMs}ms",
+                    points.Count, interval);
+                return OperationResult.Success();
+            }
+            catch (OperationCanceledException)
+            {
+                await DeleteSubscriptionAsync(CancellationToken.None);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await DeleteSubscriptionAsync(CancellationToken.None);
+                return OperationalError.Protocol($"OPC UA 创建订阅失败: {ex.Message}");
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationResult> StopSubscriptionAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await DeleteSubscriptionAsync(ct);
+            return OperationResult.Success();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return OperationalError.Protocol($"OPC UA 停止订阅失败: {ex.Message}");
         }
         finally
         {
@@ -489,10 +605,60 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, IDisposabl
     /// <inheritdoc />
     public void Dispose()
     {
+        try { DeleteSubscriptionAsync(CancellationToken.None).GetAwaiter().GetResult(); } catch { }
         try { _session?.CloseSession(null, true); } catch { }
         _session?.Dispose();
         _gate.Dispose();
     }
+
+    private async Task DeleteSubscriptionAsync(CancellationToken ct)
+    {
+        var subscription = _subscription;
+        _subscription = null;
+        _subscriptionSignature = null;
+        if (subscription is null)
+            return;
+
+        foreach (var item in subscription.MonitoredItems)
+            item.Notification -= OnMonitoredItemNotification;
+        try { await subscription.DeleteAsync(true, ct); } catch { }
+        subscription.Dispose();
+    }
+
+    private void OnMonitoredItemNotification(MonitoredItem item, MonitoredItemNotificationEventArgs args)
+    {
+        if (item.Handle is not DevicePoint point || args.NotificationValue is not DataValue value)
+            return;
+        if (!StatusCode.IsGood(value.StatusCode))
+        {
+            _logger.LogDebug("OPC UA 订阅点 {Point} 收到非 Good 状态 {StatusCode}，已跳过",
+                point.Name, value.StatusCode);
+            return;
+        }
+
+        var raw = new RawPointValue
+        {
+            Point = point,
+            Value = VariantToValue(value.WrappedValue),
+            Timestamp = value.SourceTimestamp == DateTime.MinValue ? DateTime.UtcNow : value.SourceTimestamp
+        };
+        _ = PublishValuesAsync([raw]);
+    }
+
+    private async Task PublishValuesAsync(IReadOnlyList<RawPointValue> values)
+    {
+        var handlers = ValuesReceived;
+        if (handlers is null)
+            return;
+        foreach (Func<IReadOnlyList<RawPointValue>, Task> handler in handlers.GetInvocationList())
+        {
+            try { await handler(values); }
+            catch (Exception ex) { _logger.LogError(ex, "OPC UA 订阅值交付到采集管道失败"); }
+        }
+    }
+
+    private static string BuildSubscriptionSignature(IReadOnlyList<DevicePoint> points, int publishingIntervalMs) =>
+        $"{publishingIntervalMs}|{string.Join(';', points.OrderBy(p => p.Id).Select(p => $"{p.Id}:{p.Address}:{p.ScanIntervalMs}"))}";
 
     /// <summary>
     /// 构建客户端 ApplicationConfiguration。

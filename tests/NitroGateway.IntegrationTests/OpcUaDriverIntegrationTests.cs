@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -184,6 +185,167 @@ public sealed class OpcUaDriverIntegrationTests
         }
     }
 
+    // ── ADR-071：OPC UA Subscription / MonitoredItem 推送采集 ──
+
+    /// <summary>AC-2：按 enabled 点位创建订阅，首次收到各点位初始值（服务端当前值推送）。</summary>
+    [Fact]
+    public async Task Subscription_Create_ReceivesInitialValues()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+
+        var intPoint = Point("Int1", "ns=2;i=1001", DataType.Int32);
+        var floatPoint = Point("Float1", "ns=2;i=1002", DataType.Float);
+        var received = new ConcurrentQueue<RawPointValue>();
+        var gotBatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        driver.ValuesReceived += values =>
+        {
+            foreach (var v in values) received.Enqueue(v);
+            gotBatch.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        try
+        {
+            var ensure = await driver.EnsureSubscriptionAsync([intPoint, floatPoint], 100);
+            Assert.True(ensure.IsSuccess, ensure.Error?.Message);
+            Assert.True(driver.IsSubscriptionActive);
+
+            await gotBatch.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Contains(received, v => v.Point.Id == intPoint.Id && v.Value!.Equals(42));
+            Assert.Contains(received, v => v.Point.Id == floatPoint.Id && (double)v.Value! == 3.14);
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
+    }
+
+    /// <summary>AC-2：服务端改值（经订阅发布周期）→ 客户端收到变更通知（Good 转 RawPointValue）。</summary>
+    [Fact]
+    public async Task Subscription_ServerValueChange_ReceivesNotification()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+
+        var intPoint = Point("Int1", "ns=2;i=1001", DataType.Int32);
+        var got777 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        driver.ValuesReceived += values =>
+        {
+            foreach (var v in values)
+            {
+                if (v.Point.Id == intPoint.Id && v.Value!.Equals(777))
+                    got777.TrySetResult();
+            }
+            return Task.CompletedTask;
+        };
+
+        try
+        {
+            Assert.True((await driver.EnsureSubscriptionAsync([intPoint], 100)).IsSuccess);
+
+            // 服务端直接改值 + ClearChangeMasks（GitHub OPCFoundation#1809：不调则订阅客户端收不到通知）
+            scope.SetVariableValue(1001, 777);
+
+            await got777.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(driver.IsSubscriptionActive);
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
+    }
+
+    /// <summary>AC-3：服务端置 Bad → 客户端收到非 Good 通知但不产值；恢复 Good 后再次产值（证明过滤而非订阅失效）。</summary>
+    [Fact]
+    public async Task Subscription_BadStatus_DoesNotProduceValue_AndRecoversOnGood()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+
+        var intPoint = Point("Int1", "ns=2;i=1001", DataType.Int32);
+        var received = new ConcurrentQueue<RawPointValue>();
+        var gotInitial = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gotRecover = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        driver.ValuesReceived += values =>
+        {
+            foreach (var v in values)
+            {
+                received.Enqueue(v);
+                if (v.Point.Id == intPoint.Id && v.Value!.Equals(42))
+                    gotInitial.TrySetResult();
+                if (v.Point.Id == intPoint.Id && v.Value!.Equals(999))
+                    gotRecover.TrySetResult();
+            }
+            return Task.CompletedTask;
+        };
+
+        try
+        {
+            Assert.True((await driver.EnsureSubscriptionAsync([intPoint], 100)).IsSuccess);
+            await gotInitial.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var countBeforeBad = received.Count(v => v.Point.Id == intPoint.Id);
+
+            // 服务端置 Bad（模拟点位故障）：即便订阅收到非 Good 通知，驱动也不得产值
+            scope.SetVariableBad(1001);
+            await Task.Delay(800); // 越过一个发布周期
+            Assert.Equal(countBeforeBad, received.Count(v => v.Point.Id == intPoint.Id));
+
+            // 恢复 Good + 新值 → 订阅仍存活并产值（Bad 时无值是因为过滤，而非订阅失效）
+            scope.SetVariableValue(1001, 999);
+            await gotRecover.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Contains(received, v => v.Point.Id == intPoint.Id && v.Value!.Equals(999));
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
+    }
+
+    /// <summary>AC-5：重复 Ensure/Stop 幂等不抛；订阅期间读写经同一闸门仍可用；Disconnect 删除订阅。</summary>
+    [Fact]
+    public async Task Subscription_RepeatEnsureStop_Idempotent_AndDisconnectDeletes()
+    {
+        await using var scope = await SimulationServerScope.StartAsync();
+        var driver = CreateDriver(scope.Port);
+        Assert.True((await driver.ConnectAsync()).IsSuccess);
+        var point = Point("Int1", "ns=2;i=1001", DataType.Int32);
+
+        try
+        {
+            Assert.True((await driver.EnsureSubscriptionAsync([point], 100)).IsSuccess);
+            Assert.True(driver.IsSubscriptionActive);
+
+            // 同签名重复 Ensure → 幂等复用，不重建不抛
+            Assert.True((await driver.EnsureSubscriptionAsync([point], 100)).IsSuccess);
+            Assert.True(driver.IsSubscriptionActive);
+
+            // 订阅生效期间 Read/Write 继续可用（同一 _gate 串行）
+            var read = await driver.ReadAsync(point);
+            Assert.True(read.IsSuccess, read.Error?.Message);
+            var write = await driver.WriteAsync(point, 123);
+            Assert.True(write.IsSuccess, write.Error?.Message);
+
+            // Stop 幂等
+            Assert.True((await driver.StopSubscriptionAsync()).IsSuccess);
+            Assert.False(driver.IsSubscriptionActive);
+            Assert.True((await driver.StopSubscriptionAsync()).IsSuccess);
+
+            // 重新激活 → Disconnect 删除订阅并复位状态
+            Assert.True((await driver.EnsureSubscriptionAsync([point], 100)).IsSuccess);
+            Assert.True(driver.IsSubscriptionActive);
+            await driver.DisconnectAsync();
+            Assert.False(driver.IsSubscriptionActive);
+        }
+        finally
+        {
+            await driver.DisconnectAsync();
+        }
+    }
+
     // ── Helpers ──
 
     private static DevicePoint Point(string name, string address, DataType type) => new()
@@ -256,6 +418,12 @@ public sealed class OpcUaDriverIntegrationTests
             _server = null;
             await server.StopAsync(CancellationToken.None);
         }
+
+        /// <summary>服务端直接改变量值并触发订阅通知（ADR-071 订阅集成测试用）。</summary>
+        public void SetVariableValue(uint id, object value) => _server?.NodeManager?.SetVariableValue(id, value);
+
+        /// <summary>服务端直接将变量置 Bad（模拟点位故障），ADR-071 非 Good 不产值测试用。</summary>
+        public void SetVariableBad(uint id) => _server?.NodeManager?.SetVariableBad(id);
 
         public async ValueTask DisposeAsync()
         {
@@ -338,10 +506,13 @@ public sealed class OpcUaDriverIntegrationTests
     /// <summary>仿真服务器：注入自定义 NodeManager，暴露 ns=2 下的读写模拟变量。</summary>
     private sealed class SimulationServer : StandardServer
     {
+        public SimulationNodeManager? NodeManager { get; private set; }
+
         protected override MasterNodeManager CreateMasterNodeManager(
             IServerInternal server, ApplicationConfiguration configuration)
         {
             var simulation = new SimulationNodeManager(server, configuration);
+            NodeManager = simulation;
             return new MasterNodeManager(server, configuration, null, new INodeManager[] { simulation });
         }
     }
@@ -349,6 +520,7 @@ public sealed class OpcUaDriverIntegrationTests
     private sealed class SimulationNodeManager : CustomNodeManager2
     {
         private const string NamespaceUri = "urn:test:simulation";
+        private readonly Dictionary<uint, BaseDataVariableState> _variables = [];
 
         public SimulationNodeManager(IServerInternal server, ApplicationConfiguration configuration)
             : base(server, configuration, new[] { NamespaceUri })
@@ -390,8 +562,31 @@ public sealed class OpcUaDriverIntegrationTests
                 StatusCode = StatusCodes.Good,
                 Timestamp = DateTime.UtcNow
             };
+            _variables[id] = variable;
             parent.AddChild(variable);
             nodes.Add(variable);
+        }
+
+        /// <summary>服务端直接改值并清变更掩码（模拟 PLC 更新）。GitHub OPCFoundation#1809：
+        /// 直接改节点后必须调 <see cref="NodeState.ClearChangeMasks"/>，否则订阅客户端收不到通知。</summary>
+        public void SetVariableValue(uint id, object value)
+        {
+            if (!_variables.TryGetValue(id, out var variable))
+                return;
+            variable.Value = new Variant(value);
+            variable.StatusCode = StatusCodes.Good;
+            variable.Timestamp = DateTime.UtcNow;
+            variable.ClearChangeMasks(SystemContext, false);
+        }
+
+        /// <summary>服务端直接将变量置 Bad（模拟点位故障）；订阅客户端应收到非 Good 通知而驱动不产值。</summary>
+        public void SetVariableBad(uint id)
+        {
+            if (!_variables.TryGetValue(id, out var variable))
+                return;
+            variable.StatusCode = StatusCodes.BadOutOfService;
+            variable.Timestamp = DateTime.UtcNow;
+            variable.ClearChangeMasks(SystemContext, false);
         }
     }
 }

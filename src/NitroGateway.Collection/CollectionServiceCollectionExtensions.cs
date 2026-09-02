@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NitroGateway.DeviceManagement;
 using NitroGateway.DeviceManagement.Events;
+using NitroGateway.Protocols;
 using NitroGateway.Storage.Buffer;
 
 namespace NitroGateway.Collection;
@@ -76,6 +77,16 @@ public static class CollectionServiceCollectionExtensions
         services.AddSingleton<SinkDispatcher>();
         services.AddHostedService(sp => sp.GetRequiredService<SinkDispatcher>());
         services.AddSingleton<IHealthReporter, HealthReporter>();
+        // ADR-071：订阅协调器依赖协议层驱动池（IProtocolDriverPool，由 AddNitroProtocol 注册）。
+        // 用 GetService 可选注入：未注册协议层的宿主（如部分单测）→ pool=null → 协调器恒返回
+        // false，采集保持轮询兜底，不因缺少协议层而破坏 DI 解析。
+        services.AddSingleton<ISubscriptionCoordinator>(sp => new SubscriptionCoordinator(
+            sp.GetService<IProtocolDriverPool>(),
+            sp.GetRequiredService<IPointValuePipeline>(),
+            sp.GetRequiredService<IDataDispatcher>(),
+            sp.GetRequiredService<IHealthReporter>(),
+            sp.GetRequiredService<IOptions<CollectionOption>>(),
+            sp.GetRequiredService<ILogger<SubscriptionCoordinator>>()));
         // CircuitBreaker 监听 HealthMonitor 的 Online/Offline 信号，驱动熔断器的 Trip/Reset
         services.AddSingleton<IDeviceHealthListener, CircuitBreakerHealthListener>();
         services.AddScoped<IDeviceCollector>(sp => new DeviceCollector(
@@ -88,7 +99,8 @@ public static class CollectionServiceCollectionExtensions
             sp.GetRequiredService<IDeviceHealthMonitor>(),
             sp.GetRequiredService<ILogger<DeviceCollector>>(),
             // ADR-014：单轮并发上限取自配置，不再使用默认值 5。
-            sp.GetRequiredService<IOptions<CollectionOption>>().Value.MaxConcurrency));
+            sp.GetRequiredService<IOptions<CollectionOption>>().Value.MaxConcurrency,
+            sp.GetRequiredService<ISubscriptionCoordinator>()));
         services.AddHostedService<CollectionEngine>();
         return services;
     }
