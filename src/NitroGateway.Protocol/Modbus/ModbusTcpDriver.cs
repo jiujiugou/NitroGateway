@@ -52,18 +52,16 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
 
         try
         {
-            // ADR-019 P3-6：端点解析支持带括号 IPv6（[::1]:502），不再按 ':' 裸拆
             var (ip, port) = EndpointParser.Split(_connection.Endpoint);
             _client.IpAddress = ip;
             if (port is { } p && p > 0 && p <= 65535)
                 _client.Port = p;
 
             var result = await _client.ConnectServerAsync();
-            ct.ThrowIfCancellationRequested();   // ADR-019 P3-3：连接完成后响应取消
+            ct.ThrowIfCancellationRequested();
             if (result.IsSuccess)
             {
                 State = DriverState.Connected;
-                // ADR-030 L1：连接成功降 Debug——故障设备熔断前每轮重连，INF 会刷屏；
                 // 连接失败已由 ClassifyConnectError 归类 + DeviceCollector 记 WRN，告警不丢失。
                 Logger.LogDebug("Modbus 连接成功: {Endpoint} (UnitId={UnitId}, DataFormat={DataFormat})",
                     _connection.Endpoint, _unitId, _client.DataFormat);
@@ -150,7 +148,6 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
 
     protected override async Task<OperationResult> WriteSingleValueAsync(DevicePoint point, string address, object value)
     {
-        // ADR-003 P1-2：按 DataType 全量映射 HSL 写方法，不再回退 Convert.ToSingle
         var result = point.DataType switch
         {
             DataType.Bool    => await _client.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),

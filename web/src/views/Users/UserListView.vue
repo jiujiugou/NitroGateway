@@ -1,7 +1,6 @@
 <template>
   <div>
     <h2 class="page-title">用户管理</h2>
-    <!-- ADR-066：用户 DB 化管理页（仅 Admin）——新增/改角色/启停/重置密码/删除即时生效，无需改配置重启 -->
     <div class="card" style="margin-bottom:16px">
       <div class="toolbar">
         <el-button type="primary" @click="openCreate">新增用户</el-button>

@@ -7,13 +7,6 @@ using NitroGateway.Webapi.Models;
 
 namespace NitroGateway.Webapi.Controllers;
 
-/// <summary>
-/// 用户管理 API（ADR-066：用户 DB 化，不走全量 Identity）。数据源为 SQLite users 表，
-/// 新增/改角色/启停/重置密码即时生效（无需改配置重启）；密码只收哈希，接口不暴露。
-/// <para><b>授权拆分说明：</b>AdminOnly 加在各管理动作上而非类级——「自助改密」（me/password）
-/// 需对所有已登录角色开放，而 ASP.NET Core 类级 + 方法级 [Authorize] 是叠加关系（都要过），
-/// 类级 AdminOnly 会连同自助改密一起锁死，故逐动作标注。</para>
-/// </summary>
 [ApiController, Route("api/[controller]")]
 public class UserController : ControllerBase
 {

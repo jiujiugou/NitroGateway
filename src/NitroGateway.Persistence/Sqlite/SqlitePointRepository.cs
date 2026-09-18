@@ -1,15 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Configuration;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// SQLite 点位持久化实现（EF Core + DomainMapper）。
-/// 由 DI 以 Scoped 生命周期注册；点位始终归属某一设备（DeviceId 外键），删除设备级联删除点位。
-/// 所有操作异常统一经 <see cref="SqliteErrorClassifier"/> 归类为 OperationResult（ADR-018 P2-2）。
-/// </summary>
 public sealed class SqlitePointRepository : IPointRepository
 {
     private readonly NitroGatewayDbContext _db;
@@ -44,17 +39,10 @@ public sealed class SqlitePointRepository : IPointRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：EF/Sqlite 异常归类返回，使 PointManager 的 IsFailure 分支可达
             return SqliteErrorClassifier.Classify(ex, "点位保存失败");
         }
     }
 
-    /// <summary>
-    /// ADR-005 P2-1：批量保存走单事务（EF Core SaveChanges 默认单事务），
-    /// 一次性 upsert 全部点位，替代逐条 SaveAsync 的 N 次往返。
-    /// 空列表直接成功返回，不做任何查询；已存在的行多次出现时以最后一次覆盖为准，
-    /// 批次内重复且不存在的 Id 会在 SaveChanges 时因主键冲突失败（归类返回）。
-    /// </summary>
     public async Task<OperationResult> SaveBatchAsync(Guid deviceId, IReadOnlyList<DevicePoint> points, CancellationToken ct = default)
     {
         if (points.Count == 0)
@@ -85,7 +73,6 @@ public sealed class SqlitePointRepository : IPointRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：批量保存异常归类返回
             return SqliteErrorClassifier.Classify(ex, "点位批量保存失败");
         }
     }
@@ -106,7 +93,6 @@ public sealed class SqlitePointRepository : IPointRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：删除异常归类返回
             return SqliteErrorClassifier.Classify(ex, "点位删除失败");
         }
     }
@@ -125,7 +111,6 @@ public sealed class SqlitePointRepository : IPointRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：查询异常归类返回
             return SqliteErrorClassifier.Classify(ex, "点位查询失败");
         }
     }

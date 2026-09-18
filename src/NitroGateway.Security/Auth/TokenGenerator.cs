@@ -7,11 +7,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace NitroGateway.Security.Auth;
 
-/// <summary>
-/// JWT Token 签发器（ADR-066：改读用户存储，不再读配置文件）。薄封装 JwtSecurityTokenHandler。
-/// 登录每次从 <see cref="IUserStore"/> 实时读取账号，保证「新增/改密/启停」即时生效无需重启；
-/// JWT 签发、RBAC 策略、登录限流行为不变。
-/// </summary>
 public sealed class TokenGenerator
 {
     private readonly JwtConfig _config;
@@ -50,7 +45,6 @@ public sealed class TokenGenerator
             return new TokenIssueResult(TokenIssueStatus.UserNotFound);
         }
 
-        // ADR-066：停用账号拒绝登录（403），防止禁用后仍可用旧凭据进入
         if (!user.IsEnabled)
         {
             _logger.LogWarning("登录失败: 用户 {User} 已停用", username);

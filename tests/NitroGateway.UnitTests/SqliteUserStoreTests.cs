@@ -6,10 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// SqliteUserStore 测试（ADR-066 用户 DB 化）：首启种子、增查改删、用户名唯一、
-/// 启停/改角色/改密即时生效（存储层写入后读取即最新）。
-/// </summary>
 public class SqliteUserStoreTests
 {
     /// <summary>临时文件库：按 M015 迁移结构建 users 表，释放时删除文件。</summary>

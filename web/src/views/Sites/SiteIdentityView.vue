@@ -2,7 +2,6 @@
   <div>
     <h2 class="page-title">站点身份</h2>
 
-    <!-- ADR-036：站点身份管理（与桌面设置页「站点标识」区对齐）——查看/修改/重新生成 -->
     <div class="card">
       <div class="identity-row">
         <div class="identity-label">当前站点标识</div>

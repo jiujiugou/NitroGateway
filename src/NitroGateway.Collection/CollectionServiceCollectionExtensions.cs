@@ -27,9 +27,7 @@ public static class CollectionServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // ADR-014：把整个 CollectionOption 绑定进 DI（此前只有 IntervalMs 生效），
         // 让 MaxConcurrency / CircuitBreakerOpenSeconds / CircuitBreakerMaxOpenSeconds 真正生效。
-        // ADR-016 P2-2：走标准 Options 管线（Bind + Validate + ValidateOnStart），
         // 非法配置（IntervalMs<=0 / MaxConcurrency<=0 等）启动即报错，不再手动 OptionsWrapper。
         services.AddOptions<CollectionOption>()
             .Bind(configuration.GetSection(CollectionOption.SectionName))
@@ -41,7 +39,6 @@ public static class CollectionServiceCollectionExtensions
             .Validate(o => o.DeadbandHeartbeatMs > 0, "Collection:DeadbandHeartbeatMs 必须大于 0（心跳兜底间隔）")
             .ValidateOnStart();
 
-        // ADR-014：熔断器冷却时长来自配置，不再硬编码 5s / 5min。
         services.AddSingleton<ICircuitBreakerRegistry>(sp =>
         {
             var opt = sp.GetRequiredService<IOptions<CollectionOption>>().Value;
@@ -56,8 +53,6 @@ public static class CollectionServiceCollectionExtensions
         services.AddSingleton(sp => new ChangeDetector(
             TimeSpan.FromMilliseconds(
                 sp.GetRequiredService<IOptions<CollectionOption>>().Value.DeadbandHeartbeatMs)));
-        // ADR-012：磁盘状态可选注入——未注册 AddNitroSqlite（无 DiskGuardService）的宿主不受影响
-        // ADR-011 P3：入队路由与 Forwarder 同一配置（Forwarder:Channels），非法值启动即报错
         var forwardChannels = ResolveForwardChannels(configuration["Forwarder:Channels"] ?? "mqtt");
         services.AddSingleton<IDataDispatcher>(sp => new DataDispatcher(
             sp.GetRequiredService<MeasurementWriteHost>(),
@@ -70,7 +65,6 @@ public static class CollectionServiceCollectionExtensions
             NitroGateway.Shared.SiteOptions.Resolve(configuration["Site:Id"]),
             // ADR-053：注入死区变化抑制器，Dispatcher 层统一计算三处消费的放行子集
             sp.GetRequiredService<ChangeDetector>(),
-            // ADR-059：MQTT 转发总开关——未注册（旧宿主/独立测试）时 null → DataDispatcher 恒启用
             sp.GetService<IForwardMqttToggle>()));
         services.AddSingleton<MeasurementWriteHost>();
         services.AddHostedService(sp => sp.GetRequiredService<MeasurementWriteHost>());
@@ -98,17 +92,12 @@ public static class CollectionServiceCollectionExtensions
             sp.GetRequiredService<ICircuitBreakerRegistry>(),
             sp.GetRequiredService<IDeviceHealthMonitor>(),
             sp.GetRequiredService<ILogger<DeviceCollector>>(),
-            // ADR-014：单轮并发上限取自配置，不再使用默认值 5。
             sp.GetRequiredService<IOptions<CollectionOption>>().Value.MaxConcurrency,
             sp.GetRequiredService<ISubscriptionCoordinator>()));
         services.AddHostedService<CollectionEngine>();
         return services;
     }
 
-    /// <summary>
-    /// 解析北向通道列表（ADR-011 P3）：mqtt / http / both（大小写不敏感）。
-    /// 非法值抛 <see cref="ArgumentException"/> 快速失败，与 Forwarder 注册侧校验保持一致。
-    /// </summary>
     private static IReadOnlyList<string> ResolveForwardChannels(string channels)
     {
         return channels.Trim().ToLowerInvariant() switch

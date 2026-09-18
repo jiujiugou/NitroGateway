@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Persistence.Security;
@@ -7,13 +7,6 @@ using NitroGateway.Storage.Configuration;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// SQLite 设备持久化实现（EF Core + DomainMapper）。
-/// 由 DI 以 Scoped 生命周期注册（见 <see cref="SqliteServiceCollectionExtensions"/>），
-/// 与 DbContext 同生命周期，天然适配 Web 请求内的事务与跟踪。
-/// 所有操作异常统一经 <see cref="SqliteErrorClassifier"/> 归类为 OperationResult（ADR-018 P2-2），
-/// 与 Alarm 仓储/测量存储的"异常不抛出"契约一致，使上层 manager 的 IsFailure 分支真实可达。
-/// </summary>
 public sealed class SqliteDeviceRepository : IDeviceRepository
 {
     /// <summary>OPC UA 连接参数中的密码键（PascalCase，与设备参数字典约定一致，ADR-073 D1）</summary>
@@ -59,7 +52,6 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：EF/Sqlite 异常（约束违反、锁定等）归类返回，不冒泡成 500
             return SqliteErrorClassifier.Classify(ex, "设备保存失败");
         }
     }
@@ -80,7 +72,6 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：删除异常归类返回，使 DeviceManager.UnregisterAsync 的失败分支可达
             return SqliteErrorClassifier.Classify(ex, "设备删除失败");
         }
     }
@@ -109,7 +100,6 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：查询异常归类返回
             return SqliteErrorClassifier.Classify(ex, "设备查询失败");
         }
     }
@@ -133,7 +123,6 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：查询异常归类返回
             return SqliteErrorClassifier.Classify(ex, "设备查询失败");
         }
     }
@@ -163,7 +152,6 @@ public sealed class SqliteDeviceRepository : IDeviceRepository
         }
         catch (Exception ex)
         {
-            // ADR-018 P2-2：查询异常归类返回
             return SqliteErrorClassifier.Classify(ex, "设备查询失败");
         }
     }

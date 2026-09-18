@@ -25,12 +25,10 @@ import type { Device } from '../../api/types'
 import StatusTag from '../../components/DeviceStatusTag.vue'
 const devices = ref<Device[]>([])
 async function load() {
-  // ADR-007 P2-2：通用设备区只服务 Modbus/S7；OPC UA 设备在 /opcua 独立分区管理（同一张设备表，前端按协议过滤）
   try { devices.value = (await getDevices()).filter(d => d.protocol.name !== 'OPC UA') } catch {}
 }
 onMounted(load)
 async function handleDel(id: string) {
-  // ADR-007 P3-3：删除为破坏性操作，先弹确认框（取消时 promise reject，静默返回）
   try { await ElMessageBox.confirm('确定删除该设备吗？此操作不可恢复。', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }) }
   catch { return }
   await deleteDevice(id)

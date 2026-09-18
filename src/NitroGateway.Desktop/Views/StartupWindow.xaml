@@ -8,7 +8,6 @@
         Foreground="{DynamicResource TextPrimary}"
         FontFamily="Segoe UI, Microsoft YaHei UI"
         FontSize="13.5">
-    <!-- ADR-037 S8：启动反馈窗口——宿主启动（迁移+后台服务）期间可见，失败时窗口内提示而非仅 MessageBox -->
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -21,7 +20,6 @@
         <StackPanel>
             <StackPanel Orientation="Horizontal">
                 <Border Width="46" Height="46" CornerRadius="10">
-                    <!-- ADR-037 S10：品牌块渐变 -->
                     <Border.Background>
                         <StaticResource ResourceKey="BrandGradientBrush" />
                     </Border.Background>

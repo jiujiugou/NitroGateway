@@ -8,11 +8,6 @@ using ForwarderImpl = NitroGateway.Forwarder.Forwarder;
 
 namespace NitroGateway.IntegrationTests;
 
-/// <summary>
-/// Forwarder 失败路径可观测性测试（ADR-001 P1-3）：
-/// Dequeue 失败必须返回失败结果并记 Error；Commit/MarkFailed 失败必须记 Error，
-/// 不再静默吞掉，避免转发停滞无信号、批次卡 InFlight 无法发现。
-/// </summary>
 [Collection("Forwarder")]
 public class ForwarderFailureTests
 {
@@ -143,10 +138,6 @@ public class ForwarderFailureTests
         Assert.Empty(logger.Entries);
     }
 
-    /// <summary>
-    /// ADR-017 P2-2：取消不是转发失败——不 MarkFailed、不记"卡 InFlight"错误日志，
-    /// OCE 上抛由引擎停机路径处理。
-    /// </summary>
     [Fact]
     public async Task ForwardBatchAsync_Cancelled_DoesNotMarkFailedAndRethrows()
     {

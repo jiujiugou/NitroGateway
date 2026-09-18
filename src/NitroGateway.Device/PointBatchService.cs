@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -201,20 +201,6 @@ public sealed class PointBatchService
     //  地址自动递增
     // ════════════════════════════════════════════
 
-    /// <summary>
-    /// 根据起始地址和数据量生成点位列表。Modbus 地址按 DataType.RegisterCount（寄存器）递增，
-    /// S7 地址（DB{n}.DBD/DBW/DBB{offset}）按 DataType.ByteSize（字节）递增（ADR-024 P3-3）。
-    /// OPC UA 地址（ns={n};i={id}）按数值标识 +1 递增（ADR-024 P3-3 扩展，仅支持数值标识符）。
-    /// 名称模板支持占位符：{name}_{###} → {name}_001, {name}_002...
-    ///                               {name}_{000} → {name}_000, {name}_001... (零填充)
-    /// </summary>
-    /// <param name="deviceId">所属设备</param>
-    /// <param name="nameTemplate">名称模板，### 替换为序号（零填充）</param>
-    /// <param name="startAddress">起始地址（Modbus 为数字如 "40001"；S7 为 "DB1.DBD0"；OPC UA 为 "ns=2;i=1001"）</param>
-    /// <param name="count">生成数量</param>
-    /// <param name="dataType">数据类型</param>
-    /// <param name="access">读写权限</param>
-    /// <param name="protocol">协议名（Modbus / S7 / OPC UA），决定地址解释与步长</param>
     public IReadOnlyList<DevicePoint> Generate(
         Guid deviceId,
         string nameTemplate,
@@ -324,7 +310,6 @@ public sealed class PointBatchService
         return template[..idx] + repl + template[(idx + padLen)..];
     }
 
-    /// <summary>Modbus 起始地址解析：纯数字字符串，非法抛 ArgumentException（ADR-024 P3-3）</summary>
     private readonly record struct ModbusStart(int Value)
     {
         public static ModbusStart Parse(string raw) =>
@@ -336,7 +321,6 @@ public sealed class PointBatchService
         public string Format(int index, int step) => (Value + index * step).ToString(CultureInfo.InvariantCulture);
     }
 
-    /// <summary>S7 DB 区起始地址解析：DB{n}.DBD/DBW/DBB{offset}，按字节步长递增（ADR-024 P3-3）</summary>
     private sealed class S7Start
     {
         private readonly int _db;
@@ -377,10 +361,6 @@ public sealed class PointBatchService
         public string Format(int index, int step) => $"DB{_db}.{_type}{_offset + index * step}";
     }
 
-    /// <summary>
-    /// OPC UA NodeId 起始地址解析：仅支持数值标识符 ns={n};i={id}，逐点 +1。
-    /// 字符串/ GUID / Opaque 标识符无"连续编号"语义，批量生成明确拒绝（ADR-024 P3-3 扩展）。
-    /// </summary>
     private readonly record struct OpcUaStart(ushort NamespaceIndex, uint NumericId)
     {
         public static OpcUaStart Parse(string raw)

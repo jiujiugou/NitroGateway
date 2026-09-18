@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Events;
@@ -19,10 +19,6 @@ public sealed record UiFrame
     /// <summary>本帧内的设备健康变更</summary>
     public IReadOnlyList<DeviceHealthChanged> HealthChanges { get; init; } = [];
 
-    /// <summary>
-    /// MQTT 最近已知状态（设置后每帧携带；消费方按文本幂等覆盖即可，
-    /// 无变更检测需求——ADR-027 P3-1 注释对齐实现）
-    /// </summary>
     public MqttConnectionState? MqttState { get; init; }
 
     /// <summary>转发缓冲积压批数（本轮有刷新且变化时为值，否则 null）</summary>
@@ -56,7 +52,6 @@ public sealed class EventBridge : IDisposable, IPointStoredSink, IDeviceHealthLi
     private readonly IForwardBuffer _buffer;
     private readonly ILogger<EventBridge> _logger;
     private readonly TimeSpan _frameInterval;
-    /// <summary>帧循环异常后的重启延迟（ADR-028 P3-1 自愈）</summary>
     private static readonly TimeSpan RestartDelay = TimeSpan.FromMilliseconds(200);
 
     private MqttConnectionState? _mqttState;
@@ -103,11 +98,6 @@ public sealed class EventBridge : IDisposable, IPointStoredSink, IDeviceHealthLi
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>
-    /// 帧循环：每 200ms 刷新水位（每 10 帧）并发布一帧。
-    /// ADR-028 P3-1：循环异常后不再直接退出（修复前 UI 数据永久静止）——记 Error 后重建 PeriodicTimer
-    /// 重启循环；重启延迟 200ms，非连续异常下用户无感知，连续异常时至少保留日志与重试。
-    /// </summary>
     private async Task LoopAsync()
     {
         while (!_cts.IsCancellationRequested)

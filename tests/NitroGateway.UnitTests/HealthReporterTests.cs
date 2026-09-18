@@ -7,10 +7,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// HealthReporter 测试（ADR-031）：设备健康只看链路成功/失败；
-/// 点位级质量差不参与判定；上报异常被吞掉但必须留日志，不能静默。
-/// </summary>
 public class HealthReporterTests
 {
     private static readonly Guid DeviceId = Guid.NewGuid();

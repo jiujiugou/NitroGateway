@@ -3,10 +3,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-037 S8：启动反馈窗口 ViewModel——失败状态由 IsFailed 绑定驱动
-/// （隐藏进度条、显示关闭按钮、文案置红），窗口 code-behind 不再直接操控件。
-/// </summary>
 public sealed class StartupViewModelTests
 {
     [Fact]

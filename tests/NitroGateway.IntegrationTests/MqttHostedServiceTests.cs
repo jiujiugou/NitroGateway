@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Shared;
 using NitroGateway.Transport.MQTT;
 using Xunit;
@@ -115,7 +115,6 @@ public class MqttHostedServiceTests
     [Fact]
     public async Task Disabled_IsNotSupervised_NoReconnect()
     {
-        // ADR-061：转发开关关闭（Disabled）时监督循环不得重连——关闭即彻底停连，
         // 等待开关重开由 MqttClientWrapper 自行恢复。
         var client = new ControllableMqttClient { State = MqttConnectionState.Disabled };
         var svc = new MqttHostedService(client, FastSupervisionOptions(), NullLogger<MqttHostedService>.Instance);

@@ -77,7 +77,6 @@ public class PointManagerTests
         Assert.Contains("BadPoint", result.Error!.Message);
     }
 
-    /// <summary>ADR-005 P2-1：批量导入走批量路径，不逐条保存。</summary>
     [Fact]
     public async Task ImportAsync_BatchSuccess_UsesBatchPath()
     {
@@ -92,7 +91,6 @@ public class PointManagerTests
         Assert.Equal(1, _cache.InvalidateCount);
     }
 
-    /// <summary>ADR-002 P2-2：批量导入部分失败（逐条回退成功）也应失效缓存。</summary>
     [Fact]
     public async Task ImportAsync_PartialFailure_InvalidatesCache()
     {

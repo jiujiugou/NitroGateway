@@ -7,11 +7,6 @@ using Xunit;
 
 namespace NitroGateway.IntegrationTests;
 
-/// <summary>
-/// ADR-003 P1-1/P1-2：基于 HslCommunication ModbusTcpServer 的真实 TCP 回环测试。
-/// P1-1：类型组内非连续点位必须切段，否则连读会把间隔寄存器误读成后序点位；
-/// P1-2：各 DataType 写类型映射后能写读回环。
-/// </summary>
 public class ModbusTcpDriverIntegrationTests
 {
     [Fact]

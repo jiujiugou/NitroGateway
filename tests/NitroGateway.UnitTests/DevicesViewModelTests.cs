@@ -10,10 +10,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-029 P1/P2：设备页增删改与点位管理命令——对话框取消不落库、
-/// 保存走 IDeviceManager（Scoped，经 IServiceScopeFactory 解析）、成功后刷新列表。
-/// </summary>
 public sealed class DevicesViewModelTests : IDisposable
 {
     /// <summary>帧间隔注入 1 小时，避免 EventBridge 后台循环干扰。</summary>
@@ -258,7 +254,6 @@ public sealed class DevicesViewModelTests : IDisposable
         Assert.Equal("—", Assert.Single(vm.Items).UnitIdText);
     }
 
-    // ===== ADR-037 S7：增量刷新保留行实例/选中/滚动 =====
 
     [Fact]
     public async Task Refresh_reuses_existing_row_instances_and_preserves_selection()
@@ -332,7 +327,6 @@ public sealed class DevicesViewModelTests : IDisposable
     [Fact]
     public async Task Refresh_raises_device_count_changed()
     {
-        // ADR-037 S11：MainViewModel 复用本事件展示设备数，不再重复查询目录
         var cache = new StagedSnapshotCache();
         cache.EnqueueSuccess();
         var device = TestDevices.Device("PLC-1");
@@ -349,7 +343,6 @@ public sealed class DevicesViewModelTests : IDisposable
     [Fact]
     public async Task Refresh_computes_total_online_offline_and_point_counts()
     {
-        // ADR-038：统计卡数据源——设备总数/在线/离线/点位数在刷新 diff 完成后重算
         var cache = new StagedSnapshotCache();
         cache.EnqueueSuccess();
         var online = TestDevices.Device("在线设备", TestDevices.Point("P1"), TestDevices.Point("P2"));

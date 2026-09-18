@@ -52,7 +52,6 @@ public class StatusController : ControllerBase
         {
             DeviceId = d.Id.ToString(),
             DeviceName = d.Name,
-            // ADR-002 P2-2（方案 1）：状态以 HealthMonitor 实时快照为准，配置缓存 Status 仅兜底
             Status = (_healthMonitor.GetSnapshot(d.Id)?.Status ?? d.Status).ToString()
         }).ToList();
 
@@ -77,11 +76,9 @@ public class StatusController : ControllerBase
         return Ok(ApiResponse<List<DeviceHealthDto>>.Ok(items));
     }
 
-    /// <summary>系统状态面板（完整聚合）。异步等待设备状态查询，避免 .Result 阻塞线程（ADR-001 P2-10）</summary>
     [HttpGet("system")]
     public async Task<ActionResult<ApiResponse<object>>> SystemStatus()
     {
-        // ADR-015: 诊断路径只读 State（纯查询），不调用 TryEnterProbe——
         // 读会抢占 HalfOpen 探测名额并饿死自愈探测；"是否熔断"由 State == Open 推导。
         var breakerStates = _breakers.GetAll().Select(kv => (object)new
         {
@@ -93,7 +90,6 @@ public class StatusController : ControllerBase
         var onlineResult = await _devices.GetByStatusAsync(Domain.Devices.DeviceStatus.Online);
         var onlineCount = onlineResult.IsSuccess ? onlineResult.Value!.Count : 0;
 
-        // ADR-017 P3-3：客户端在计数查询完成前断开时返回 0 而非 500（GetCountAsync 取消时仍抛 OCE）
         int bufferBacklog;
         try
         {

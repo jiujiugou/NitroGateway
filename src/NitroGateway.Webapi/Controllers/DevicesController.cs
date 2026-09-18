@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
@@ -115,7 +115,6 @@ public class DevicesController : ControllerBase
     [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<DeviceDto>>> UpdateStatus(Guid id, [FromBody] string status)
     {
-        // ADR-022 P2-1：非法状态值返回 400，不再抛 FormatException 转 500
         if (!Enum.TryParse<DeviceStatus>(status, out var s))
             return BadRequest(ApiResponse<DeviceDto>.Fail("Status", $"无效的设备状态: {status}"));
         var r = await _devices.UpdateStatusAsync(id, s);
@@ -136,7 +135,6 @@ public class DevicesController : ControllerBase
     [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<PointDto>>> AddPoint(Guid deviceId, PointDto d)
     {
-        // ADR-022 P2-1/P2-4：创建路径校验枚举并忽略客户端 ID（服务端生成，防 POST 覆盖既有点位）
         if (!Enum.TryParse<DataType>(d.DataType, out var dataType))
             return BadRequest(ApiResponse<PointDto>.Fail("AddPoint", $"无效的 DataType: {d.DataType}"));
         if (!Enum.TryParse<PointAccess>(d.Access, out var access))
@@ -152,7 +150,6 @@ public class DevicesController : ControllerBase
     [Authorize(Roles = Roles.AdminOperator)]
     public async Task<ActionResult<ApiResponse<PointDto>>> UpdatePoint(Guid deviceId, Guid pointId, PointDto d)
     {
-        // ADR-022 P2-1：非法枚举返回 400
         if (!Enum.TryParse<DataType>(d.DataType, out var dataType))
             return BadRequest(ApiResponse<PointDto>.Fail("UpdatePoint", $"无效的 DataType: {d.DataType}"));
         if (!Enum.TryParse<PointAccess>(d.Access, out var access))
@@ -198,7 +195,6 @@ public class DevicesController : ControllerBase
 
             if (result.IsSuccess)
             {
-                // ADR-023：连接成功只代表链路/串口已通，不代表目标从站存在；
                 // 必须 Ping（最小读请求）确认从站响应，否则测试结果对 UnitId 校验型从站是假阳性。
                 var pingResult = await driver.PingAsync();
                 sw.Stop();
@@ -249,7 +245,6 @@ public class DevicesController : ControllerBase
         IsDeleted = d.IsDeleted
     };
     static PointDto MapPoint(DevicePoint p) => new() { Id = p.Id.ToString(), Name = p.Name, Address = p.Address, Description = p.Description, DataType = p.DataType.ToString(), Access = p.Access.ToString(), Enabled = p.Enabled, ScanIntervalMs = p.ScanIntervalMs, Deadband = p.Deadband, ScaleFactor = p.ScaleFactor, ScaleOffset = p.ScaleOffset, MinLimit = p.MinLimit, MaxLimit = p.MaxLimit, UpdatedAt = p.UpdatedAt == default ? "" : p.UpdatedAt.ToUniversalTime().ToString("O"), IsDeleted = p.IsDeleted };
-    // ADR-022 P2-4：创建路径一律服务端生成新 ID，忽略客户端传入的 Id（仓储 SaveAsync 为 upsert，防 POST 覆盖既有设备）
     static Device ToDomain(DeviceDto d, string siteId) => new() { Id = Guid.NewGuid(), Name = d.Name ?? "", Description = d.Description, Protocol = new ProtocolIdentifier { Name = d.Protocol?.Name ?? "", Dialect = d.Protocol?.Dialect }, Connection = BuildConnection(d.Connection), SiteId = siteId, Status = Enum.TryParse<DeviceStatus>(d.Status, out var st) ? st : DeviceStatus.Unknown };
 
     /// <summary>站点 ID 缺省/空白时回退本站点身份（ADR-054：web 作为纯边缘网关）。</summary>

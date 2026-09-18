@@ -7,16 +7,13 @@ namespace NitroGateway.Telemetry;
 /// </summary>
 public enum TracingExporterKind
 {
-    /// <summary>不导出，保持 dormant（向后兼容 ADR-009 的"预留入口"状态）</summary>
     None = 0,
 
-    /// <summary>OTLP（gRPC/HTTP，接 Jaeger / Grafana Tempo / 自建 collector，ADR-056）</summary>
     Otlp = 1,
 
     /// <summary>Console 输出（本地调试，无需 collector）</summary>
     Console = 2,
 
-    /// <summary>文件输出（JSON Lines 落盘，无需 collector，ADR-057）</summary>
     File = 3
 }
 
@@ -36,7 +33,6 @@ public enum TracingProtocolKind
 /// </summary>
 public sealed record TelemetryTracingOptions
 {
-    /// <summary>是否启用追踪。默认 true（ADR-056：启用执行层）。</summary>
     public bool Enabled { get; init; } = true;
 
     /// <summary>导出器类型。默认 Otlp。</summary>
@@ -51,7 +47,6 @@ public sealed record TelemetryTracingOptions
     /// <summary>Service Name（Jaeger/Tempo 服务维度）。由 Program 入口传入，缺省 nitrogateway。</summary>
     public string ServiceName { get; init; } = "nitrogateway";
 
-    /// <summary>File 导出器输出目录（仅 File 有效）。默认 logs/traces，按日滚动 traces-yyyyMMdd.jsonl（ADR-057）。</summary>
     public string LogDirectory { get; init; } = "logs/traces";
 
     /// <summary>File 导出器：按本地日期保留天数，超过的旧文件删除。默认 7；≤0 表示不限（长期落盘有撑爆磁盘风险，仅调试短时使用）。</summary>

@@ -1,6 +1,5 @@
 # Collection 模块设计文档 v1
 
-> ⚠ **历史快照（ADR-016 P3-6）**：本文为 v1 设计稿，部分内容与实现不符，以代码与 XML 注释为准。
 > 已知漂移：`IPointValuePipeline.Process` 现带 `deviceId` 参数；死区语义改为"只影响缓存不丢数据"；
 > `IDeviceReader` 经 `IProtocolDriverPool` 复用长连接，不再每轮建连/断开。
 

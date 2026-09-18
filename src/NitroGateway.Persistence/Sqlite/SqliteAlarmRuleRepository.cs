@@ -6,10 +6,6 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// SQLite 告警规则持久化（EF Core）。
-/// ADR-002 P1-1：统一异常分类；P2-3：新增 GetByDeviceAsync 支持按设备批量加载规则。
-/// </summary>
 public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
 {
     private readonly NitroGatewayDbContext _db;
@@ -86,7 +82,6 @@ public sealed class SqliteAlarmRuleRepository : IAlarmRuleRepository
     {
         try
         {
-            // ADR-043：管理页需要展示/恢复禁用规则，故不受 Enabled 过滤，全量返回。
             var rows = await _db.AlarmRules
                 .AsNoTracking()
                 .ToListAsync(ct);

@@ -4,12 +4,6 @@ using NitroGateway.Storage.TimeSeries;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// 时序数据保留后台任务（ADR-002 P1-2）。
-/// 周期性调用 <see cref="IMeasurementStore.PurgeAsync"/> 删除超过保留期的 measurements，
-/// 防止时序表无限增长。保留天数与执行间隔由 DI 注册时从配置注入，默认 30 天 / 24 小时。
-/// 单次清理失败只记日志，不中断服务，下个周期自动重试。
-/// </summary>
 public sealed class MeasurementRetentionService : BackgroundService
 {
     private readonly IMeasurementStore _store;
@@ -54,7 +48,6 @@ public sealed class MeasurementRetentionService : BackgroundService
             }
             else
             {
-                // ADR-002 P1-2：清理失败不中断后台服务，等待下个周期重试
                 _logger.LogError("时序数据保留清理失败: {Error}", result.Error!.Message);
             }
         }

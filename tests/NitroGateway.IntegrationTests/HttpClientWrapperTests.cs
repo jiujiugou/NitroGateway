@@ -6,12 +6,6 @@ using Xunit;
 
 namespace NitroGateway.IntegrationTests;
 
-/// <summary>
-/// ADR-020 Transport HTTP 修复测试：
-/// P2-1 异常分类（Timeout / Communication / 调用方取消不算失败）、
-/// P2-2 幂等重试 vs 非幂等不重试、P2-3 状态迁移（Disconnected→Connected→Faulted→恢复）。
-/// 基于注入的 HttpMessageHandler 替身，无需真实 HTTP 服务。
-/// </summary>
 public class HttpClientWrapperTests
 {
     private sealed class StubHandler : HttpMessageHandler
@@ -66,7 +60,6 @@ public class HttpClientWrapperTests
         var result = await wrapper.SendAsync(new HttpRequest { Path = "/api/x", Method = HttpMethod.Get });
 
         Assert.True(result.IsFailure);
-        // ADR-020 P2-1：修复前一律 Timeout；连接失败应归类为 CommunicationError
         Assert.Equal("CommunicationError", result.Error!.Code);
     }
 
@@ -90,7 +83,6 @@ public class HttpClientWrapperTests
 
         var result = await wrapper.SendAsync(new HttpRequest { Path = "/api/x", Method = HttpMethod.Get });
 
-        // ADR-020 P2-2：GET 幂等 → 重试 MaxRetries 次（共 MaxRetries+1 次尝试）
         Assert.True(result.IsSuccess);
         Assert.Equal(500, result.Value!.StatusCode);
         Assert.Equal(3, handler.Calls);
@@ -104,7 +96,6 @@ public class HttpClientWrapperTests
 
         var result = await wrapper.UploadAsync("/api/upload", new { batchId = "b1" });
 
-        // ADR-020 P2-2：POST 非幂等 → 不重试（超时后云端可能已处理，重试产生重复批次）
         Assert.True(result.IsFailure);
         Assert.Equal(1, handler.Calls);
     }
@@ -139,7 +130,6 @@ public class HttpClientWrapperTests
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        // ADR-020 P2-1：调用方取消上抛 OCE，不归类为超时/失败，不进入 Faulted
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             wrapper.SendAsync(new HttpRequest { Path = "/api/x", Method = HttpMethod.Get }, cts.Token));
 

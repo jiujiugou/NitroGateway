@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Alarm.Repository;
@@ -11,10 +11,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-027 P2-2：AlarmsViewModel 为单例，IAlarmRepository 为 Scoped（EF DbContext），
-/// 每次刷新必须新建 scope 解析仓储并在刷新结束释放，防止 change tracker 跨轮询累积。
-/// </summary>
 public sealed class AlarmsViewModelTests
 {
     [Fact]
@@ -47,7 +43,6 @@ public sealed class AlarmsViewModelTests
         Assert.True(created[1].Disposed);
     }
 
-    // ===== ADR-037 S7：增量刷新保留行实例/顺序 =====
 
     [Fact]
     public async Task Refresh_reuses_row_instances_and_preserves_order()

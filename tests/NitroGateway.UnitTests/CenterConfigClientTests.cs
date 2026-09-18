@@ -44,7 +44,6 @@ public sealed class CenterConfigClientTests
         Assert.Equal("site-a", device.SiteId);
         // Parameters 反序列化为 JsonElement（System.Text.Json 字典值），取整型比较
         Assert.Equal(1, ((JsonElement)device.Connection.Parameters["unitId"]).GetInt32());
-        // ADR-029：状态不伪造，由 HealthMonitor 驱动
         Assert.Equal(DeviceStatus.Unknown, device.Status);
         var point = Assert.Single(device.Points);
         Assert.Equal(pointId, point.Id);

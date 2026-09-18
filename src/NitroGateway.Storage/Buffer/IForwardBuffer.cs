@@ -10,22 +10,13 @@ namespace NitroGateway.Storage.Buffer;
 /// </summary>
 public interface IForwardBuffer
 {
-    /// <summary>MQTT 转发通道名（ADR-011 多通道；默认通道，旧行为）</summary>
     public const string MqttChannel = "mqtt";
 
-    /// <summary>HTTP 转发通道名（ADR-011；由 HttpForwarderEngine 消费）</summary>
     public const string HttpChannel = "http";
 
     /// <summary>入队一批待转发数据。不应阻塞调用方</summary>
     Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default);
 
-    /// <summary>
-    /// 入队一批待转发数据到指定通道（ADR-011）。默认实现委托 <see cref="EnqueueAsync(BatchMeasurements, CancellationToken)"/>
-    /// （mqtt 通道），实现类可覆盖以支持通道隔离；接口只增不删，旧实现零改动。
-    /// </summary>
-    /// <param name="batch">待转发批次</param>
-    /// <param name="channel">通道名（<see cref="MqttChannel"/> / <see cref="HttpChannel"/>）</param>
-    /// <param name="ct">取消令牌</param>
     Task<OperationResult> EnqueueAsync(BatchMeasurements batch, string channel, CancellationToken ct = default)
         => EnqueueAsync(batch, ct);
 
@@ -35,13 +26,6 @@ public interface IForwardBuffer
     /// </summary>
     Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(int maxCount, CancellationToken ct = default);
 
-    /// <summary>
-    /// 出队指定通道最多 maxCount 批数据（ADR-011）。默认实现委托
-    /// <see cref="DequeueAsync(int, CancellationToken)"/>（mqtt 通道），实现类可覆盖以支持通道隔离。
-    /// </summary>
-    /// <param name="maxCount">最大批次数</param>
-    /// <param name="channel">通道名（<see cref="MqttChannel"/> / <see cref="HttpChannel"/>）</param>
-    /// <param name="ct">取消令牌</param>
     Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(int maxCount, string channel, CancellationToken ct = default)
         => DequeueAsync(maxCount, ct);
 
@@ -65,18 +49,8 @@ public interface IForwardBuffer
     /// <summary>丢弃死信（物理删除）</summary>
     Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default);
 
-    /// <summary>
-    /// 清理指定入队时间之前的死信（物理删除）。ADR-018 P2-3：防止坏消息持续累积死信表，
-    /// 与 measurements 保留清理对称；实现应分批删除避免长时间持锁。
-    /// </summary>
-    /// <param name="before">清理边界（含边界之前的所有死信）</param>
-    /// <param name="ct">取消令牌</param>
     Task<OperationResult> PurgeDeadLettersAsync(DateTime before, CancellationToken ct = default);
 
-    /// <summary>
-    /// 当前队列中待转发的批次数（不含死信）。
-    /// ADR-021 P3-1：同步查询可能阻塞（实现为同步查库），热路径与异步调用请使用 <see cref="GetCountAsync"/>。
-    /// </summary>
     int Count { get; }
 
     /// <summary>异步获取当前待转发的批次数（不含死信）。async 路径请用本方法，避免同步查询阻塞</summary>

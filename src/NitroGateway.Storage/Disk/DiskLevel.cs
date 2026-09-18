@@ -1,9 +1,5 @@
-﻿namespace NitroGateway.Storage.Disk;
+namespace NitroGateway.Storage.Disk;
 
-/// <summary>
-/// 磁盘健康等级（ADR-012 磁盘保护）。由 <c>DiskGuardService</c> 按周期评估，
-/// 采集/转发热路径据此决定是否降级：Warning 仅告警，Critical 暂停写入与出队。
-/// </summary>
 public enum DiskLevel
 {
     /// <summary>空间充足，正常读写</summary>

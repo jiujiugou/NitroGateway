@@ -1,7 +1,6 @@
 import client from './client'
 import type { ApiResponse, AlarmRule } from './types'
 
-/// 告警汇总（ADR-065 A1 仪表盘 KPI）：活跃数 / 今日发生数
 export interface AlarmSummary {
   active: number
   today: number

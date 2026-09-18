@@ -7,15 +7,8 @@ using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Desktop.ViewModels;
 
-/// <summary>
-/// 设备表单编辑模型（ADR-029 P3）。可变对象供 WPF 双向绑定；
-/// 协议/传输方式切换时联动显隐对应字段（Modbus TCP/RTU、S7、OPC UA）。
-/// 字段集与 Web DeviceForm.vue 对齐（含 ADR-024 P3-1 S7 参数 / P3-2 传输方式、
-/// 12-OPC-UA接入设计.md S6 三路分流；docs/13 设计文档）。
-/// </summary>
 public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInfo
 {
-    /// <summary>RTU 允许的波特率枚举（ADR-037 S4）。</summary>
     private static readonly int[] ValidBaudRates = [9600, 19200, 38400, 57600, 115200];
 
     /// <summary>字段级错误表（属性名 -> 错误文案，由 Validate() 全量重算）。</summary>
@@ -76,7 +69,6 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     [ObservableProperty] private int _dataBits = 8;
     [ObservableProperty] private string _stopBits = "One";
 
-    // ── S7（ADR-024 P3-1：不落库则后端只能用默认值，S7-300/400 必连不上）──
     [ObservableProperty] private int _rack;
     [ObservableProperty] private int _slot = 1;
     [ObservableProperty] private string _cpuType = "S-1200";
@@ -114,7 +106,6 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     /// <summary>测试按钮可用性：已注入测试服务且当前未在测试。</summary>
     public bool IsTestEnabled => ConnectionTester is not null && !IsTestingConnection;
 
-    /// <summary>是否存在校验错误（ADR-037 S4）。</summary>
     public bool HasErrors => _errors.Count > 0;
 
     /// <summary>校验错误集合变更事件（WPF INotifyDataErrorInfo 订阅）。</summary>
@@ -128,11 +119,6 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
                 ? new[] { error }
                 : Array.Empty<string>();
 
-    /// <summary>
-    /// 全表单校验（ADR-037 S4）：重算全部字段错误并通知绑定。
-    /// 规则：Name/Endpoint 非空；UnitId 1-247（仅 Modbus）；超时/重试/间隔大于 0；
-    /// RTU 波特率与数据位必须为枚举值；S7 Rack/Slot 范围；OPC UA 端点须 opc.tcp:// 前缀（docs/13）。
-    /// </summary>
     public bool Validate()
     {
         SetError(nameof(Name), string.IsNullOrWhiteSpace(Name) ? "设备名称不能为空" : null);
@@ -217,11 +203,6 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
         Validate();
     }
 
-    /// <summary>
-    /// 测试连接（ADR-044/ADR-023）：由当前表单构建设备 → Connect+Ping 双验，
-    /// 结果写回 <see cref="TestResultText"/>；与采集引擎共用同一协议驱动实现。
-    /// UI 流程（禁用/文案）由 <see cref="IsTestingConnection"/> 绑定驱动。
-    /// </summary>
     [RelayCommand(CanExecute = nameof(IsTestEnabled))]
     private async Task TestConnectionAsync()
     {
@@ -298,7 +279,6 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     {
         var p = device.Connection.Parameters;
         var protocolName = Normalize(device.Protocol.Name);
-        // OPC UA 方言为 null → 显示锁定值 opc.tcp（不落库）；其余协议空方言回退 TCP（ADR-036 归一化后保存即修复）
         var dialect = Normalize(string.IsNullOrEmpty(device.Protocol.Dialect)
             ? protocolName == "OPC UA" ? "opc.tcp" : "TCP"
             : device.Protocol.Dialect);
@@ -307,7 +287,6 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
             Id = device.Id,
             Name = device.Name,
             Description = device.Description,
-            // 修复 ADR-036 后遗留：早期 ComboBoxItem 绑定把选中项 ToString 存成
             // "System.Windows.Controls.ComboBoxItem: Modbus"，回填时归一化为纯值，
             // 保证旧脏数据重编辑后保存即可恢复采集。
             ProtocolName = protocolName,
@@ -331,10 +310,6 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
         };
     }
 
-    /// <summary>
-    /// 归一化下拉框旧脏值：剥离 WPF ComboBoxItem.ToString() 前缀（ADR-036 绑定修复），
-    /// 无前缀或空值原样返回。
-    /// </summary>
     private static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

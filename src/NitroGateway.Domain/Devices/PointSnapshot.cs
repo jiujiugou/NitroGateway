@@ -16,11 +16,6 @@ public sealed record PointSnapshot
     /// <summary>点位名称（自描述），构造快照时由点位定义填充，云端上报与告警可直接使用</summary>
     public string? PointName { get; init; }
 
-    /// <summary>
-    /// 点位数据类型（自描述冗余字段，ADR-001 P1-5）。
-    /// 构造快照时由 <see cref="DevicePoint.DataType"/> 填充，
-    /// 转发 payload 据此携带真实类型，云端不再把 Bool/Int/String 按 Float 解析。
-    /// </summary>
     public DataType DataType { get; init; }
 
     /// <summary>

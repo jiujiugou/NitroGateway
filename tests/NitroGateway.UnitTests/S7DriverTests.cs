@@ -7,10 +7,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// S7Driver 测试（ADR-019 P1-1/P2-2/P3-1/P3-2）：
-/// 注入未连接的 SiemensS7Net 客户端，验证失败读返回 Failure 而非默认值 0、全失败返回 Failure 并复位 Faulted。
-/// </summary>
 public class S7DriverTests
 {
     private static S7Driver CreateDriver(DeviceConnection? connection = null)
@@ -29,7 +25,6 @@ public class S7DriverTests
         DataType = type
     };
 
-    /// <summary>ADR-019 P1-1：失败读返回 Failure，绝不把故障当作 0.0 产出</summary>
     [Fact]
     public async Task ReadAsync_ClientNotConnected_ReturnsFailure_NotFakeZero()
     {
@@ -39,7 +34,6 @@ public class S7DriverTests
         Assert.Null(r.Value);
     }
 
-    /// <summary>ADR-019 P2-2：各 DataType 均走类型映射读路径，失败时统一 Failure（覆盖 switch 全分支）</summary>
     [Theory]
     [InlineData(DataType.Bool, "DB1.DBX0.0")]
     [InlineData(DataType.Byte, "DB1.DBB0")]
@@ -60,7 +54,6 @@ public class S7DriverTests
         Assert.Null(r.Value);
     }
 
-    /// <summary>ADR-019 P3-1：全失败返回 Failure 并复位 Faulted（与 Modbus 对齐），不再空成功</summary>
     [Fact]
     public async Task ReadBatchAsync_AllPointsFail_ReturnsFailureAndFaulted()
     {
@@ -72,7 +65,6 @@ public class S7DriverTests
         Assert.Equal(DriverState.Faulted, driver.State);
     }
 
-    /// <summary>ADR-031：空点位设备也要发探测读验证链路；客户端未连接时探测失败 → Failure + Faulted，不再空成功假在线</summary>
     [Fact]
     public async Task ReadBatchAsync_EmptyPoints_ProbeFails_ReturnsFailureAndFaulted()
     {
@@ -82,7 +74,6 @@ public class S7DriverTests
         Assert.Equal(DriverState.Faulted, driver.State);
     }
 
-    /// <summary>ADR-019 P3-2：未连接时 Ping 返回 Failure 不抛异常（ping 地址可配置路径不依赖 DB1）</summary>
     [Fact]
     public async Task PingAsync_ClientNotConnected_ReturnsFailure_NotThrow()
     {
@@ -100,7 +91,6 @@ public class S7DriverTests
         Assert.True(r.IsFailure);
     }
 
-    /// <summary>M 区点位（ADR-019 P2-3）失败读同样返回 Failure 而非默认值</summary>
     [Fact]
     public async Task ReadAsync_MemoryArea_NotConnected_ReturnsFailure()
     {
@@ -110,7 +100,6 @@ public class S7DriverTests
     }
 
     // ══════════════════════════════════════════════════
-    //  CpuType 解析（ADR-024 P1-1：默认值不再抛 SwitchExpressionException，未知型号显式报错）
     // ══════════════════════════════════════════════════
 
     /// <summary>红绿对照：修复前默认 "S71200" 不在 switch 分支，无 default 抛 SwitchExpressionException</summary>
@@ -131,7 +120,6 @@ public class S7DriverTests
         Assert.Equal(expected, S7Driver.ParseCpuType(raw));
     }
 
-    /// <summary>未知 CpuType 显式报错（ADR-024 P2-1），不再静默默认为 S1200</summary>
     [Fact]
     public void ParseCpuType_Unknown_Throws()
     {

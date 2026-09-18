@@ -49,12 +49,10 @@ public sealed class GatewayHost : IAsyncDisposable
         // 设置页自定义日志目录（desktop-settings.json）在 Apply 内生效，重启后写入新位置
         DesktopPathConfig.Apply(builder.Configuration, settingsStore: new DesktopSettingsStore());
 
-        // ADR-036 站点标识：配置/环境变量 > 本地存储 > 自动生成并持久化；
         // 解析结果写回配置，Forwarder/AlarmNotifier/ConfigSync/Settings 统一取用（缺省不再全叫 "default"）
         var siteStore = new SiteSettingsStore();
         builder.Configuration["Site:Id"] = SiteIdProvider.Resolve(builder.Configuration, siteStore);
 
-        // ADR-067：MQTT 连接参数（设置页保存，desktop-settings.json）启动覆盖 appsettings；
         // 环境变量 MQTT__* 仍优先。须在 AddNitroMqtt 绑定 Options 前执行（下方模块注册时）。
         MqttDesktopConfig.Apply(builder.Configuration);
 
@@ -65,7 +63,6 @@ public sealed class GatewayHost : IAsyncDisposable
             .ReadFrom.Services(services)
             .Enrich.FromLogContext());
 
-        // ── 模块注册（顺序对齐 Webapi Program.cs；ADR-016 P1-1 关闭顺序）──
         builder.Services.AddNitroGatewayHost();
         builder.Services.AddNitroSqlite(builder.Configuration);
         builder.Services.AddNitroDevice();
@@ -95,7 +92,6 @@ public sealed class GatewayHost : IAsyncDisposable
             .CreateLogger("NitroGateway.Persistence.MigrationRunner");
         MigrationRunner.Run(connectionString, logger);
 
-        // ADR-059：MQTT 转发总开关——迁移完成后把持久值（desktop-settings.json）加载进内存，
         // 供 DataDispatcher 采集热路径与设置页读取；缺省/失败按启用处理，不阻断启动。
         var toggle = _host.Services.GetRequiredService<IForwardMqttToggle>();
         await toggle.InitializeAsync(ct);

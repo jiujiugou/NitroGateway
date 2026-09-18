@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Persistence;
@@ -9,10 +9,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// SqliteDeviceRepository 异常分类测试（ADR-018 P2-2）：
-/// EF/Sqlite 异常归类为 OperationResult 而非冒泡；DomainMapper 枚举容错（ADR-018 P3-4）。
-/// </summary>
 public class SqliteDeviceRepositoryTests
 {
     /// <summary>固定测试主密钥（≥32 字节，绕过配置读取直接构造保护器）</summary>
@@ -90,7 +86,6 @@ public class SqliteDeviceRepositoryTests
         Status = DeviceStatus.Online
     };
 
-    /// <summary>ADR-018 P2-2：约束违反（NOT NULL）归类为 Storage 失败而非抛异常</summary>
     [Fact]
     public async Task SaveAsync_NotNullViolation_ReturnsClassifiedFailure()
     {
@@ -107,7 +102,6 @@ public class SqliteDeviceRepositoryTests
         Assert.Equal(ErrorCategory.Storage, result.Error!.Category);
     }
 
-    /// <summary>ADR-018 P2-2：表缺失时查询/删除返回分类失败而非抛异常</summary>
     [Fact]
     public async Task GetById_TableMissing_ReturnsClassifiedFailure()
     {
@@ -129,7 +123,6 @@ public class SqliteDeviceRepositoryTests
         Assert.Equal(ErrorCategory.Storage, result.Error!.Category);
     }
 
-    /// <summary>ADR-018 P3-4：Status 列是未知枚举字符串时回退 Unknown，不抛异常</summary>
     [Fact]
     public async Task GetById_UnknownStatusString_FallsBackToUnknown()
     {

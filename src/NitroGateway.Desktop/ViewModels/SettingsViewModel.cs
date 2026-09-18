@@ -45,7 +45,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _collectionInterval = "";
     [ObservableProperty] private string _forwarderInterval = "";
 
-    /// <summary>MQTT 上云转发开关（ADR-059）：即时生效并持久化，重启保持。</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ToggleForwardMqttCommand))]
     private bool _forwardMqttEnabled = true;
@@ -56,7 +55,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     /// <summary>MQTT 上云转发开关保存进行中：期间禁用开关，防重复点击</summary>
     [ObservableProperty] private bool _isSavingForwardMqtt;
 
-    /// <summary>MQTT Broker 地址（设置页可编辑，ADR-067；保存后重启生效）</summary>
     [ObservableProperty] private string _mqttHost = "";
 
     /// <summary>
@@ -82,7 +80,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(SaveMqttSettingsCommand))]
     private bool _isTestingMqtt;
 
-    /// <summary>站点标识（ADR-036）：生效值展示，可编辑/重新生成；保存后重启生效</summary>
     [ObservableProperty] private string _siteId = "";
 
     /// <summary>站点标识保存/生成操作的状态提示</summary>
@@ -137,7 +134,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         MqttBroker = $"{mqtt.Host}:{mqtt.Port}" + (mqtt.UseTls ? " (TLS)" : "");
         MqttClientId = mqtt.ClientId ?? "—";
         DatabasePath = configuration["Persistence:ConnectionString"] ?? "";
-        // ADR-027 P3-3：按 Name 定位 File sink，避免 WriteTo 增删后索引错位
         LogDirectory = Path.GetDirectoryName(configuration[DesktopPathConfig.FileSinkPathKey(configuration)]) ?? "";
         CollectionInterval = configuration["Collection:IntervalMs"] ?? "";
         ForwarderInterval = configuration["Forwarder:IntervalMs"] ?? "";
@@ -150,7 +146,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         SiteId = siteIdProvider.Current;
         ForwardMqttEnabled = _forwardMqttToggle.IsEnabled;
 
-        // ADR-067：MQTT 连接参数——已保存过（desktop-settings.json）用保存值，否则用当前生效值（appsettings/环境变量）
         var persistedMqtt = _logSettingsStore.Load();
         if (!string.IsNullOrWhiteSpace(persistedMqtt.MqttHost))
         {
@@ -174,11 +169,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     private bool CanToggleForwardMqtt => !IsSavingForwardMqtt;
 
-    /// <summary>
-    /// 切换 MQTT 上云转发开关（ADR-059）：立即持久化（desktop-settings.json），
-    /// 成功更新状态提示；失败回滚开关到持久值并提示。关闭仅暂停 MQTT 上云，采集/本地存储/告警不受影响。
-    /// </summary>
-    /// <param name="enabled">目标状态（ToggleButton 的 IsChecked 透传）</param>
     [RelayCommand(CanExecute = nameof(CanToggleForwardMqtt))]
     private async Task ToggleForwardMqttAsync(bool enabled)
     {
@@ -261,7 +251,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // ADR-059：加载→改字段→保存（保留 ForwarderMqttEnabled，避免与 MQTT 开关互相覆盖）
         var saved = _logSettingsStore.Load();
         saved.LogDirectory = directory;
         _logSettingsStore.Save(saved);
@@ -270,10 +259,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     private bool CanTestMqtt => !IsTestingMqtt;
 
-    /// <summary>
-    /// 测试 MQTT 连接（ADR-067）：校验输入后用独立临时客户端 Connect + 发布测试消息，
-    /// 不影响正在运行的上报/告警连接；成功提示耗时，失败展示 broker 返回原因。
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanTestMqtt))]
     private async Task TestMqttAsync()
     {
@@ -291,7 +276,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            // 兜底：测试器意外异常不崩 UI（ADR-029 错误路径有提示）
             MqttSettingsStatus = $"连接失败：{ex.Message}";
         }
         finally
@@ -300,10 +284,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// 保存 MQTT 连接参数到 desktop-settings.json（ADR-067）；重启后由 GatewayHost 启动时加载生效
-    /// （环境变量 MQTT__* 仍优先）。只改 MQTT 字段，保留日志目录/转发开关（合并写）。
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanTestMqtt))]
     private void SaveMqttSettings()
     {
@@ -395,7 +375,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            // 兜底：设置写入/解析等意外异常不崩 UI，给出可读提示（ADR-029 错误路径有提示）
             ImportStatusText = $"从中心导入失败：{ex.Message}";
         }
         finally
@@ -418,7 +397,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
                     MqttConnectionState.Connecting => "连接中",
                     MqttConnectionState.Reconnecting => "重连中",
                     MqttConnectionState.Faulted => "故障",
-                    // ADR-061：转发开关关闭——不连接、不重连，直接显示已关闭
                     MqttConnectionState.Disabled => "MQTT 已关闭",
                     _ => "未连接"
                 };

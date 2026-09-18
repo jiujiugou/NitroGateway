@@ -6,11 +6,6 @@ using NitroGateway.Webapi.Services;
 
 namespace NitroGateway.Webapi.Controllers;
 
-/// <summary>
-/// 站点身份管理（ADR-036）：查看 / 修改 / 重新生成本站点唯一标识。
-/// Web 收敛为纯边缘网关后为单站点，接口与桌面设置页「站点标识」区语义对齐：
-/// 读操作所有角色可见，写操作（修改/重新生成）仅 Admin。
-/// </summary>
 [ApiController, Route("api/[controller]")]
 public class SiteController : ControllerBase
 {

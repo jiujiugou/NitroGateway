@@ -76,7 +76,6 @@
         <el-input v-model="gf.nameTemplate" placeholder="如 AI_{###} → AI_001, AI_002..." />
         <div class="hint">{{ previewName }}</div>
       </el-form-item>
-      <!-- ADR-024 P3-3：起始地址按协议解释（Modbus 数字 / S7 DB 区地址 / OPC UA NodeId） -->
       <el-form-item label="起始地址"><el-input v-model="gf.startAddress" :placeholder="defaultStartAddress(deviceProtocol)" style="width:100%" /></el-form-item>
       <el-form-item label="数量"><el-input-number v-model="gf.count" :min="1" :max="5000" style="width:100%" /></el-form-item>
       <el-form-item label="数据类型">
@@ -128,7 +127,6 @@ const makeEmpty = () => ({ name:'', address: defaultStartAddress(deviceProtocol.
 const pf = ref<Record<string, any>>(makeEmpty())
 const gf = ref({ nameTemplate:'AI_{###}', startAddress:'40001', count:100, dataType:'Float', access:'ReadOnly' })
 
-// ADR-024 P3-3 扩展：按设备协议给出默认起始地址（Modbus 数字 / S7 DB 区 / OPC UA 数值标识符）
 function defaultStartAddress(protocol: string): string {
   if (protocol === 'S7') return 'DB1.DBD0'
   if (protocol === 'OPC UA') return 'ns=2;i=1001'

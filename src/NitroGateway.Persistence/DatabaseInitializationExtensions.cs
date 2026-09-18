@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -28,7 +28,6 @@ namespace NitroGateway.Persistence
             var conn = configuration.GetValue<string>("Persistence:ConnectionString")
                 ?? throw new InvalidOperationException();
 
-            // ADR-002 P3-2：从 DI 取日志器传入，迁移/备份日志不再丢弃
             var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NitroGateway.Persistence.MigrationRunner");
             MigrationRunner.Run(conn, logger);
 

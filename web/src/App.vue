@@ -13,8 +13,6 @@
         <router-link to="/dashboard" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📊</span><span>仪表盘</span>
         </router-link>
-        <!-- 设备管理分组（可收缩）：Modbus/S7（/devices*）与 OPC UA（/opcua*）独立分区列为二级。
-             ADR-007 P2-2 分区决策不变；证书管理入口已下沉到 OPC UA 设备页（ADR-073 D8），不再占侧边栏。 -->
         <div class="nav-group">
           <div class="nav-group-title" role="button" @click="deviceOpen = !deviceOpen" :title="deviceOpen ? '收起设备管理' : '展开设备管理'">
             <span class="nav-icon">🔌</span><span>设备管理</span>
@@ -24,7 +22,6 @@
             <router-link to="/devices" class="nav-item nav-sub" active-class="nav-active">
               <span>Modbus / S7 设备</span>
             </router-link>
-            <!-- ADR-007 P2-2：OPC UA 设备独立分区（/opcua*），与通用 Modbus/S7 设备分开管理 -->
             <router-link to="/opcua" class="nav-item nav-sub" active-class="nav-active">
               <span>OPC UA 设备</span>
             </router-link>
@@ -42,15 +39,12 @@
         <router-link to="/alarms" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🔔</span><span>告警记录</span>
         </router-link>
-        <!-- ADR-065 A3：操作日志查询页（写值/登录/配置变更可追溯） -->
         <router-link to="/audit" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🧾</span><span>操作日志</span>
         </router-link>
-        <!-- ADR-066：用户管理（仅 Admin 可见；后端 AdminOnly 策略兜底） -->
         <router-link v-if="currentUser?.role === 'Admin'" to="/users" class="nav-item" active-class="nav-active">
           <span class="nav-icon">👥</span><span>用户管理</span>
         </router-link>
-        <!-- ADR-036：站点身份管理（查看/修改/重新生成，与桌面设置页对齐） -->
         <router-link to="/site" class="nav-item" active-class="nav-active">
           <span class="nav-icon">🏷️</span><span>站点身份</span>
         </router-link>
@@ -67,13 +61,11 @@
         <div class="topbar-title">NitroGateway 管理控制台</div>
         <!-- ADR-044：Center 形态不采集/不转发/无 MQTT，隐藏转发侧状态，避免误导 -->
         <div class="topbar-status">
-          <!-- ADR-061：转发开关关闭时明确显示「MQTT 已关闭」，不误导为故障/未连接 -->
           <span :class="['status-dot', mqttDisabled ? 'offline' : (mqttConnected ? 'online' : 'offline')]"></span>
           <span>{{ mqttDisabled ? 'MQTT 已关闭' : (mqttConnected ? 'MQTT 已连接' : 'MQTT 未连接') }}</span>
           <span class="status-sep">|</span>
           <span>缓冲队列 {{ backlog }} 批</span>
         </div>
-        <!-- ADR-066：当前登录用户（角色/自助改密/退出登录） -->
         <div class="topbar-user">
           <el-dropdown trigger="click">
             <span class="user-chip">
@@ -96,7 +88,6 @@
     </main>
   </div>
 
-  <!-- 自助改密（任何已登录角色；ADR-066） -->
   <el-dialog v-model="pwdVisible" title="修改密码" width="420">
     <el-form label-width="80px">
       <el-form-item label="当前密码">
@@ -129,7 +120,6 @@ const backlog = ref(0)
 
 let conn: HubConnection | null = null
 
-// ADR-066：当前登录用户（顶部栏显示 + 侧边栏菜单门控）
 const currentUser = ref<CurrentUser | null>(null)
 const pwdVisible = ref(false)
 const pwdForm = ref({ current: '', next: '' })
@@ -179,7 +169,6 @@ async function submitPassword() {
   }
 }
 
-// ADR-007 P1-3：后端 SignalR 无 BufferBacklogChanged 事件（仅 Measurement/DeviceStatusChanged/MqttStateChanged），
 // 原监听静默失效；改为周期性轮询 /status/system 刷新积压数
 let statusTimer: number | undefined
 
@@ -191,7 +180,6 @@ async function refreshStatus() {
   } catch { /* 忽略，下次轮询重试 */ }
 }
 
-// ADR-061：统一收敛 MQTT 状态 → 连接/关闭两个布尔（Disabled 与 Connected 互斥）
 function applyMqttState(state?: string) {
   mqttDisabled.value = state === 'Disabled'
   mqttConnected.value = state === 'Connected'

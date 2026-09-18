@@ -8,10 +8,6 @@ using NitroGateway.Storage.TimeSeries;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-027：按调用顺序出队的设备目录缓存 fake。
-/// 用 TaskCompletionSource 注入可控制完成时机的查询，模拟慢查询与乱序完成（竞态测试）。
-/// </summary>
 internal sealed class StagedSnapshotCache : IDeviceSnapshotCache
 {
     private readonly Queue<Task<OperationResult<IReadOnlyList<Device>>>> _results = new();
@@ -31,11 +27,6 @@ internal sealed class StagedSnapshotCache : IDeviceSnapshotCache
     public void Invalidate() { }
 }
 
-/// <summary>
-/// ADR-027：按调用顺序出队的时序存储 fake，记录分页调用参数（limit/offset）供断言。
-/// ADR-047：store 查询在 VM 内经 Task.Run 移到线程池执行，出队可能跨线程，
-/// 故对队列/PagedCalls 加锁，并暴露 <see cref="PagedDequeueCount"/> 供测试等待某次查询真正触达存储。
-/// </summary>
 internal sealed class StagedMeasurementStore : IMeasurementStore
 {
     private readonly object _gate = new();
@@ -50,10 +41,6 @@ internal sealed class StagedMeasurementStore : IMeasurementStore
     /// <summary>分页查询已出队次数（Task.Run 下出队在线程池，供测试等待查询真正发起后再触发下一次）。</summary>
     public int PagedDequeueCount => Volatile.Read(ref _pagedDequeueCount);
 
-    /// <summary>
-    /// 最新值查询（QueryLatestAsync）已出队次数（ADR-050）。Task.Run 下出队在线程池，
-    /// 供测试断言「帧驱动切设备全程未触发 DB 最新值查询」或等待兜底查询真正发起。
-    /// </summary>
     public int LatestDequeueCount => Volatile.Read(ref _latestDequeueCount);
 
     public void EnqueuePaged(Task<OperationResult<IReadOnlyList<PointSnapshot>>> result)

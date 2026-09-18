@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Shared;
@@ -45,7 +45,6 @@ public class MqttClientWrapperTests
         }
     }
 
-    /// <summary>ADR-061 测试替身：转发总开关（内存态，SetEnabled 触发事件）。</summary>
     private sealed class ToggleFake : IForwardMqttToggle
     {
         public bool IsEnabled { get; set; } = true;
@@ -96,7 +95,6 @@ public class MqttClientWrapperTests
     [Fact]
     public async Task AddNitroMqtt_WithoutToggle_ResolvesAsAlwaysEnabled()
     {
-        // ADR-061：未注册 IForwardMqttToggle 的宿主（如 Ingest 中心）也能解析 IMqttClient，
         // 且视为恒启用（GetService 返回 null → wrapper 内部跳过开关检查，行为与旧版一致）。
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -220,7 +218,6 @@ public class MqttClientWrapperTests
     [Fact]
     public async Task StateChange_NotifiesMqttStateListeners()
     {
-        // ADR-020 P1-1：MqttClientWrapper 必须在每次状态变更时通知注册的 IMqttStateListener
         // （SignalR MqttStateChanged 推送依赖此接线，修复前从不调用监听者）
         var inner = new FakeMqttInnerClient();
         var listener = new RecordingStateListener();
@@ -239,7 +236,6 @@ public class MqttClientWrapperTests
     [Fact]
     public async Task ConnectAsync_Cancelled_DoesNotStartReconnectLoop()
     {
-        // ADR-020 P1-2：取消不是连接失败——不得触发重连循环（修复前 OCE 被吞并送入 HandleConnectFailure）
         var inner = new FakeMqttInnerClient();
         await using var wrapper = new MqttClientWrapper(
             FastReconnectOptions(maxAttempts: 3), NullLogger<MqttClientWrapper>.Instance, inner, []);
@@ -259,7 +255,6 @@ public class MqttClientWrapperTests
     [Fact]
     public async Task Disable_DisconnectsAndStopsReconnect()
     {
-        // ADR-061：关闭开关 → 断开连接 + 置 Disabled + 意外断开不再重连
         var inner = new FakeMqttInnerClient();
         var toggle = new ToggleFake();
         await using var wrapper = new MqttClientWrapper(
@@ -284,7 +279,6 @@ public class MqttClientWrapperTests
     [Fact]
     public async Task Enable_AfterDisable_Reconnects()
     {
-        // ADR-061：开关重开 → 自动恢复连接（订阅由 CleanStart 重放兜底）
         var inner = new FakeMqttInnerClient();
         var toggle = new ToggleFake();
         await using var wrapper = new MqttClientWrapper(
@@ -304,7 +298,6 @@ public class MqttClientWrapperTests
     [Fact]
     public async Task ConnectAsync_WhenDisabled_ReturnsFailureAndStaysDisabled()
     {
-        // ADR-061：开关关闭时 ConnectAsync 直接失败——不置 Connecting、不触发重连
         var inner = new FakeMqttInnerClient();
         var toggle = new ToggleFake { IsEnabled = false };
         await using var wrapper = new MqttClientWrapper(
@@ -323,7 +316,6 @@ public class MqttClientWrapperTests
     [Fact]
     public async Task DisableDuringReconnect_StopsRetryingAndStaysDisabled()
     {
-        // ADR-061：重连循环进行中关闭开关 → 取消重连 + 置 Disabled + 不再尝试连接
         var inner = new FakeMqttInnerClient { ConnectException = new TimeoutException("broker down") };
         var toggle = new ToggleFake();
         await using var wrapper = new MqttClientWrapper(

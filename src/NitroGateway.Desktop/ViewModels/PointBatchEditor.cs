@@ -88,7 +88,6 @@ public sealed partial class PointBatchEditor : ObservableObject, INotifyDataErro
         }
     }
 
-    /// <summary>是否存在校验错误（ADR-037 S4）。</summary>
     public bool HasErrors => _errors.Count > 0;
 
     /// <summary>校验错误集合变更事件（WPF INotifyDataErrorInfo 订阅）。</summary>

@@ -42,7 +42,6 @@ public sealed class DesktopShellRegistrationTests
     [Fact]
     public void PointsViewModelFactory_is_registered_and_resolves()
     {
-        // ADR-029 P2：点位 ViewModel 工厂经 DI 注册（对话框不再手工 new + 逐个 GetRequiredService）
         var services = new ServiceCollection();
         services.AddSingleton<IForwardBuffer>(new StubForwardBuffer());
         services.AddSingleton<UiDispatcher>();

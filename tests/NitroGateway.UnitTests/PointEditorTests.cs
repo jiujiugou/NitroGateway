@@ -1,10 +1,9 @@
-﻿using NitroGateway.Desktop.ViewModels;
+using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Domain.Devices;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>ADR-029 P3：点位表单模型——字段映射与往返。</summary>
 public sealed class PointEditorTests
 {
     [Fact]
@@ -101,7 +100,6 @@ public sealed class PointEditorTests
         Assert.Equal("250 ms", custom.ScanIntervalText);
     }
 
-    // ===== ADR-037 S4：字段级校验 =====
 
     [Fact]
     public void Validate_rejects_empty_name_and_address()

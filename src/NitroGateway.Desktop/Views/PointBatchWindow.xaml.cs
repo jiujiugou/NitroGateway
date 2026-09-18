@@ -12,7 +12,6 @@ public partial class PointBatchWindow : Window
         DataContext = editor;
     }
 
-    /// <summary>生成（ADR-037 S4）：校验未通过时不关窗，错误经 ErrorTemplate 行内提示。</summary>
     private void OnSave(object sender, RoutedEventArgs e)
     {
         if (DataContext is PointBatchEditor editor && !editor.Validate())

@@ -5,11 +5,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-044/ADR-023：桌面端连接测试——与 Web DevicesController.TestConnection 同语义：
-/// Connect 打通链路后必须 Ping 确认从站存在（防假阳性）；失败/异常返回带错误的失败结果。
-/// 复用 WebapiControllerTests 中的 FakeDriverFactory/FakeProtocolDriver。
-/// </summary>
 public sealed class DeviceConnectionTesterTests
 {
     private static Device ModbusDevice() => new()
@@ -41,7 +36,6 @@ public sealed class DeviceConnectionTesterTests
     [Fact]
     public async Task TestAsync_connect_ok_ping_fail_returns_failure()
     {
-        // 链路通但从站无响应 → 必须判失败（ADR-023 假阳性防护）
         var tester = new DeviceConnectionTester(new FakeDriverFactory(
             new FakeProtocolDriver(OperationResult.Success(), OperationalError.Timeout("从站无响应"))));
 

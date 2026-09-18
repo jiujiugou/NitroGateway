@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Domain.Measurements;
@@ -9,11 +9,6 @@ using Xunit;
 
 namespace NitroGateway.IntegrationTests;
 
-/// <summary>
-/// ForwarderEngine 积压告警限流测试（ADR-001 P2-8）：
-/// 长断线期间每轮都会检查积压，告警必须限流——首次超限立即告警，之后每 60s 一次，
-/// 积压回落后重置限流状态，避免刷屏。
-/// </summary>
 [Collection("Forwarder")]
 public class ForwarderEngineTests
 {
@@ -112,7 +107,6 @@ public class ForwarderEngineTests
         }
     }
 
-    /// <summary>ADR-001 P3-12：首轮立即执行，不等第一个周期 tick（周期 10s 时告警应在 2s 内出现）</summary>
     [Fact]
     public async Task FirstRound_RunsImmediately_WithoutWaitingFullInterval()
     {
@@ -138,7 +132,6 @@ public class ForwarderEngineTests
         }
     }
 
-    /// <summary>ADR-016 P1-1：停机时 MQTT 仍连接，排空剩余缓冲后再退出</summary>
     [Fact]
     public async Task StopAsync_WithConnectedMqtt_DrainsRemainingBuffer()
     {
@@ -171,7 +164,6 @@ public class ForwarderEngineTests
             // .NET 10 BackgroundService.StartAsync 用 Task.Run 调度 ExecuteAsync（不再同步执行）。
             // 若在委托真正启动前 StopAsync 取消令牌，Task.Run 直接返回 Canceled 任务且引擎体从未运行，
             // 停机排空不会发生（本地并行 slnx 下 ~50% 复现，ExecuteTask=[Canceled]、日志为空）。
-            // 因此以引擎的 "ForwarderEngine Started." 日志作为真正开始执行的确定性信号（ADR-028 P1-1）。
             await WaitForAsync(() => logger.Entries.Any(e => e.Message.Contains("ForwarderEngine Started.")), TimeSpan.FromSeconds(5));
 
             // 停机瞬间现场：缓冲有 3 批待发，MQTT 仍连接
@@ -185,7 +177,6 @@ public class ForwarderEngineTests
             await engine.StopAsync(CancellationToken.None);
         }
 
-        // ADR-028 P1-1 验证加固：StopAsync 语义上已等待 ExecuteTask（含停机排空）完成，
         // 但跨测试进程并行/高负载下，取消 → drain 的衔接可能被调度延后（本地复现偶发 flaky），
         // 这里条件等待 drain 结果就绪再断言，避免对调度窗口的脆弱假设。
         await WaitForAsync(() => buffer.Pending.Count == 0 && mqtt.Published.Count > 0, TimeSpan.FromSeconds(5));
@@ -194,10 +185,6 @@ public class ForwarderEngineTests
         Assert.NotEmpty(mqtt.Published);
     }
 
-    /// <summary>
-    /// ADR-017 P1-1：积压查询瞬时故障不能放倒引擎（BackgroundService 未捕获异常默认 StopHost）——
-    /// 记 Error 跳过本轮，引擎继续按周期运行。
-    /// </summary>
     [Fact]
     public async Task BacklogQueryFailure_DoesNotStopEngine()
     {

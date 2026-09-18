@@ -228,7 +228,6 @@ public sealed class SettingsViewModelTests : IDisposable
     [Fact]
     public void SaveLogDirectory_preserves_forward_mqtt_toggle_in_file()
     {
-        // 先持久化开关=false，再保存日志目录：字段合并写，避免互相覆盖（ADR-059）
         new DesktopSettingsStore(_settingsFile).Save(new DesktopSettings { ForwarderMqttEnabled = false });
         var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
         var customDir = Path.Combine(Path.GetTempPath(), "nitrogateway-tests", $"custom-logs-{Guid.NewGuid():N}");
@@ -391,7 +390,6 @@ public sealed class SettingsViewModelTests : IDisposable
     [Fact]
     public void SaveMqttSettings_preserves_forward_toggle_in_file()
     {
-        // 合并写：只改 MQTT 字段，保留 ForwarderMqttEnabled，避免互相覆盖（ADR-059 同语义）
         new DesktopSettingsStore(_settingsFile).Save(new DesktopSettings { ForwarderMqttEnabled = false });
         var vm = CreateVm(new CenterSyncSettingsStore(_settingsFile));
         vm.MqttHost = "broker.local";
@@ -445,7 +443,6 @@ public sealed class SettingsViewModelTests : IDisposable
         _forwardMqttToggle,
         _mqttTester);
 
-    /// <summary>ADR-036 测试替身：站点标识提供者（记录调用，可编程校验失败）。</summary>
     private sealed class StubSiteIdProvider : ISiteIdProvider
     {
         public string Current { get; set; } = "site-test";
@@ -472,7 +469,6 @@ public sealed class SettingsViewModelTests : IDisposable
     }
 }
 
-/// <summary>ADR-059 测试替身：MQTT 转发总开关（可编程结果，记录调用）。</summary>
 internal sealed class StubForwardMqttToggle : IForwardMqttToggle
 {
     public bool IsEnabled { get; set; } = true;
@@ -501,7 +497,6 @@ internal sealed class StubForwardMqttToggle : IForwardMqttToggle
         => Task.FromResult(OperationResult.Success());
 }
 
-/// <summary>ADR-067 测试替身：MQTT 连接测试（可编程结果，记录输入）。</summary>
 internal sealed class StubMqttConnectionTester : IMqttConnectionTester
 {
     public MqttConnectionTestResult NextResult { get; set; } = new(true, 5, null);

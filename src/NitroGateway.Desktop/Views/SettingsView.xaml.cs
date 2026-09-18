@@ -1,10 +1,9 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using NitroGateway.Desktop.ViewModels;
 
 namespace NitroGateway.Desktop.Views;
 
-/// <summary>设置页 code-behind：中心 Token 与 MQTT 密码的遮蔽/显示切换（ADR-037 S5 / ADR-067）。</summary>
 public partial class SettingsView : UserControl
 {
     public SettingsView()

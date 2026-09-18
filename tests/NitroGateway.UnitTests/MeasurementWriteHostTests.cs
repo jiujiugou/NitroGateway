@@ -9,7 +9,6 @@ namespace NitroGateway.UnitTests;
 
 public class MeasurementWriteHostTests
 {
-    /// <summary>前 N 次写入返回 Failure 结果的存储桩（区别于抛异常，验证 ADR-018 P2-1 的失败结果检查）</summary>
     private sealed class ResultFailingStore : IMeasurementStore
     {
         public int FailuresRemaining { get; set; } = 1;
@@ -108,7 +107,6 @@ public class MeasurementWriteHostTests
         }
     }
 
-    /// <summary>ADR-018 P2-1：WriteAsync 返回 Failure（而非抛异常）时主机记告警并继续消费，不静默丢批次</summary>
     [Fact]
     public async Task WriteFailureResult_IsIsolated_HostKeepsConsuming()
     {

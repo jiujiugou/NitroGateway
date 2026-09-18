@@ -8,10 +8,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-066：TokenGenerator 改读用户存储（DB 化）——密码仅支持哈希校验（ADR-004 P1-2）、
-/// 停用账号拒签、用户不存在/密码错误区分状态（对外统一 401）。
-/// </summary>
 public class TokenGeneratorTests
 {
     /// <summary>内存用户存储桩：实现 IUserStore 全契约，支持按用户名查找与刷新 LastLoginAt。</summary>
@@ -152,7 +148,6 @@ public class TokenGeneratorTests
     [Fact]
     public async Task IssueTokenAsync_DisabledUser_Fails()
     {
-        // ADR-066：停用账号拒绝登录（403），防止禁用后仍可用旧凭据进入
         var generator = CreateGenerator(NewUser(enabled: false));
 
         var result = await generator.IssueTokenAsync("admin", "admin123");

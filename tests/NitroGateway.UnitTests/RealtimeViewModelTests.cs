@@ -10,11 +10,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-027 P1-1：RealtimeViewModel 异步加载竞态——快速切换设备/点位时，
-/// 旧查询结果晚到必须被版本守卫丢弃，不能覆盖新选择。
-/// ADR-045：原始缓冲 2h/7200 窗口 + 显示集合降采样（≤1000 点）+ 页面生命周期（IsActive）暂停/恢复。
-/// </summary>
 public sealed class RealtimeViewModelTests : IDisposable
 {
     /// <summary>帧间隔注入 1 小时，避免后台循环干扰（与 EventBridgeTests 同法）。</summary>
@@ -84,7 +79,6 @@ public sealed class RealtimeViewModelTests : IDisposable
         await TestWait.UntilAsync(() => vm.Points.Count == device.Points.Count);
 
         vm.SelectedPoint = vm.Points.First(p => p.PointId == point1.Id);
-        // ADR-047：store 查询经 Task.Run 移到线程池执行，等待第一次查询真正出队后再触发第二次，
         // 保证两次历史查询按调用顺序各取到一个 gate（否则出队顺序不确定，竞态断言不稳定）。
         await TestWait.UntilAsync(() => store.PagedDequeueCount >= 1);
         vm.SelectedPoint = vm.Points.First(p => p.PointId == point2.Id);
@@ -105,7 +99,6 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Frame_driven_device_switch_does_not_query_latest_and_grid_is_immediate()
     {
-        // ADR-050：切设备不再每次扫全历史。先发一帧把各设备点位最新值灌进内存缓存
         // （模拟已在线采集一段时间的设备），随后 选设备→切走→切回：
         // 网格全程即时用「配置 + 帧内存」填充，LatestDequeueCount 保持 0（未触发 DB 最新值查询）。
         var cache = new StagedSnapshotCache();
@@ -154,7 +147,6 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Missing_point_falls_back_to_db_and_does_not_override_frame_value()
     {
-        // ADR-050：冷启动/离线点位（从未在帧中出现）才走一次 DB 兜底；
         // 兜底只填缺失点位——在线点位以帧值为准，不被 DB 旧值覆盖。
         var cache = new StagedSnapshotCache();
         var device = TestDevices.Device("A", TestDevices.Point("P1"), TestDevices.Point("P2"));
@@ -194,14 +186,12 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Raw_buffer_keeps_at_most_two_hour_window_and_chart_is_downsampled()
     {
-        // ADR-037 S9/S12 + ADR-045 P2：原始缓冲上限 7200（1s×2h），溢出批量裁剪；
         // 显示集合是降采样后的 ≤ChartWindowPoints 点，最新值仍在右边缘
         var cache = new StagedSnapshotCache();
         var device = TestDevices.Device("A", TestDevices.Point("P1"));
         cache.EnqueueSuccess(device); // LoadDevicesAsync
         cache.EnqueueSuccess(device); // LoadPointsAsync(A)
         var store = new StagedMeasurementStore();
-        // ADR-047：历史预载经 Task.Run 在线程池完成；测试无 UI 线程时 _ui.Post 内联到各自调用线程，
         // 帧追加（测试线程）与历史回调的 _rawValues.Clear()（线程池）不串行化。预载 1 点让回调末尾
         // 的 RefreshChart 有可见落点（ChartValues.Count==1），等它落定再灌帧，避免晚到回调清空已累计缓冲。
         store.EnqueuePaged(Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(
@@ -239,7 +229,6 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Re_activate_reloads_devices_and_shows_newly_added_device()
     {
-        // ADR-048：设备页新增设备后切回实时页，IsActive 重新置 true 触发重载，
         // 新设备出现在下拉列表（原实现只在构造时 LoadDevicesAsync 一次，新设备缺失）
         var cache = new StagedSnapshotCache();
         var deviceA = TestDevices.Device("A");
@@ -265,7 +254,6 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Re_activate_keeps_selected_device_when_renamed()
     {
-        // ADR-048：设备页重命名后切回实时页，下拉项更新为新名称，
         // 且选中设备按 Id 恢复（DeviceOption 是记录，重命名替换了新实例，需重指向）
         var cache = new StagedSnapshotCache();
         var device = TestDevices.Device("A", TestDevices.Point("P1"));
@@ -345,7 +333,7 @@ public sealed class RealtimeViewModelTests : IDisposable
         Assert.Empty(vm.RawValues);
 
         // 重新激活：重载最近历史
-        cache.EnqueueSuccess(device); // 重新激活时 LoadDevicesAsync（ADR-048，队列末尾补一次目录结果）
+        cache.EnqueueSuccess(device);
         store.EnqueuePaged(Task.FromResult(OperationResult<IReadOnlyList<PointSnapshot>>.Success(
             [TestDevices.Snapshot(device.Id, point.Id, 11.0)])));
         vm.IsActive = true;
@@ -356,7 +344,6 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Frame_updates_cache_but_grid_refresh_is_throttled()
     {
-        // ADR-051：表格节流——帧值先入内存缓存（O(1) 无通知），DataGrid 行按节流周期批量刷，
         // 不再逐帧 Update（原 500×4×5fps ≈ 1 万通知/秒压满 UI 线程饿死交互）。
         // 拉大节流周期，确定性断言「帧已到、缓存已更新、网格未逐帧刷」。
         var cache = new StagedSnapshotCache();
@@ -385,12 +372,11 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Grid_refreshes_from_cache_on_throttle_boundary_and_resume()
     {
-        // ADR-051：到节流周期后由内存缓存批量补齐网格；窗口恢复（IsActive 重新置 true）走同一补齐路径。
         var cache = new StagedSnapshotCache();
         var device = TestDevices.Device("A", TestDevices.Point("P1"));
         cache.EnqueueSuccess(device); // LoadDevicesAsync
         cache.EnqueueSuccess(device); // LoadPointsAsync(A)
-        cache.EnqueueSuccess(device); // 恢复激活时 LoadDevicesAsync（ADR-048）
+        cache.EnqueueSuccess(device);
         var vm = new RealtimeViewModel(cache, new StagedMeasurementStore(), new UiDispatcher(),
             _bridge, NullLogger<RealtimeViewModel>.Instance);
         vm.GridRefreshInterval = TimeSpan.FromHours(1); // 节流不靠真实时间
@@ -420,7 +406,6 @@ public sealed class RealtimeViewModelTests : IDisposable
     [Fact]
     public async Task Grid_refreshes_each_frame_when_throttle_disabled()
     {
-        // ADR-051 控制组：节流间隔为 0（测试专用）时每帧都刷——证明批量路径与逐帧路径
         // 结果一致，节流只降刷新频率、不改变刷新正确性。
         var cache = new StagedSnapshotCache();
         var device = TestDevices.Device("A", TestDevices.Point("P1"));

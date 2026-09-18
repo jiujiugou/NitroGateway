@@ -12,7 +12,6 @@ const router = createRouter({
     { path: '/devices/:id', name: 'DeviceDetail', component: () => import('../views/Devices/DeviceDetailView.vue') },
     { path: '/devices/:id/edit', name: 'DeviceEdit', component: () => import('../views/Devices/DeviceForm.vue') },
     { path: '/devices/:deviceId/points', name: 'Points', component: () => import('../views/Points/PointList.vue') },
-    // ADR-007 P2-2：OPC UA 设备独立分区（/opcua*），与通用 Modbus/S7 设备区分开心智，
     // 见 12-OPC-UA接入设计.md 与 ADR-073。API 仍是协议无关的 /devices*，后端零改动。
     { path: '/opcua', name: 'OpcUaDevices', component: () => import('../views/OpcUa/OpcUaDeviceList.vue') },
     { path: '/opcua/new', name: 'OpcUaDeviceNew', component: () => import('../views/OpcUa/OpcUaDeviceForm.vue') },
@@ -25,9 +24,7 @@ const router = createRouter({
     { path: '/alarms', name: 'Alarms', component: () => import('../views/Alarms/AlarmListView.vue') },
     { path: '/alarmrules', name: 'AlarmRules', component: () => import('../views/Alarms/AlarmRulesView.vue') },
     { path: '/audit', name: 'AuditLog', component: () => import('../views/Audit/AuditLogView.vue') },
-    // ADR-066：用户管理页（仅 Admin；前端门控只是 UX，后端 AdminOnly 策略兜底）
     { path: '/users', name: 'Users', component: () => import('../views/Users/UserListView.vue'), meta: { roles: ['Admin'] } },
-    // ADR-036：站点身份管理（查看/修改/重新生成，与桌面设置页对齐）
     { path: '/site', name: 'SiteIdentity', component: () => import('../views/Sites/SiteIdentityView.vue') },
     { path: '/system', name: 'SystemStatus', component: () => import('../views/System/SystemStatus.vue') },
     { path: '/history', name: 'History', component: () => import('../views/History/HistoryView.vue') },

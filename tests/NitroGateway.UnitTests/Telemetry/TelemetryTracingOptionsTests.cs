@@ -4,10 +4,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests.Telemetry;
 
-/// <summary>
-/// Telemetry:Tracing 配置解析测试（ADR-056）。
-/// 解析逻辑是追踪启停的关键开关：默认启用 OTLP，缺失/非法值回退默认，不因配置错误阻断启动。
-/// </summary>
 public class TelemetryTracingOptionsTests
 {
     private static IConfiguration Build(Dictionary<string, string?> values)

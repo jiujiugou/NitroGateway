@@ -37,7 +37,6 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
             Parity = ParseParity(ToParamString(connection.Parameters.GetValueOrDefault("Parity"))),
             StopBits = ParseStopBits(ToParamString(connection.Parameters.GetValueOrDefault("StopBits"))),
             DataFormat = ParseDataFormat(ToParamString(connection.Parameters.GetValueOrDefault("DataFormat"))),
-            // ADR-003 P3-4：串口超时透传设备连接参数 RequestTimeoutMs
             ReceiveTimeoutMs = connection.RequestTimeoutMs,
             ReadTimeoutMs = connection.RequestTimeoutMs,
             WriteTimeoutMs = connection.RequestTimeoutMs
@@ -60,7 +59,6 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
         if (State == DriverState.Connected && _lease is { } alive && alive.Rtu.IsOpen())
             return OperationResult.Success();
 
-        // ADR-019 P3-3：租约替换与读写共用同一闸门——先用驱动内锁串行化"连接管理"自身，
         // 再拿当前句柄的共享端口闸门做替换，防止在途读写持有已关闭句柄（帧交错/句柄竞争）
         await _sync.WaitAsync(ct);
         try
@@ -178,7 +176,6 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
 
     protected override async Task<OperationResult> WriteSingleValueAsync(DevicePoint point, string address, object value)
     {
-        // ADR-003 P1-2：按 DataType 全量映射 HSL 写方法，不再回退 Convert.ToSingle
         var result = point.DataType switch
         {
             DataType.Bool    => await Rtu.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),

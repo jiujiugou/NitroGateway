@@ -6,10 +6,6 @@ using NitroGateway.Webapi.Models;
 
 namespace NitroGateway.Webapi.Controllers;
 
-/// <summary>
-/// 操作审计日志查询 API（ADR-065 A3）。数据源为 SQLite audit_logs（AuditMiddleware 非 GET /api/* 落库），
-/// 把「写值 → 审计 → 可追溯」闭环可视化。审计属敏感数据，仅 Admin/Operator 可查。
-/// </summary>
 [ApiController, Route("api/[controller]")]
 [Authorize(Roles = Roles.AdminOperator)]
 public class AuditLogsController : ControllerBase

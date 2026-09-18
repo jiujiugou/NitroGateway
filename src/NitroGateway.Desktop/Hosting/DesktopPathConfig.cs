@@ -70,11 +70,6 @@ internal static class DesktopPathConfig
         }
     }
 
-    /// <summary>
-    /// 定位 Serilog File sink 的配置键（<c>Serilog:WriteTo:N:Args:path</c>）。
-    /// 按 Name 匹配而非硬编码数组索引（ADR-027 P3-3），WriteTo 增删项不会错位；
-    /// 未配置 File sink 时回退索引 0（新增 WriteTo 数组时从首项开始）。
-    /// </summary>
     public static string FileSinkPathKey(IConfiguration configuration)
     {
         var file = configuration.GetSection("Serilog:WriteTo").GetChildren()
@@ -84,11 +79,6 @@ internal static class DesktopPathConfig
             : "Serilog:WriteTo:0:Args:path";
     }
 
-    /// <summary>
-    /// 读取日志路径环境变量：优先 File sink 当前索引对应的
-    /// <c>Serilog__WriteTo__N__Args__path</c>；同时兼容早期文档化的索引 1
-    /// （ADR-027 P3-5 移除 Console 后 File 索引从 1 变为 0）。
-    /// </summary>
     private static string? ReadLogPathEnv(string logPathKey)
     {
         var currentIndex = logPathKey.Split(':').ElementAtOrDefault(2) is { } key &&

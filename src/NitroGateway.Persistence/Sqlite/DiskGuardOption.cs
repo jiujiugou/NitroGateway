@@ -1,9 +1,5 @@
-﻿namespace NitroGateway.Persistence.Sqlite;
+namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// 磁盘守卫配置（appsettings 的 "Disk" 段，ADR-012）。默认值保证零配置可用：
-/// Warning 1GB / Critical 256MB / 周期 60s。
-/// </summary>
 public sealed class DiskGuardOption
 {
     /// <summary>配置节名（appsettings 中为 "Disk"）</summary>

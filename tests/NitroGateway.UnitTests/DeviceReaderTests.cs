@@ -9,11 +9,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-030 L2（用户决策）：空点位设备不跳过连接——仍从连接池取驱动并尝试连接，
-/// 连接失败经重试机制上报失败 → 连续失败判离线；连接成功返回空列表。
-/// ADR-062：点位级 ScanIntervalMs 降频采样——到期点位子集才传给驱动，未到期轮跳过。
-/// </summary>
 public class DeviceReaderTests
 {
     [Fact]
@@ -68,7 +63,6 @@ public class DeviceReaderTests
         Assert.Single(result.Value!);
     }
 
-    // ── ADR-062：点位级 ScanIntervalMs 降频采样 ──
 
     /// <summary>ScanIntervalMs=0（默认）→ 继承全局 1000ms → 每轮（按全局间隔）都读。</summary>
     [Fact]

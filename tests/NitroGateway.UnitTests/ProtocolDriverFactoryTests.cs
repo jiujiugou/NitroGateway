@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
@@ -8,10 +8,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-030 P1：ProtocolDriverFactory 将 DeviceConnection.RetryCount/RetryIntervalMs
-/// 注入 ReliableProtocolDriver（此前硬编码 3 次/500ms，连接参数配置不生效）。
-/// </summary>
 public class ProtocolDriverFactoryTests
 {
     [Fact]

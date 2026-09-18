@@ -57,7 +57,6 @@ public sealed class WebConfigSyncService : BackgroundService
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                // 关闭宿主属正常退出，不计错误（延续 ADR-030 关闭路径干净方向）
                 break;
             }
             catch (Exception ex)

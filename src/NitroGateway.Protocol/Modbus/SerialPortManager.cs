@@ -17,7 +17,6 @@ public sealed record SerialPortSettings
     /// <summary>寄存器字节序（Modbus 标准为 ABCD，高字在前）</summary>
     public DataFormat DataFormat { get; init; } = DataFormat.ABCD;
 
-    // ADR-003 P3-4：超时不再硬编码，由 ModbusRtuDriver 从连接参数 RequestTimeoutMs 透传
     /// <summary>通信接收超时（毫秒），默认 1000</summary>
     public int ReceiveTimeoutMs { get; init; } = 1000;
 

@@ -7,10 +7,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-067：MQTT 连接测试服务——Connect + 发布测试消息双验（防假阳性），
-/// 独立临时客户端不碰运行中连接；成功/连接失败/发布失败/超时各路径。
-/// </summary>
 public sealed class MqttConnectionTesterTests
 {
     [Fact]

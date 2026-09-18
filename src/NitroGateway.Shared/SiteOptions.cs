@@ -42,19 +42,11 @@ public static class SiteOptions
     /// <summary>自动生成随机段长度（40 位熵，万级现场碰撞可忽略；中心 sites 唯一索引兜底）</summary>
     private const int SiteIdRandomLength = 10;
 
-    /// <summary>
-    /// siteId 合法性：匹配 <see cref="SiteIdPattern"/> 且非保留值 <see cref="DefaultSiteId"/>。
-    /// "default" 是"未初始化"哨兵（旧版缺省），正式站点禁止使用（ADR-036）。
-    /// </summary>
     public static bool IsValidSiteId(string? siteId) =>
         !string.IsNullOrEmpty(siteId)
         && !string.Equals(siteId, DefaultSiteId, StringComparison.Ordinal)
         && Regex.IsMatch(siteId, SiteIdPattern, RegexOptions.CultureInvariant);
 
-    /// <summary>
-    /// 自动生成唯一站点标识（ADR-036）：<c>site-</c> + 10 位随机（加密随机源）。
-    /// 概率唯一 + 中心 sites.site_id 唯一索引兜底；离线首启无需联网即可生成。
-    /// </summary>
     public static string GenerateSiteId()
     {
         Span<char> chars = stackalloc char[SiteIdRandomLength];

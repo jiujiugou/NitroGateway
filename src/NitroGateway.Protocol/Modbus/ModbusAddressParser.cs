@@ -29,7 +29,6 @@ public sealed class ModbusAddressParser : IAddressParser
                 System.Globalization.CultureInfo.InvariantCulture, out var offset))
             throw new ArgumentException($"无法解析地址偏移: {offsetStr}", nameof(rawAddress));
 
-        // ADR-003 P2-1：PLC 式地址号 1..65536，超限抛异常而非 (ushort) 静默回绕
         if (offset is < 1 or > 65536)
             throw new ArgumentException($"地址偏移超出范围 (1..65536): {offsetStr}", nameof(rawAddress));
 
@@ -61,7 +60,6 @@ public sealed class ModbusAddressParser : IAddressParser
     }
 
     /// <inheritdoc />
-    // ADR-003 P3-1：全仓无调用方（MergeRanges 用内联 gap 逻辑）；IAddressParser 接口只增不删，
     // 实现保留，后续若统一 MergeRanges 可复用它
     public int GetDistance(PointAddress a, PointAddress b)
     {

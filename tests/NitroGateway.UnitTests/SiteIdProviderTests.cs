@@ -5,9 +5,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-036 站点标识：SiteOptions 校验/生成、SiteSettingsStore 文件读写、SiteIdProvider 解析顺序。
-/// </summary>
 public sealed class SiteIdProviderTests
 {
     private sealed class MemorySiteStore : ISiteSettingsStore

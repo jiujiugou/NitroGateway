@@ -59,7 +59,6 @@ public class OpcUaDriverTests
         Assert.Equal("ResourceUnavailable", r.Error!.Code);
     }
 
-    /// <summary>ADR-019 P1-1：未连接读单点返回 Unavailable，绝不产出 0.0 伪值</summary>
     [Fact]
     public async Task ReadAsync_NotConnected_ReturnsUnavailable()
     {

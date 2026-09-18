@@ -4,10 +4,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-027 P3-2：UiDispatcher 在 Dispatcher 关闭后入队不得抛异常
-/// （EventBridge 帧循环在应用关闭期间仍在后台触发）。
-/// </summary>
 public sealed class UiDispatcherTests
 {
     [Fact]

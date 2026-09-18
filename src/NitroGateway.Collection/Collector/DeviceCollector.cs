@@ -73,7 +73,6 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
         activity?.SetTag(GatewayActivityTags.DeviceId, device.Id.ToString());
         activity?.SetTag(GatewayActivityTags.DeviceName, device.Name);
 
-        // ADR-016 P2-1：1s 热路径只打 Debug，避免每设备每轮 6+ 行 Info 刷屏
         _logger.LogDebug("开始采集设备 {Device}", device.Name);
 
         // ── 0. OPC UA Subscription（ADR-071）：活跃时由通知驱动共享管道，跳过轮询。
@@ -81,11 +80,9 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
         if (_subscriptionCoordinator is not null && await _subscriptionCoordinator.TryActivateAsync(device, ct))
             return;
 
-        // ── 1. 点位级采样间隔调度（ADR-062）：先于熔断检查——
         //    全部 enabled 点未到 ScanIntervalMs → 跳过本轮：不调驱动、不触发熔断
         //    （TryEnterProbe/RecordSuccess/RecordFailure 全不碰）、不更新健康快照
         //    （保持上次状态，既不误报在线也不误判离线）。
-        //    返回 null（无 enabled 点）→ 仍走 ADR-031 真实探活，不在此拦截。
         var duePoints = _reader.GetDuePoints(device);
         if (duePoints is { Count: 0 })
         {
@@ -103,7 +100,6 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
             return;
         }
 
-        // ADR-016 P3-2：探测名额闭环——TryEnterProbe 返回 true 后，任何路径都必须
         // RecordSuccess/RecordFailure 关闭探测；此处用 try/catch 兜底，避免未来某步骤
         // 抛异常导致 HalfOpen 探测名额被占 30 秒。
         var probeTaken = true;
@@ -140,7 +136,6 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
             }
             else
             {
-                // ADR-030 L1：空点位设备每轮必走此分支，WRN 每秒刷屏（N 台×1s）；
                 // 属常态而非故障，降 Debug；真实读取失败仍保留 Warning。
                 _logger.LogDebug("设备 {DeviceId} 没有有效点位数据，跳过分发", device.Name);
             }
@@ -153,7 +148,6 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
                     device.Name, goodCount, snapshots.Count,
                     string.Join(", ", snapshots.Select(s => $"{s.Value ?? s.ErrorMessage}")));
 
-            // ADR-016 P3-3 + ADR-031：读取成功（含点位质量差）只上报成功；firstBad 明细仅作诊断信息透传
             var firstBad = snapshots.FirstOrDefault(s => s.Quality != QualityCode.Good);
             _reporter.Report(device.Id, device.Name, true, firstBad?.ErrorMessage);
 
@@ -167,7 +161,6 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
         }
         catch
         {
-            // ADR-016 P3-2：异常路径也要关闭探测名额（记失败，视为探测未通过）
             if (probeTaken && !probeReleased)
             {
                 try { circuitBreaker.RecordFailure(); } catch { /* 熔断器自身异常不阻断采集 */ }
@@ -191,11 +184,9 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
             _logger.LogWarning("获取设备列表失败: {Error}", devicesResult.Error!.Message);
             return;
         }
-        // ADR-002 P2-2（方案 1）：维护模式过滤以 HealthMonitor 实时状态为准（零缓存延迟），
         // 不再读设备目录缓存中的 Status（配置缓存可能滞后一个采集周期）
         var devices = devicesResult.Value!.Where(d => !IsInMaintenance(d)).ToList();
         NitroMetrics.DevicesAvailable.Set(devices.Count);
-        // ADR-009 P1-2：devices_online = HealthMonitor 健康快照中 Online 的设备数，
         // 与 devices_available（过滤维护模式后的待采集数）语义区分；随每轮采集刷新。
         NitroMetrics.DevicesOnline.Set(
             _healthMonitor.GetAllSnapshots().Count(s => s.Status == DeviceStatus.Online));
@@ -211,7 +202,6 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
         using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.CollectRound);
         activity?.SetTag(GatewayActivityTags.DeviceCount, devices.Count);
 
-        // ADR-009 P1-1：整轮并行采集耗时（不含设备列表获取），供"采集轮次是否超时"监控
         var roundStopwatch = Stopwatch.StartNew();
         try
         {

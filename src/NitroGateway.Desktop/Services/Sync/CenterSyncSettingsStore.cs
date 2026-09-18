@@ -6,11 +6,6 @@ using NitroGateway.Desktop.Services.Settings;
 
 namespace NitroGateway.Desktop.Services.Sync;
 
-/// <summary>
-/// 中心同步设置（ADR-033 阶段 2）：中心地址与 Token。
-/// ADR-037 S5：Token 经 DPAPI（CurrentUser）加密后存于本机
-/// <c>%LocalAppData%\NitroGateway\center-sync.json</c>，明文只保留在内存中。
-/// </summary>
 public sealed class CenterSyncSettings
 {
     /// <summary>中心 Webapi 基地址，如 "http://center.example.com:5100"</summary>
@@ -31,11 +26,6 @@ public interface ICenterSyncSettingsStore
     void Save(CenterSyncSettings settings);
 }
 
-/// <summary>
-/// 中心同步设置的 JSON 文件实现。Token 落盘前 DPAPI 加密（ADR-037 S5）；
-/// 读取旧版明文 Token 时兼容解析并立即改写为加密形态（迁移）。
-/// 文件损坏/缺失时回退默认空设置，不阻断设置页。
-/// </summary>
 public sealed class CenterSyncSettingsStore : ICenterSyncSettingsStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -70,7 +60,6 @@ public sealed class CenterSyncSettingsStore : ICenterSyncSettingsStore
                 return settings;
             }
 
-            // ADR-037 S5 迁移：旧版明文 CenterToken 兼容读取，并立即改写为加密形态
             var legacy = JsonSerializer.Deserialize<LegacyCenterSyncSettings>(raw, JsonOptions);
             if (legacy is { CenterToken.Length: > 0 })
             {

@@ -1,6 +1,5 @@
 namespace NitroGateway.Transport.MQTT;
 
-/// <summary>MQTT 连接参数。ADR-020 P3-2：数值项在属性层夹紧（非法配置启动即报错），Host/Port 组合校验在 <c>AddNitroMqtt</c> 注册时执行。</summary>
 public sealed record MqttConnectionOptions
 {
     // ADR-006 P3-5：Host/Port 由 set 改为 init，与其余属性保持一致（构造后不可变，避免运行期漂移）。

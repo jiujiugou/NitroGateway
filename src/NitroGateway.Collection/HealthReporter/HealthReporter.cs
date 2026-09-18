@@ -34,7 +34,6 @@ public sealed class HealthReporter : IHealthReporter
         }
         catch (Exception ex)
         {
-            // ADR-031：健康上报异常不能崩采集循环，但不能静默——否则设备状态滞留且无日志线索
             _logger.LogWarning(ex, "健康上报异常被吞掉: Device={DeviceName} [{DeviceId}]", deviceName, deviceId);
         }
     }

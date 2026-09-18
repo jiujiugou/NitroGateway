@@ -4,9 +4,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-043：告警规则表单编辑模型——设备→点位级联、校验、ToRule/FromRule 双向映射。
-/// </summary>
 public sealed class AlarmRuleEditorTests
 {
     [Fact]

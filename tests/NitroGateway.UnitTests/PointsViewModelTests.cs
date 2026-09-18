@@ -8,10 +8,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-029 P2：点位管理窗口增删改——对话框取消不落库、
-/// 增删改走 IPointManager（Scoped，经 IServiceScopeFactory 解析）、成功后刷新列表。
-/// </summary>
 public sealed class PointsViewModelTests : IDisposable
 {
     private readonly Guid _deviceId = Guid.NewGuid();

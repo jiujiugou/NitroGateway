@@ -1,4 +1,4 @@
-﻿namespace NitroGateway.Protocols.S7;
+namespace NitroGateway.Protocols.S7;
 
 /// <summary>
 /// S7 地址解析结果。支持 DB 区（DB1.DBD0）与 M/I/Q 区（M100、I0.0）。
@@ -20,6 +20,5 @@ public sealed record S7Address
     /// <summary>位偏移（仅位地址有效，如 DBX0.3 / M100.2）</summary>
     public int BitOffset { get; init; }
 
-    /// <summary>地址串是否带位后缀（如 DBX0.3、M100.2）；用于校验非位类型不得携带位偏移（ADR-024 P1-3）</summary>
     public bool HasBit { get; init; }
 }

@@ -43,10 +43,8 @@ public static class DesktopServiceCollectionExtensions
         services.AddSingleton<HistoryViewModel>();
         services.AddSingleton<SettingsViewModel>();
 
-        // ADR-029 P4：设备/点位编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
         services.AddSingleton<IDeviceDialogService, DeviceDialogService>();
 
-        // ADR-029 P2：点位 ViewModel 工厂（scope 解析收敛，对话框不再手工 new + GetRequiredService）
         services.AddSingleton<IPointsViewModelFactory, PointsViewModelFactory>();
 
         // 点位 CSV 导入/导出文件对话框（WPF 实现；ViewModel 依赖接口便于单测）
@@ -55,13 +53,11 @@ public static class DesktopServiceCollectionExtensions
         // ADR-044：桌面端连接测试（Connect+Ping，复用协议驱动工厂），供设备编辑窗口「测试连接」按钮
         services.AddSingleton<IDeviceConnectionTester, DeviceConnectionTester>();
 
-        // ADR-067：MQTT Broker 连接测试——独立临时客户端（不碰运行中转发连接），供设置页「测试连接」按钮
         services.AddSingleton<IMqttConnectionTester>(sp => new MqttConnectionTester(
             sp.GetRequiredService<IConfiguration>(),
             sp.GetRequiredService<ILogger<MqttConnectionTester>>(),
             sp.GetRequiredService<ILogger<NitroGateway.Transport.MQTT.MqttClientWrapper>>()));
 
-        // ADR-043：告警规则编辑对话框（WPF 模态实现；ViewModel 依赖接口便于单测）
         services.AddSingleton<IAlarmRuleDialogService, AlarmRuleDialogService>();
 
         // ADR-033 阶段 2：中心配置导入（地址/Token 本机存储 + 快照拉取 + 以中心为准重置本地）。
@@ -72,11 +68,9 @@ public static class DesktopServiceCollectionExtensions
         // 桌面端本地设置：日志目录（设置页可改，保存后重启生效；环境变量仍优先）
         services.AddSingleton<IDesktopSettingsStore>(_ => new DesktopSettingsStore());
 
-        // ADR-059：MQTT 转发总开关——desktop-settings.json 持久化（重启保持）；
         // 宿主启动（迁移完成后）调用 IForwardMqttToggle.InitializeAsync 加载持久值到内存
         services.AddSingleton<IForwardMqttToggle, DesktopForwardMqttToggle>();
 
-        // ADR-036 站点标识：site.json 存储 + 提供者（设置页展示/编辑/重新生成）
         services.AddSingleton<ISiteSettingsStore>(_ => new SiteSettingsStore());
         services.AddSingleton<ISiteIdProvider>(sp => new SiteIdProvider(
             sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ISiteSettingsStore>()));

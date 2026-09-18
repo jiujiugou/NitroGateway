@@ -2,12 +2,6 @@ using System.Collections.Concurrent;
 
 namespace NitroGateway.Security.Auth;
 
-/// <summary>
-/// 登录失败限流（ADR-004 P2-1）。内存实现：按「用户名|IP」计数失败次数，
-/// 达到阈值后短时锁定；仅作边缘网关内网防暴力破解的最小平卫，不做分布式/持久化。
-/// ADR-022 P3-3：字典有界——条目数超过上限时清理窗口已过期的记录，
-/// 防止攻击者用大量唯一「用户名|IP」组合无界撑大内存。
-/// </summary>
 public sealed class LoginRateLimiter
 {
     private sealed record Entry(int Failures, DateTimeOffset FirstFailureAt, DateTimeOffset? LockedUntil);
@@ -73,7 +67,6 @@ public sealed class LoginRateLimiter
     /// <summary>登录成功后清除计数</summary>
     public void Reset(string key) => _entries.TryRemove(key, out _);
 
-    /// <summary>条目超上限时清理窗口已过期的记录，保证字典有界（ADR-022 P3-3）</summary>
     private void TrimExpired(DateTimeOffset now)
     {
         if (_entries.Count < _maxEntries) return;

@@ -7,11 +7,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// SqliteAuditLogStore 测试（ADR-065 A3 操作审计落库/查询）：
-/// 写 + 查询（时间倒序、过滤、分页）、表缺失时写 best-effort 不抛出、
-/// 查询失败按 OperationResult 分类返回（不向调用方抛 SQLite 异常）。
-/// </summary>
 public class SqliteAuditLogStoreTests
 {
     /// <summary>临时文件库：按 M014 迁移结构建 audit_logs 表，释放时删除文件。</summary>

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NitroGateway.Persistence.Sqlite;
 using NitroGateway.Storage.Disk;
@@ -6,10 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-012 磁盘守卫测试：阈值判断 / Critical 优先 / 滞后恢复 / 等级变化事件。
-/// 核心逻辑（Evaluate）为静态纯函数，直接红绿对照；事件路径经 CheckOnceAsync 用超大阈值触发。
-/// </summary>
 public sealed class DiskGuardTests
 {
     private const long Gb = 1024L * 1024 * 1024;

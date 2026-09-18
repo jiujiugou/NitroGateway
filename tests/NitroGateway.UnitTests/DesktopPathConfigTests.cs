@@ -7,10 +7,6 @@ using NitroGateway.Desktop.Services.Settings;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-026 D4 + ADR-027 P3-3：桌面路径默认值单测
-/// （%LocalAppData% 缺省 + 环境变量覆盖 + File sink 按 Name 定位而非硬编码索引）。
-/// </summary>
 public sealed class DesktopPathConfigTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(
@@ -51,7 +47,6 @@ public sealed class DesktopPathConfigTests : IDisposable
 
         DesktopPathConfig.Apply(config, _tempDir);
 
-        // ADR-027 P3-5 移除 Console 后 File sink 位于索引 0；无显式配置时按默认索引 0 写入
         Assert.Equal(Path.Combine(_tempDir, "logs", "nitrogateway-desktop-.log"),
             config["Serilog:WriteTo:0:Args:path"]);
     }

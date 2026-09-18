@@ -1,7 +1,6 @@
 <template>
   <div>
     <h2 class="page-title">操作日志</h2>
-    <!-- ADR-065 A3：写值/登录/配置变更 审计可追溯——时间/操作者/动作/结果过滤 -->
     <div class="card" style="margin-bottom:16px">
       <div class="query-bar">
         <el-date-picker

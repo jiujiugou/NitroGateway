@@ -7,13 +7,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// 用户存储 SQLite 实现（ADR-066：用户 DB 化）。Dapper 独立连接（与 MeasurementStore 同模式）：
-/// 每操作打开新连接并应用库级 PRAGMA，避免跨线程共享连接；单例注册。
-/// <para><b>失败语义：</b>用户是登录/授权的权威身份源，存储异常直接上抛（由异常中间件转 500），
-/// 不像审计（best-effort 附加能力）那样吞错——DB 故障≠凭据错误，不能伪装成 401。
-/// 仅「用户名唯一冲突」这类可预期业务失败返回 <see cref="OperationResult{T}.Failure"/>。</para>
-/// </summary>
 public sealed class SqliteUserStore : IUserStore
 {
     private readonly string _connectionString;
@@ -26,7 +19,6 @@ public sealed class SqliteUserStore : IUserStore
         _logger = logger;
     }
 
-    /// <summary>打开独立连接并应用库级 PRAGMA（WAL/busy_timeout，ADR-001 P1-4）</summary>
     private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken ct)
     {
         var conn = new SqliteConnection(_connectionString);

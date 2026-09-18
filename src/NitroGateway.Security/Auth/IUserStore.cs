@@ -2,13 +2,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Security.Auth;
 
-/// <summary>
-/// 用户存储接口（ADR-066：用户管理不走全量 Identity，用户在 SQLite users 表）。
-/// 接口定义在 Security 模块（纯契约），SQLite 实现位于 Persistence（Dapper），依赖方向 Security ← Persistence。
-/// <para><b>契约：</b>所有方法按操作打开独立连接；写入方法成功后即时生效（无需重启），
-/// 登录/授权热路径每次从存储读取，保证「新增/改密/启停」实时可见。</para>
-/// <para><b>安全约束：</b>密码以 PasswordHasher 哈希落库；本接口与实现均不得暴露明文。</para>
-/// </summary>
 public interface IUserStore
 {
     /// <summary>按用户名精确查找；不存在返回 null（登录校验第一步）</summary>

@@ -1,22 +1,10 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using Microsoft.Data.Sqlite;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// SQLite 连接 PRAGMA 统一应用入口（ADR-002 P2-1 / ADR-018 P3-3）。
-/// 默认 rollback journal 模式读写互斥，与 1s 采集写 + 前端查询 + Alarm 并发不匹配；
-/// WAL 允许读写并行，synchronous=NORMAL 兼顾持久性与写入性能，
-/// busy_timeout 避免并发写锁冲突时立即报 "database is locked"。
-/// 供同程序集内各存储与外部宿主（Ingest 中心库）共用，保证库级设置一致。
-/// </summary>
 public static class SqlitePragmas
 {
-    /// <summary>
-    /// 已确认 WAL 模式的数据库文件路径集合（<see cref="SqliteConnection.DataSource"/>）。
-    /// journal_mode=WAL 是库级持久设置（写入库文件头），只需成功设置一次，
-    /// 之后所有连接跳过该往返（ADR-018 P3-3）。
-    /// </summary>
     private static readonly ConcurrentDictionary<string, byte> WalConfirmed = new();
 
     /// <summary>
@@ -28,7 +16,6 @@ public static class SqlitePragmas
     /// </summary>
     public static void Apply(SqliteConnection connection)
     {
-        // ADR-018 P3-3：WAL 只在每个库文件首次打开时设置一次，省掉热路径每操作一次往返
         if (!WalConfirmed.ContainsKey(connection.DataSource))
         {
             using (var command = connection.CreateCommand())

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Dapper;
@@ -10,15 +10,8 @@ using NitroGateway.Telemetry.Tracing;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// SQLite 时序数据存储实现（Dapper）。
-/// 单例注册：每个操作独立创建连接（见 ADR-001 P1-4），打开后应用统一 PRAGMA；
-/// 写入走单事务批量 INSERT，读写/清理异常统一经 <see cref="SqliteErrorClassifier"/> 归类为 OperationResult。
-/// 时间戳统一以 UTC 的 O 格式字符串存储，保证字典序即时间序。
-/// </summary>
 public sealed class SqliteMeasurementStore : IMeasurementStore
 {
-    /// <summary>保留清理单批删除行数上限（ADR-018 P2-1）：每批独立事务，批间让出写锁窗口。</summary>
     private const int DefaultPurgeBatchSize = 10_000;
 
     private readonly string _connectionString;
@@ -65,7 +58,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
                     id = Guid.NewGuid().ToString(),
                     did = s.DeviceId.ToString(),
                     pid = s.DevicePointId.ToString(),
-                    // ADR-002 P1-3：写入真实点位名（修复前写空串，列存在但数据丢失）
                     name = s.PointName ?? string.Empty,
                     raw = Serialize(s.RawValue),
                     // value 列只承载"能转 double"的工程值（Bool→1/0、数值、数字文本）。
@@ -73,7 +65,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
                     // 绝不因单点格式抛异常拖垮整批 INSERT（Convert.ToDouble 对 "abc"/DateTime 会抛，
                     // 一旦抛即回滚同批所有点位的历史落库——含纯数值点）。
                     val = TryConvertToDouble(s.Value, out var dbl) ? dbl : (object)DBNull.Value,
-                    // ADR-002 P1-3：写入真实数据类型（修复前写空串）
                     type = s.DataType.ToString(),
                     ts = s.Timestamp.ToUniversalTime().ToString("O"),
                     qual = s.Quality.ToString(),
@@ -100,7 +91,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
     public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryAsync(
         Guid deviceId, Guid pointId, DateTime from, DateTime to, CancellationToken ct = default)
     {
-        // ADR-002 P1-1：查询异常统一走 SqliteErrorClassifier，返回 OperationResult 而非向调用方抛异常
         try
         {
             await using var conn = new SqliteConnection(_connectionString);
@@ -117,7 +107,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
             {
                 DeviceId = Guid.Parse((string)r.device_id),
                 DevicePointId = Guid.Parse((string)r.point_id),
-                // ADR-002 P1-3：回填点位名与数据类型（修复前查询不读这两列）
                 PointName = r.point_name as string,
                 RawValue = Deserialize(r.raw_value as string),
                 Value = r.value is DBNull ? null : (double)r.value,
@@ -140,7 +129,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
     public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryByDeviceAsync(
         Guid deviceId, DateTime from, DateTime to, CancellationToken ct = default)
     {
-        // ADR-002 P1-1：查询异常统一走 SqliteErrorClassifier，返回 OperationResult 而非向调用方抛异常
         try
         {
             await using var conn = new SqliteConnection(_connectionString);
@@ -157,7 +145,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
             {
                 DeviceId = Guid.Parse((string)r.device_id),
                 DevicePointId = Guid.Parse((string)r.point_id),
-                // ADR-002 P1-3：回填点位名与数据类型（修复前查询不读这两列）
                 PointName = r.point_name as string,
                 RawValue = Deserialize(r.raw_value as string),
                 Value = r.value is DBNull ? null : (double)r.value,
@@ -173,10 +160,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
         }
     }
 
-    /// <summary>
-    /// ADR-005 P2-2：分页查询，LIMIT/OFFSET 控制单次返回量。
-    /// pointId 为 null 时查设备全部点位；limit 夹紧 1..1000，offset 夹紧 ≥0。
-    /// </summary>
     public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryPagedAsync(
         Guid deviceId, Guid? pointId, DateTime from, DateTime to, int limit, int offset, CancellationToken ct = default)
         => await QueryPagedAsync(deviceId, pointId, from, to, limit, offset, null, ct);
@@ -235,11 +218,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
         }
     }
 
-    /// <summary>
-    /// ADR-002 P2-4：查询最新快照。
-    /// pointId 非 null 取该点位最新一条（ORDER BY timestamp DESC LIMIT 1）；
-    /// pointId 为 null 按 point_id 分组取每点最新一条（timestamp 为 "O" 格式 UTC，字典序即时间序）。
-    /// </summary>
     public async Task<OperationResult<IReadOnlyList<PointSnapshot>>> QueryLatestAsync(
         Guid deviceId, Guid? pointId, CancellationToken ct = default)
         => await QueryLatestAsync(deviceId, pointId, null, ct);
@@ -261,7 +239,7 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
                 ? $@"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
                     FROM measurements WHERE device_id = @did AND point_id = @pid{siteClause}
                     ORDER BY timestamp DESC LIMIT 1"
-                : // ADR-018 P3-2：ROW_NUMBER 按 point_id 分区取最新行，替代 MAX(timestamp) join——
+                :
                   // 原 join 在同点位两条记录 timestamp 相同时会返回多行，"每点最新一条"不成立
                   $@"SELECT device_id, point_id, point_name, raw_value, value, data_type, timestamp, quality, error_msg
                     FROM (
@@ -293,18 +271,8 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
         }
     }
 
-    /// <summary>
-    /// 删除指定时间之前的历史数据（用于存储空间管理/保留策略）。
-    /// ADR-018 P2-1：分批删除（单批 ≤ <see cref="_purgeBatchSize"/> 行，每批独立事务），
-    /// 避免单条大 DELETE 在 WAL 下长时间持有写锁阻塞 1s 采集热路径的落库写入；
-    /// 配合 M007 的 timestamp 单列索引，每批删除走索引而非全表扫描。
-    /// 注意：本 SQLite 编译版不支持 DELETE ... LIMIT（SQLITE_ENABLE_UPDATE_DELETE_LIMIT 未开启），
-    /// 故用 SELECT id 限批 → 按 id 批量删除 实现分批。
-    /// 异常归类返回，不抛出。
-    /// </summary>
     public async Task<OperationResult> PurgeAsync(DateTime before, CancellationToken ct = default)
     {
-        // ADR-002 P1-1：清理异常统一走 SqliteErrorClassifier，返回 OperationResult 而非向调用方抛异常
         try
         {
             var cutoff = before.ToUniversalTime().ToString("O");
@@ -337,10 +305,6 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
         }
     }
 
-    /// <summary>
-    /// 解析存储的 data_type 字符串。
-    /// ADR-002 P1-3 修复前旧数据该列为空串，真实类型无法恢复，回退默认值。
-    /// </summary>
     private static DataType ParseDataType(string? value)
         => Enum.TryParse<DataType>(value, ignoreCase: true, out var type) ? type : default;
 

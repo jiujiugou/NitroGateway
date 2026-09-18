@@ -3,13 +3,6 @@ using NitroGateway.Desktop.Services.Settings;
 
 namespace NitroGateway.Desktop.Hosting;
 
-/// <summary>
-/// ADR-067：桌面端 MQTT 连接参数（desktop-settings.json，设置页可编辑）启动覆盖。
-/// 优先级：环境变量（MQTT__Host / MQTT__Port / MQTT__UseTls / MQTT__Username / MQTT__Password）＞
-/// 持久化设置（设置页保存）＞ appsettings 默认（localhost:1883）。
-/// 与 <see cref="DesktopPathConfig.Apply"/> 同模式：仅在环境变量未提供时才写回配置——
-/// ConfigurationManager 索引器 Set 会写入全部 provider，跳过已由环境变量覆盖的键以保住更高优先级。
-/// </summary>
 internal static class MqttDesktopConfig
 {
     /// <summary>

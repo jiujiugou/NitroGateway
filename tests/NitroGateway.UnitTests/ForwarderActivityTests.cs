@@ -12,11 +12,6 @@ using ForwarderImpl = NitroGateway.Forwarder.Forwarder;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// Forwarder Activity 状态测试（ADR-001 P2-9）：
-/// 失败路径（Dequeue 失败 / Publish 失败）必须 SetStatus(Error, 原因)，
-/// 成功路径才置 Ok，Forward 追踪不再恒为 Ok。
-/// </summary>
 public class ForwarderActivityTests
 {
     private sealed class FakeBuffer : IForwardBuffer

@@ -1,15 +1,9 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using NitroGateway.Domain.Devices;
 using System.Globalization;
 
 namespace NitroGateway.Persistence;
 
-/// <summary>
-/// Domain ↔ EF Entity 映射（双向），被 SqliteDeviceRepository / SqlitePointRepository 调用。
-/// 枚举与 Guid 在两侧均转换为字符串/基础类型，连接参数（Parameters）以 CamelCase JSON 存储；
-/// 空参数映射为 "{}"（序列化侧）或空字典（反序列化侧）。
-/// 反序列化侧枚举解析容错（未知字符串回退默认值，ADR-018 P3-4），脏/历史数据不致配置读取整体失败。
-/// </summary>
 public static class DomainMapper
 {
     /// <summary>连接参数 JSON 序列化选项：CamelCase 属性命名，与前端 DTO 约定一致</summary>
@@ -37,7 +31,6 @@ public static class DomainMapper
             RetryCount = entity.RetryCount,
             Parameters = DeserializeParams(entity.ConnectionParams)
         },
-        // ADR-018 P3-4：未知枚举字符串回退默认值（Unknown），不抛异常
         Status = ParseEnum<DeviceStatus>(entity.Status),
         // ADR-033 阶段 3/4：同步版本字段；空串（旧数据）等价 DateTime.MinValue（最旧）
         UpdatedAt = ParseUpdatedAt(entity.UpdatedAt),
@@ -86,7 +79,6 @@ public static class DomainMapper
         Name = entity.Name,
         Address = entity.Address,
         Description = entity.Description,
-        // ADR-018 P3-4：未知枚举字符串回退默认值，不抛异常
         DataType = ParseEnum<DataType>(entity.DataType),
         Access = ParseEnum<PointAccess>(entity.Access),
         Enabled = entity.Enabled,
@@ -138,11 +130,6 @@ public static class DomainMapper
     internal static string FormatUpdatedAt(DateTime value)
         => value == DateTime.MinValue ? "" : value.ToUniversalTime().ToString("O");
 
-    /// <summary>
-    /// 枚举容错解析（ADR-018 P3-4）：未知/空字符串回退默认值，不抛异常。
-    /// 与 measurements 侧 ParseDataType 的容错语义对齐；静态映射器无日志通道，
-    /// 回退行为通过 XML 注释与测试锁定，脏数据不再导致整份配置读取失败。
-    /// </summary>
     internal static T ParseEnum<T>(string? value) where T : struct, Enum
         => Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : default;
 

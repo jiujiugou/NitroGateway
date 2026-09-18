@@ -18,7 +18,6 @@ internal static class SqliteErrorClassifier
         return sqlEx.SqliteErrorCode switch
         {
             13 => OperationalError.StorageFull($"{context} (磁盘满): {sqlEx.Message}"),       // SQLITE_FULL
-            // ADR-002 P3-4：IOERR/CORRUPT 归为通用 Storage 错误而非 StorageFull（磁盘满），
             // 只有 SQLITE_FULL(13) 才表示磁盘满；损坏在消息中注明，便于告警区分。
             10 => OperationalError.Storage($"{context} (I/O 错误): {sqlEx.Message}"),         // SQLITE_IOERR
             11 => OperationalError.Storage($"{context} (数据库损坏): {sqlEx.Message}"),       // SQLITE_CORRUPT

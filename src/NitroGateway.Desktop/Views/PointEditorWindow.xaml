@@ -43,7 +43,6 @@
             <TextBlock Text="配置点位地址、缩放与采集参数" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
         </StackPanel>
 
-        <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
             <Border Style="{StaticResource CardBorderStyle}" Padding="20">
                 <Grid>

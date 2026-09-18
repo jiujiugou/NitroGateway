@@ -4,11 +4,6 @@ using NitroGateway.Storage.Buffer;
 
 namespace NitroGateway.Desktop.Services.Settings;
 
-/// <summary>
-/// MQTT 上云转发总开关的桌面端实现（ADR-059）：持久化到 desktop-settings.json
-/// （<see cref="DesktopSettings.ForwarderMqttEnabled"/>），重启保持；缺省视为启用。
-/// <see cref="IsEnabled"/> 为内存缓存（Volatile 读写），供采集热路径同步读取，不落盘。
-/// </summary>
 public sealed class DesktopForwardMqttToggle : IForwardMqttToggle
 {
     private const int EnabledTrue = 1;
@@ -64,7 +59,6 @@ public sealed class DesktopForwardMqttToggle : IForwardMqttToggle
             var settings = _store.Load();
             settings.ForwarderMqttEnabled = enabled;
             _store.Save(settings);
-            // ADR-061：仅在实际值变化时触发事件，避免 UI 重复点同一值造成多余断开/重连
             var changed = Volatile.Read(ref _enabled) != (enabled ? EnabledTrue : EnabledFalse);
             Volatile.Write(ref _enabled, enabled ? EnabledTrue : EnabledFalse);
             _logger.LogInformation("MQTT 转发开关已切换: {Enabled}", enabled);

@@ -6,12 +6,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// 操作审计日志 SQLite 持久化（ADR-065 A3）。Dapper 独立连接（与 MeasurementStore 同模式）：
-/// 每操作打开新连接并应用库级 PRAGMA，避免跨线程共享连接。
-/// <para><b>写入契约：</b><see cref="WriteAsync"/> best-effort，任何异常（含表缺失、磁盘满）只记日志不抛出
-/// ——审计是附带能力，落库失败绝不能拖垮写值/登录主流程。查询按 O 格式字符串倒序（M005 同约定）。</para>
-/// </summary>
 public sealed class SqliteAuditLogStore : IAuditLogStore
 {
     private readonly string _connectionString;
@@ -24,7 +18,6 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
         _logger = logger;
     }
 
-    /// <summary>打开独立连接并应用库级 PRAGMA（WAL/busy_timeout，ADR-001 P1-4）</summary>
     private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken ct)
     {
         var conn = new SqliteConnection(_connectionString);
@@ -65,7 +58,6 @@ public sealed class SqliteAuditLogStore : IAuditLogStore
         }
         catch (Exception ex)
         {
-            // best-effort：审计落库失败仅记日志，不阻断写值/登录等主流程（ADR-065 A3）
             _logger.LogWarning("审计落库失败: {Error}", ex.Message);
         }
     }

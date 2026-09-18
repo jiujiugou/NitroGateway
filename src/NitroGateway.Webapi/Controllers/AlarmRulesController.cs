@@ -35,7 +35,6 @@ public class AlarmRulesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ApiResponse<AlarmRuleDto>>> Create(AlarmRuleDto d)
     {
-        // ADR-022 P2-1：非法 Guid/枚举返回 400，不再抛 FormatException 转 500
         if (!TryBuildRule(Guid.NewGuid(), d, out var rule, out var error))
             return BadRequest(ApiResponse<AlarmRuleDto>.Fail("Create", error));
         var r = await _rules.SaveAsync(rule);
@@ -48,7 +47,6 @@ public class AlarmRulesController : ControllerBase
     [HttpPut("{id}")]
     public async Task<ActionResult<ApiResponse<AlarmRuleDto>>> Update(Guid id, AlarmRuleDto d)
     {
-        // ADR-022 P2-1：非法 Guid/枚举返回 400
         if (!TryBuildRule(id, d, out var rule, out var error))
             return BadRequest(ApiResponse<AlarmRuleDto>.Fail("Update", error));
         var r = await _rules.SaveAsync(rule);
@@ -81,7 +79,6 @@ public class AlarmRulesController : ControllerBase
         Enabled = r.Enabled
     };
 
-    /// <summary>DTO → 领域模型；Guid/枚举解析失败返回 false + 错误文案（ADR-022 P2-1）</summary>
     private static bool TryBuildRule(Guid id, AlarmRuleDto d, out AlarmDomain.AlarmRule rule, out string error)
     {
         if (!Guid.TryParse(d.DeviceId, out var deviceId))

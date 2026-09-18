@@ -1,10 +1,5 @@
 namespace NitroGateway.Protocols.Modbus;
 
-/// <summary>
-/// 批量读段规划（ADR-003 P1-1）。
-/// Range 内同类型点位可能被其他类型/空寄存器隔开，只有寄存器连续的点位才能
-/// 合并为一次批量读；否则从首点连读会把间隔寄存器误读成后序点位。
-/// </summary>
 internal static class ModbusBatchPlanner
 {
     /// <summary>

@@ -41,7 +41,6 @@
                     <DatePicker SelectedDate="{Binding FromDate}" Width="124" Margin="6,0,12,0" />
                     <TextBlock Text="到" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" />
                     <DatePicker SelectedDate="{Binding ToDate}" Width="124" Margin="6,0,14,0" />
-                    <!-- ADR-037 S3：查询中禁用查询/快捷区间按钮并显示进度条 -->
                     <Button Content="近 1 天" Command="{Binding QuickRangeCommand}" CommandParameter="1"
                             IsEnabled="{Binding IsIdle}" Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="近 3 天" Command="{Binding QuickRangeCommand}" CommandParameter="3"
@@ -63,7 +62,6 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <!-- ADR-037 S3：查询中在状态行显示进度条（工具栏已满，避免窗口宽度溢出） -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                     <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondary}"
                                VerticalAlignment="Center" Margin="0,0,10,0" />
@@ -81,7 +79,6 @@
                             <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="错误" Binding="{Binding Error}" Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
-                    <!-- ADR-037 S3：空态提示，有数据时折叠 -->
                     <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
                                Foreground="{StaticResource TextSecondary}" FontSize="13">
                         <TextBlock.Style>

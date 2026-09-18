@@ -6,10 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-014：AddNitroCollection 把 CollectionOption 全字段绑定进 DI，
-/// 熔断器冷却时长与采集并发上限来自配置而非硬编码默认值。
-/// </summary>
 public class CollectionOptionsWiringTests
 {
     private static ServiceProvider BuildProvider(Dictionary<string, string?> config)
@@ -77,7 +73,6 @@ public class CollectionOptionsWiringTests
         Assert.Equal(300, options.CircuitBreakerMaxOpenSeconds);
     }
 
-    /// <summary>ADR-016 P2-2：IntervalMs<=0 / MaxConcurrency<=0 非法配置，解析 IOptions 即抛，启动 fail-fast</summary>
     [Theory]
     [InlineData("IntervalMs", "0")]
     [InlineData("IntervalMs", "-1")]
@@ -93,7 +88,6 @@ public class CollectionOptionsWiringTests
             () => provider.GetRequiredService<IOptions<CollectionOption>>().Value);
     }
 
-    /// <summary>ADR-016 P2-2：CircuitBreakerMaxOpenSeconds 小于 OpenSeconds 时拒绝启动</summary>
     [Fact]
     public void AddNitroCollection_MaxOpenLessThanOpen_Throws()
     {

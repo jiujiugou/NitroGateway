@@ -1,7 +1,6 @@
 import client from './client'
 import type { ApiResponse } from './types'
 
-/// 用户（对应后端 UserDto，ADR-066；刻意不含密码哈希/明文）
 export interface User {
   id: number
   username: string

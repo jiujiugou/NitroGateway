@@ -2,23 +2,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Alarm.Repository;
 
-/// <summary>
-/// 告警规则内存缓存（Singleton，进程级共享）。
-/// ADR-032 P1-2：告警评估热路径（AlarmHostedService）每收到一个存储事件（每设备每秒 1 个）
-/// 就调一次 GetByDeviceAsync 直查 SQLite；规则量小（几十条级别）且只在进程内 API
-/// （AlarmRulesController）变更，缓存可把规则读取从"每事件一次 DB 查询"降为
-/// "首次加载 + 写成功后重载"。
-/// </summary>
-/// <remarks>
-/// <para><b>一致性：</b>写路径（SaveAsync/DeleteAsync 成功）由装饰器主动调用
-/// <see cref="Invalidate"/>；TTL 作为兜底，覆盖进程外直改库/未来多实例场景
-/// （默认 30 秒，构造可注入：测试用 <see cref="TimeSpan.Zero"/> 强制每次重载、
-/// 大值模拟"永不失效"）。</para>
-/// <para><b>故障语义：</b>加载失败向调用方返回 Failure 且不标记已加载，
-/// 下个事件自动重试——与改动前"每次直查 DB"的故障行为一致，不静默吞错。</para>
-/// <para><b>线程安全：</b>读快路径无锁；刷新经 SemaphoreSlim 闸门 + 双检，
-/// 防并发事件重复加载（与 DeviceSnapshotCache 同模式）。</para>
-/// </remarks>
 public sealed class AlarmRuleCache : IDisposable
 {
     /// <summary>刷新闸门：同一时刻只允许一个加载者重建缓存。</summary>

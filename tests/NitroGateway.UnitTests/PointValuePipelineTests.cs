@@ -126,7 +126,6 @@ public class PointValuePipelineTests
         Assert.Equal("test", result[0].PointName);
     }
 
-    /// <summary>ADR-001 P1-5：快照携带点位真实 DataType，供转发 payload 透传</summary>
     [Fact]
     public void DataType_PropagatedToSnapshot()
     {

@@ -27,7 +27,6 @@ internal sealed class OutboxConsumer : BackgroundService
             {
                 try
                 {
-                    // ADR-022 P2-3：热路径（每设备每采集轮 ≥1 条）降 Debug，避免刷屏
                     _logger.LogDebug("Outbox 发送: Method={Method} Target={Target}",
                         msg.Method, msg.TargetType);
                     if (msg.TargetType == OutboxTarget.All)

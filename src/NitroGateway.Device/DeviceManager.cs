@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Protocols;
 using NitroGateway.Shared;
@@ -42,7 +42,6 @@ public sealed class DeviceManager : IDeviceManager
         _driverPool.Evict(device.Id);
         _logger.LogInformation("设备已注册: {DeviceName} [{DeviceId}]", device.Name, device.Id);
         _healthMonitor.UpdateStatus(device.Id, device.Status);
-        // ADR-002 P2-2：配置变更使设备目录缓存失效
         _cache.Invalidate();
         return device;
     }
@@ -52,7 +51,6 @@ public sealed class DeviceManager : IDeviceManager
         var device = await _repository.GetByIdAsync(deviceId, ct);
         if (device.IsFailure) return device.Error!;
 
-        // ADR-018 P2-2：删除失败不再静默（修复前忽略返回值，仓储异常不归类时该分支不可达）
         var deleted = await _repository.DeleteAsync(deviceId, ct);
         if (deleted.IsFailure) return deleted.Error!;
 
@@ -66,7 +64,6 @@ public sealed class DeviceManager : IDeviceManager
     public async Task<OperationResult<Device>> GetAsync(Guid deviceId, CancellationToken ct = default)
         => await _repository.GetByIdAsync(deviceId, ct);
 
-    // ADR-002 P2-2：走内存缓存，避免采集热路径每 1s 全量 EF Include(Points) 映射
     // ADR-033 阶段 3/4：过滤中心侧 tombstone（Web UI 与采集热路径只看到存活设备）
     public async Task<OperationResult<IReadOnlyList<Device>>> GetAllAsync(CancellationToken ct = default)
     {
@@ -151,7 +148,6 @@ public sealed class DeviceManager : IDeviceManager
         if (oldStatus == status) return OperationResult.Success();
 
         device.Status = status;
-        // ADR-018 P2-2：状态持久化失败不再静默，返回错误由调用方处置
         var saved = await _repository.SaveAsync(device, ct);
         if (saved.IsFailure) return saved.Error!;
 

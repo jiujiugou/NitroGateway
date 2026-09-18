@@ -31,7 +31,6 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             return BadRequest(ApiResponse<LoginResponse>.Fail("Login", "用户名和密码不能为空"));
 
-        // ADR-066：用户 DB 化——登录实时读 users 表（改密/启停/新增即时生效，无需改配置重启）
         // ADR-004 P2-1：失败计数 + 短时锁定，防暴力破解
         var key = BuildKey(username);
         if (_limiter.IsLocked(key, out var remaining))

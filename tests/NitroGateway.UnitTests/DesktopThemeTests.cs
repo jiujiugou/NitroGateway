@@ -1,17 +1,11 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.RegularExpressions;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-037 S1/S2 主题令牌回归：视图 XAML 不得再出现硬编码 # 色值字面量，
-/// 令牌集中在 Themes/Styles.xaml；设备状态语义色与 Web 端 DeviceStatusTag.vue 对齐。
-/// 从程序集位置向上定位仓库根（含 NitroGateway.slnx）后静态扫描源文件。
-/// </summary>
 public sealed class DesktopThemeTests
 {
-    /// <summary>ADR-037 S1/S2 落地后必须存在于 Styles.xaml 的令牌。</summary>
     private static readonly string[] RequiredTokens =
     [
         "AlternatingRowBrush", "BadRowBrush",

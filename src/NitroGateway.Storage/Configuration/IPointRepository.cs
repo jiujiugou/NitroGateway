@@ -15,15 +15,7 @@ public interface IPointRepository
     /// <summary>批量保存或更新点位（单事务）。用于 CSV 导入/批量生成，避免逐条往返</summary>
     Task<OperationResult> SaveBatchAsync(Guid deviceId, IReadOnlyList<DevicePoint> points, CancellationToken ct = default);
 
-    /// <summary>
-    /// 删除指定设备下的指定点位。ADR-021 P3-4：仅删除点位配置本身，不触碰该点位的时序数据
-    /// （measurements 为独立表，按保留策略清理）；设备删除时点位由设备级联删除（见 <c>IDeviceRepository.DeleteAsync</c>）。
-    /// </summary>
     Task<OperationResult> DeleteAsync(Guid deviceId, Guid pointId, CancellationToken ct = default);
 
-    /// <summary>
-    /// 获取指定设备下的全部点位。
-    /// ADR-021 P2-1：全量加载无分页（单设备点位通常数百，可接受）；点位量大时需新增分页重载（接口只增不删）。
-    /// </summary>
     Task<OperationResult<IReadOnlyList<DevicePoint>>> GetByDeviceAsync(Guid deviceId, CancellationToken ct = default);
 }

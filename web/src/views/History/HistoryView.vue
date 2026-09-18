@@ -21,7 +21,6 @@
 </template>
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-// ADR-007 P3-5：按需引入 echarts（Line + Grid/Tooltip/Title + Canvas），替代整包 1.1MB 引入
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components'

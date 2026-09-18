@@ -21,7 +21,6 @@ public static class ForwarderServiceCollectionExtensions
     public static IServiceCollection AddNitroForwarder(
         this IServiceCollection services, int intervalMs)
     {
-        // ADR-017 P3-2：与 CollectionOption 校验对齐（ADR-016 P2-2）——非法间隔启动即报错并指明字段，
         // 避免 PeriodicTimer 在引擎启动期抛晦涩异常
         if (intervalMs <= 0)
             throw new ArgumentOutOfRangeException(nameof(intervalMs), "转发轮询间隔必须为正数（毫秒）");
@@ -29,15 +28,6 @@ public static class ForwarderServiceCollectionExtensions
         return AddNitroForwarderCore(services, new ForwarderOption { IntervalMs = intervalMs });
     }
 
-    /// <summary>
-    /// 注册转发模块（ADR-011 配置驱动）：从 <paramref name="configuration"/> 的 "Forwarder" 节点读取
-    /// <see cref="ForwarderOption"/>，按 <c>Forwarder:Channels</c>（mqtt | http | both）注册
-    /// MQTT 与/或 HTTP 转发引擎；启用 http 时自动注册 <see cref="IHttpClient"/>。
-    /// 非法配置（间隔非正 / Channels 非法 / 启用 http 但 BaseUrl 为空）启动即报错。
-    /// </summary>
-    /// <param name="services">DI 容器</param>
-    /// <param name="configuration">应用配置；"Forwarder" 节点缺失时全部使用默认值（mqtt 单通道）</param>
-    /// <returns>同一容器，支持链式调用</returns>
     public static IServiceCollection AddNitroForwarder(
         this IServiceCollection services, IConfiguration configuration)
     {
@@ -85,7 +75,6 @@ public static class ForwarderServiceCollectionExtensions
 
         if (channels.Contains(IForwardBuffer.HttpChannel))
         {
-            // ADR-011 P2：HTTP 通道引擎 + HTTP 客户端（HttpConnectionOptions 由 Forwarder:Http 映射而来）
             services.AddNitroHttp(new HttpConnectionOptions
             {
                 BaseUrl = option.Http.BaseUrl,

@@ -13,10 +13,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// DataDispatcher 转发 payload 类型测试（ADR-001 P1-5）：
-/// 快照携带的真实 DataType 必须透传到 MeasurementRecord，不再恒为 Float。
-/// </summary>
 public class DataDispatcherTests
 {
     private sealed class FakeStore : IMeasurementStore
@@ -96,14 +92,12 @@ public class DataDispatcherTests
             => Task.FromResult(OperationResult.Success());
     }
 
-    /// <summary>ADR-012 测试用磁盘状态替身</summary>
     private sealed class FakeDiskStatus : IDiskStatus
     {
         public DiskLevel Level { get; set; }
         public event Action<DiskLevel>? Changed;
     }
 
-    /// <summary>ADR-059 测试替身：MQTT 转发总开关（内存态，可编程）。</summary>
     private sealed class FakeForwardMqttToggle : IForwardMqttToggle
     {
         public bool IsEnabled { get; set; } = true;
@@ -143,7 +137,6 @@ public class DataDispatcherTests
             => await _events.Reader.ReadAsync(new CancellationTokenSource(timeout).Token);
     }
 
-    /// <summary>ADR-012 P3：磁盘 Critical 时跳过时序写入与缓冲入队（降级保护磁盘），恢复后数据流自动恢复</summary>
     [Fact]
     public async Task DispatchAsync_DiskCritical_SkipsWriteAndEnqueue()
     {
@@ -197,7 +190,6 @@ public class DataDispatcherTests
         Assert.Single(buffer.Enqueued);
     }
 
-    /// <summary>ADR-011 P3：both 模式按通道各入队一行，且 batchId 独立（避免缓冲主键冲突）</summary>
     [Fact]
     public async Task DispatchAsync_BothChannels_EnqueuesPerChannel()
     {
@@ -238,10 +230,6 @@ public class DataDispatcherTests
             buffer.EnqueuedWithChannel[1].Batch.Id);
     }
 
-    /// <summary>
-    /// ADR-059：关闭 MQTT 转发总开关时，both 通道中 mqtt 跳过入转发缓冲、http 照常；
-    /// 本地时序库写入不受影响（照常落库）。恢复后 mqtt 重新入队。
-    /// </summary>
     [Fact]
     public async Task DispatchAsync_ToggleDisabled_SkipsMqttButKeepsHttpAndLocalStore()
     {
@@ -281,7 +269,6 @@ public class DataDispatcherTests
                 CancellationToken.None);
 
             Assert.True(result.IsSuccess);
-            // ADR-059: closed -> mqtt skipped, http enqueued
             var channel = Assert.Single(buffer.EnqueuedWithChannel).Channel;
             Assert.Equal(IForwardBuffer.HttpChannel, channel);
             // local time-series store still written (toggle does not affect persistence)
@@ -313,10 +300,6 @@ public class DataDispatcherTests
         }
     }
 
-    /// <summary>
-    /// ADR-059：开启开关（含未注册开关的默认兼容路径）时 mqtt 照常入队——
-    /// 未传 toggle（旧调用方）独立测试按恒启用处理，不改变既有行为。
-    /// </summary>
     [Fact]
     public async Task DispatchAsync_ToggleEnabled_EnqueuesMqtt()
     {
@@ -421,7 +404,6 @@ public class DataDispatcherTests
         Assert.Equal(PointAccess.ReadWrite, record.Access);
     }
 
-    /// <summary>ADR-016 P3-4：批次扫描窗口取快照时间戳 min/max，不再恒为分发时刻</summary>
     [Fact]
     public async Task DispatchAsync_BatchScanWindow_UsesSnapshotTimestamps()
     {

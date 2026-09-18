@@ -5,10 +5,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-067：设置页保存的 MQTT 连接参数（desktop-settings.json）启动覆盖 appsettings；
-/// 优先级：环境变量 ＞ 持久化设置 ＞ appsettings 默认。
-/// </summary>
 public sealed class MqttDesktopConfigTests
 {
     [Fact]

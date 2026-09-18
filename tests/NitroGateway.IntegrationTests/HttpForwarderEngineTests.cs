@@ -10,11 +10,6 @@ using Xunit;
 
 namespace NitroGateway.IntegrationTests;
 
-/// <summary>
-/// HTTP 北向通道引擎测试（ADR-011 P2）：fake IHttpClient 驱动——成功 → Commit、
-/// 失败 → MarkFailed、断线 → 跳过本轮。缓冲用内存替身（FakeForwardBuffer），
-/// 引擎按 HttpChannel 出队（接口默认实现委托，单通道场景等价）。
-/// </summary>
 [Collection("Forwarder")]
 public class HttpForwarderEngineTests
 {

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Shared;
@@ -8,13 +8,6 @@ using NitroGateway.Transport.HTTP;
 
 namespace NitroGateway.Forwarder;
 
-/// <summary>
-/// HTTP 北向转发引擎（ADR-011 P2）：MQTT 之外的第二条北向通道。
-/// 复用 ForwarderEngine 骨架（PeriodicTimer 周期 + 批量出队 + Commit/MarkFailed + 重试超限丢弃），
-/// 但按 <see cref="IForwardBuffer.HttpChannel"/> 出队并经 <see cref="IHttpClient.UploadAsync{T}"/> 逐批 POST。
-/// <para><b>与 MQTT 引擎的关系：</b>Channels=both 时两引擎共享缓冲但按通道隔离出队，互不争抢；
-/// 单批上传失败 MarkFailed（重试/丢弃语义与 MQTT 一致），batchId 作为服务端幂等键（ADR-020 P2-2 注释）。</para>
-/// </summary>
 public sealed class HttpForwarderEngine : BackgroundService
 {
     /// <summary>单轮最大排水量（批）：与 MQTT 引擎一致，超出部分留待下轮继续</summary>

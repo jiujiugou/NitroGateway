@@ -32,8 +32,6 @@ public sealed class ProtocolDriverFactory : IProtocolDriverFactory
     public IProtocolDriver Create(ProtocolIdentifier protocol, DeviceConnection connection)
     {
         var inner = _createInner(_services, protocol, connection, _loggerFactory.CreateLogger(protocol.Name));
-        // ADR-019 P2-4：重试管线超时与设备单次请求超时对齐（取 RequestTimeoutMs）
-        // ADR-030 P1：重试次数/首次延迟取 DeviceConnection.RetryCount/RetryIntervalMs
         return new ReliableProtocolDriver(
             inner,
             _loggerFactory.CreateLogger<ReliableProtocolDriver>(),

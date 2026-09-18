@@ -36,7 +36,6 @@ public static class SecurityServiceCollectionExtensions
         if (Encoding.UTF8.GetByteCount(jwtConfig.JwtSecretKey) < 32)
             throw new InvalidOperationException("Security:JwtSecretKey 长度不足 32 字节，请配置强密钥后启动");
 
-        // ADR-022 P1-5：仓库内公开占位符（如 docker-compose 曾回退的 Production-ChangeMe）一律拒绝启动，
         // 防止"忘了设置 JWT_SECRET"时用公开密钥上线，被离线伪造 Admin token
         if (jwtConfig.JwtSecretKey.Contains("ChangeMe", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Security:JwtSecretKey 含公开占位符（ChangeMe），禁止用于生产，请配置强密钥后启动");
@@ -82,7 +81,6 @@ public static class SecurityServiceCollectionExtensions
             };
         }
 
-        // ADR-052 问题2：非开发环境拒绝仍使用默认测试账号密码（admin/admin123 等）启动，
         // 与 JWT 的 ChangeMe 拒绝同思路——防止 appsettings 内置测试账号直接带上生产。
         // 生产请用环境变量 Security__Users__N__Password 覆盖（compose 已强制 ADMIN/OPERATOR/VIEWER_PASSWORD）。
         // 此处所有 Password 均已归一化为哈希；明文默认密码已在上方拒绝。
@@ -102,14 +100,12 @@ public static class SecurityServiceCollectionExtensions
         services.AddSingleton(jwtConfig);
         services.AddSingleton<IReadOnlyList<UserConfig>>(jwtConfig.Users);
 
-        // ADR-066：用户 DB 化——登录校验/管理接口共用同一密码哈希器（无状态，单例）。
         // PasswordHasher<UserAccount> 与 PasswordHasher<UserConfig> 哈希格式一致（PBKDF2），
         // 首启种子（配置用户哈希直落 users 表）可被登录正常校验。
         services.AddSingleton<PasswordHasher<UserAccount>>();
 
         // ── 2. Token 签发 ──
         // TokenGenerator 改读 IUserStore（Persistence 注册），登录每次实时读库；
-        // JWT 签发/RBAC/限流行为不变（ADR-066）
         services.AddSingleton<TokenGenerator>();
 
         // ── 3. JWT 认证中间件 ──

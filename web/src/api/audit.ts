@@ -1,7 +1,6 @@
 import client from './client'
 import type { ApiResponse } from './types'
 
-/// 一条操作审计记录（ADR-065 A3，对应后端 AuditLogDto）
 export interface AuditLog {
   id: string
   user: string

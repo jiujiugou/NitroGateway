@@ -7,7 +7,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>MeasurementRetentionService 测试（ADR-002 P1-2）：周期清理阈值正确、失败不中断。</summary>
 public class MeasurementRetentionServiceTests
 {
     /// <summary>记录每次 PurgeAsync 阈值，前 N 次可注入失败。</summary>

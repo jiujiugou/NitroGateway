@@ -6,10 +6,6 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// SQLite 告警记录持久化（EF Core）。
-/// ADR-002 P1-1：EF 化后统一异常分类，SQLite 异常不再直接击穿 AlarmHostedService。
-/// </summary>
 public sealed class SqliteAlarmRepository : IAlarmRepository
 {
     private readonly NitroGatewayDbContext _db;
@@ -128,7 +124,6 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
     {
         try
         {
-            // ADR-022 P2-2：夹紧 1..1000 并 Take，防大窗口历史告警全量进内存
             var safeLimit = Math.Clamp(limit, 1, 1000);
             var fromStr = from.ToString("O");
             var toStr = to.ToString("O");
@@ -149,8 +144,6 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         }
     }
 
-    /// <inheritdoc />
-    /// <remarks>ADR-065 A1：EF 精确 COUNT（不截断），时间以 O 格式字符串比较（与 QueryAsync 同约定）。</remarks>
     public async Task<OperationResult<int>> CountOccurredSinceAsync(
         DateTime sinceUtc, CancellationToken ct = default)
     {
@@ -181,7 +174,6 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         PointId = Guid.Parse(e.PointId),
         TriggerValue = e.TriggerValue ?? 0,
         Threshold = e.Threshold ?? 0,
-        // ADR-018 P3-4：未知枚举字符串回退默认值，脏/历史数据不致告警读取整体失败
         Severity = ParseEnum<AlarmDomain.AlarmSeverity>(e.Severity),
         Message = e.Message,
         State = ParseEnum<AlarmDomain.AlarmState>(e.State),
@@ -191,7 +183,6 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         ResolvedAt = e.ResolvedAt is null ? null : DateTime.Parse(e.ResolvedAt, System.Globalization.CultureInfo.InvariantCulture)
     };
 
-    /// <summary>枚举容错解析（ADR-018 P3-4）：未知字符串回退默认值，与 DomainMapper 语义一致</summary>
     private static T ParseEnum<T>(string? value) where T : struct, Enum
         => Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : default;
 

@@ -5,10 +5,6 @@ using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Desktop.ViewModels;
 
-/// <summary>
-/// 点位表单编辑模型（ADR-029 P3），字段与 Web PointList.vue 对齐。
-/// 地址提示按设备协议区分（Modbus 40001 / S7 DB1.DBD0 / OPC UA ns=2;i=1001，docs/13）。
-/// </summary>
 public sealed partial class PointEditor : ObservableObject, INotifyDataErrorInfo
 {
     /// <summary>字段级错误表（属性名 -> 错误文案，由 Validate() 全量重算）。</summary>
@@ -38,7 +34,6 @@ public sealed partial class PointEditor : ObservableObject, INotifyDataErrorInfo
     [ObservableProperty] private double _scaleFactor = 1.0;
     [ObservableProperty] private double _scaleOffset;
 
-    /// <summary>是否存在校验错误（ADR-037 S4）。</summary>
     public bool HasErrors => _errors.Count > 0;
 
     /// <summary>
@@ -63,11 +58,6 @@ public sealed partial class PointEditor : ObservableObject, INotifyDataErrorInfo
                 ? new[] { error }
                 : Array.Empty<string>();
 
-    /// <summary>
-    /// 全表单校验（ADR-037 S4）：重算全部字段错误并通知绑定。
-    /// 规则：Name/Address 非空；ScanIntervalMs/Deadband 非负；缩放系数与偏移为有限数值。
-    /// 返回是否通过（窗口保存前调用）。
-    /// </summary>
     public bool Validate()
     {
         SetError(nameof(Name), string.IsNullOrWhiteSpace(Name) ? "点位名称不能为空" : null);

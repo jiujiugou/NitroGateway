@@ -10,11 +10,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-043：告警规则管理页 ViewModel——展示全量规则（含禁用）、
-/// 设备/点位名称映射与短 ID 回退、新增/编辑/删除走模态对话框，
-/// 每次操作经 IServiceScopeFactory 新建 scope 解析 Scoped 仓储（与 AlarmsViewModel 同模式）。
-/// </summary>
 public sealed class AlarmRulesViewModelTests
 {
     [Fact]

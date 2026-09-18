@@ -9,12 +9,6 @@ namespace NitroGateway.Transport.MQTT;
 /// <summary>MQTT 客户端 DI 注册扩展</summary>
 public static class MqttServiceCollectionExtensions
 {
-    /// <summary>
-    /// 从 IConfiguration 的 "MQTT" 节点读取 <see cref="MqttConnectionOptions"/>，
-    /// 自动生成 ClientId（NitroGateway-{MachineName}-{随机后缀}）。
-    /// ADR-020 P3-2：走标准 Options 管线（Bind + Validate + ValidateOnStart）——配置缺 MQTT 段或
-    /// Host 为空、Port 越界时启动即明确报错（修复前缺段直接 NRE、空 Host 不校验）。
-    /// </summary>
     public static IServiceCollection AddNitroMqtt(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<MqttConnectionOptions>()
@@ -35,7 +29,6 @@ public static class MqttServiceCollectionExtensions
             return options;
         });
 
-        // ADR-061：连接层注入转发总开关（关闭即断开 + 停止重连）。
         // 用 GetService（null 安全）解析而非构造函数注入——未注册开关的宿主
         // （如 Ingest 中心，无转发 UI）得到 null → 恒启用，行为与旧版一致；
         // MS.DI 不按默认值回退，直接构造函数注入会在 Ingest 启动时抛解析异常。

@@ -1,6 +1,5 @@
 namespace NitroGateway.Transport.HTTP;
 
-/// <summary>HTTP 连接参数。ADR-020 P3-2：数值项在属性层夹紧，非法配置构造即收敛到合法值。</summary>
 public sealed record HttpConnectionOptions
 {
     /// <summary>基础 URL，如 "https://api.example.com"</summary>
@@ -39,6 +38,5 @@ public sealed record HttpConnectionOptions
     /// <summary>Bearer Token（AuthType 为 BearerToken 时必填）</summary>
     public string? BearerToken { get; init; }
 
-    /// <summary>健康检查路径，如 "/health"；留空则使用默认 "/health"（ADR-020 P3-7 注释对齐实现）</summary>
     public string? HealthPath { get; init; }
 }

@@ -33,10 +33,6 @@ public interface ICenterConfigImporter
     Task<OperationResult<ImportSummary>> ImportAsync(IReadOnlyList<Device> snapshot, CancellationToken ct = default);
 }
 
-/// <summary>
-/// 导入服务实现。设备/点位管理均为 Scoped（ADR-029），每个设备操作建独立作用域，
-/// 避免长生命周期 EF 上下文的跟踪污染；导入后缓存失效由各 Manager 完成，采集下一轮即生效。
-/// </summary>
 public sealed class CenterConfigImporter : ICenterConfigImporter
 {
     private readonly IDeviceSnapshotCache _cache;

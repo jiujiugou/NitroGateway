@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Protocols.S7;
@@ -46,12 +46,6 @@ public sealed partial class S7AddressParser
         };
     }
 
-    /// <summary>
-    /// 将地址按点位 DataType 校验并格式化为 Hsl 驱动地址（ADR-024 P1-3）。
-    /// 规则：地址自带类型优先（与 DB 区一致，DBB/B ↔ Byte/String，DBW/W ↔ Int16/UInt16，
-    /// DBD/D ↔ 32/64 位数值与 Float/Double，位地址仅 Bool）；M/I/Q 区无类型后缀时按 DataType 推导；
-    /// 位偏移仅允许 Bool，类型冲突抛 ArgumentException（宁可显式失败，不静默读错字节长度）。
-    /// </summary>
     public static string FormatForHsl(string address, DataType dataType)
     {
         var a = Parse(address);
@@ -85,7 +79,6 @@ public sealed partial class S7AddressParser
         return $"{a.Area}{type}{a.ByteOffset}";
     }
 
-    /// <summary>判断地址是否为位地址（DBX 或带位后缀），用于 Ping 等按位/字选择读法（ADR-024 P2-2）</summary>
     public static bool IsBitAddress(string address)
     {
         var a = Parse(address);

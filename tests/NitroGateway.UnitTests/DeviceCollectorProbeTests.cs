@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Collection;
@@ -11,9 +11,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-016 P3-2/P3-3：探测名额闭环（异常路径也要 RecordFailure 关闭探测）+ 失败明细透传。
-/// </summary>
 public class DeviceCollectorProbeTests
 {
     private static readonly Guid DeviceId = Guid.NewGuid();
@@ -93,7 +90,6 @@ public class DeviceCollectorProbeTests
 
     // ── Fakes ──
 
-    /// <summary>ADR-031：点位质量差（Uncertain）不影响设备健康——读取链路成功即上报成功</summary>
     [Fact]
     public async Task CollectDeviceAsync_PointQualityBad_StillReportsSuccess()
     {
@@ -115,12 +111,11 @@ public class DeviceCollectorProbeTests
 
         await collector.CollectDeviceAsync(Device, CancellationToken.None);
 
-        Assert.True(reporter.LastSucceeded, "点级质量差不判设备失败，读取链路成功即成功（ADR-031）");
+        Assert.True(reporter.LastSucceeded, "点级质量差不判设备失败，读取链路成功即成功");
     }
 
     private sealed class ThrowingReader : IDeviceReader
     {
-        // ADR-062：返回非空到期子集 → 允许流走到 ReadDeviceAsync 并抛出
         public IReadOnlyList<DevicePoint>? GetDuePoints(Device device) => [new DevicePoint
         {
             Id = Guid.NewGuid(),
@@ -136,7 +131,6 @@ public class DeviceCollectorProbeTests
 
     private sealed class SuccessReader : IDeviceReader
     {
-        // ADR-062：返回非空到期子集 → 允许流走到 ReadDeviceAsync
         public IReadOnlyList<DevicePoint>? GetDuePoints(Device device) => [new DevicePoint
         {
             Id = Guid.NewGuid(),

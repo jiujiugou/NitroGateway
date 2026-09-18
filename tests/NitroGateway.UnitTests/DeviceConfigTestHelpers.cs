@@ -8,7 +8,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>ADR-029 测试替身：记录调用的设备管理器。</summary>
 internal sealed class StubDeviceManager : IDeviceManager
 {
     public List<Device> Registered { get; } = [];
@@ -57,7 +56,6 @@ internal sealed class StubDeviceManager : IDeviceManager
     public Task<OperationResult> SoftDeleteAsync(Guid deviceId, CancellationToken ct = default) { Unregistered.Add(deviceId); return Task.FromResult(OperationResult.Success()); }
 }
 
-/// <summary>ADR-029 测试替身：记录调用的点位管理器。</summary>
 internal sealed class StubPointManager : IPointManager
 {
     public List<DevicePoint> Points { get; } = [];
@@ -115,7 +113,6 @@ internal sealed class StubPointManager : IPointManager
     public Task<OperationResult<IReadOnlyList<PointValidationError>>> ValidateAsync(Guid deviceId, DevicePoint point, CancellationToken ct = default) => throw new NotSupportedException();
 }
 
-/// <summary>ADR-029 测试替身：对话框（可编程结果 + 记录调用）。</summary>
 internal sealed class StubDeviceDialogService : IDeviceDialogService
 {
     public bool EditDeviceResult = true;
@@ -211,7 +208,6 @@ internal sealed class StubCsvFileService : ICsvFileService
     }
 }
 
-/// <summary>ADR-029 测试替身：健康监控（无快照）。</summary>
 internal sealed class StubHealthMonitor : IDeviceHealthMonitor
 {
     public int FailureThreshold => 3;

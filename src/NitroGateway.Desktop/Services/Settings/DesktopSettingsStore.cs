@@ -17,16 +17,8 @@ public sealed class DesktopSettings
     /// </summary>
     public string LogDirectory { get; set; } = "";
 
-    /// <summary>
-    /// MQTT 上云转发开关（ADR-059）：false=仅暂停 MQTT 上云（采集/本地存储/告警不受影响），
-    /// 缺省 true（启用）。由 <see cref="DesktopForwardMqttToggle"/> 读写，设置页开关即时生效、重启保持。
-    /// </summary>
     public bool ForwarderMqttEnabled { get; set; } = true;
 
-    /// <summary>
-    /// MQTT Broker 地址（设置页可编辑，ADR-067）。空字符串 = 未保存过 MQTT 连接参数，
-    /// 启动回退 appsettings 默认（localhost:1883）或环境变量（MQTT__Host 优先）。
-    /// </summary>
     public string MqttHost { get; set; } = "";
 
     /// <summary>MQTT Broker 端口（1-65535，默认 1883）；仅 <see cref="MqttHost"/> 非空时生效。</summary>
@@ -38,7 +30,6 @@ public sealed class DesktopSettings
     /// <summary>MQTT 用户名（可选）。</summary>
     public string MqttUsername { get; set; } = "";
 
-    /// <summary>MQTT 密码明文；仅内存，序列化忽略（落盘走 DPAPI，ADR-037 S5 同模式）。</summary>
     [JsonIgnore]
     public string MqttPassword { get; set; } = "";
 

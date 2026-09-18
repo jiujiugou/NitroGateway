@@ -21,7 +21,6 @@
                     <x:Type TypeName="dev:DeviceStatus" />
                 </ObjectDataProvider.MethodParameters>
             </ObjectDataProvider>
-            <!-- ADR-038：表单字段统一尺寸（两列排布，隐藏字段自动回流） -->
             <Style x:Key="FormFieldStyle" TargetType="StackPanel">
                 <Setter Property="Width" Value="300" />
                 <Setter Property="Margin" Value="0,0,18,16" />
@@ -51,7 +50,6 @@
             </StackPanel>
         </StackPanel>
 
-        <!-- ADR-037 S6：可缩放窗口 + 内容滚动，小屏/高 DPI 不截断 -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,0">
             <StackPanel>
                 <!-- 基础信息 -->

@@ -2,16 +2,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Storage.Buffer;
 
-/// <summary>
-/// MQTT 上云转发总开关（ADR-059）。
-/// <para><b>语义（决策 B + 只控 MQTT）：</b>关闭时采集照常、本地 SQLite 照常、告警/web/SignalR 不受影响，
-/// 仅跳过 mqtt 通道的转发缓冲入队——无缓冲堆积、不触发死信；恢复后从关闭时刻起续传，不补发关闭期数据。
-/// 若 <c>Forwarder:Channels</c> 含 http，http 通道不受本开关影响（开关仅作用于 mqtt 通道）。</para>
-/// <para><b>双宿主实现（同一接口、两套存储）：</b>Webapi 宿主存 <c>app_meta</c>（SQLite，重启保持），
-/// Desktop 宿主存 <c>desktop-settings.json</c>。缺省视为启用（true）。</para>
-/// <para><b>实现约束：</b><see cref="IsEnabled"/> 供采集热路径（DataDispatcher 每轮入队）同步读取，
-/// 实现必须内存缓存、不落库；持久化仅在 <see cref="SetEnabledAsync"/> / <see cref="InitializeAsync"/> 发生。</para>
-/// </summary>
 public interface IForwardMqttToggle
 {
     /// <summary>
@@ -19,12 +9,6 @@ public interface IForwardMqttToggle
     /// </summary>
     bool IsEnabled { get; }
 
-    /// <summary>
-    /// 开关状态变更事件（ADR-061）。<see cref="SetEnabledAsync"/> 持久化成功且实际值变化后触发一次；
-    /// <see cref="InitializeAsync"/> 加载持久值不触发（避免启动时误触发断开）。
-    /// 连接层（MqttClientWrapper，ADR-061）订阅此事件：
-    /// 关闭 → 取消重连 + 断开 + 置 <c>Disabled</c>；开启 → 自动恢复连接。
-    /// </summary>
     event Action<bool>? EnabledChanged;
 
     /// <summary>

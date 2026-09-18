@@ -7,11 +7,6 @@ using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Desktop.ViewModels;
 
-/// <summary>
-/// 告警规则表单编辑模型（ADR-043）。可变对象供 WPF 双向绑定；
-/// 设备切换时级联刷新点位下拉（<see cref="Points"/>），与 Web AlarmRulesView.vue 交互一致。
-/// 字段集与 AlarmRule 领域模型 + AlarmRulesController 对齐。
-/// </summary>
 public sealed partial class AlarmRuleEditor : ObservableObject, INotifyDataErrorInfo
 {
     /// <summary>支持的比较运算符（与 ThresholdEvaluator 解释一致）。</summary>
@@ -75,7 +70,6 @@ public sealed partial class AlarmRuleEditor : ObservableObject, INotifyDataError
         RebuildPoints();
     }
 
-    /// <summary>是否存在校验错误（ADR-037 S4）。</summary>
     public bool HasErrors => _errors.Count > 0;
 
     /// <summary>校验错误集合变更事件（WPF INotifyDataErrorInfo 订阅）。</summary>

@@ -11,11 +11,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests.Telemetry;
 
-/// <summary>
-/// AddNitroTelemetry 追踪接线冒烟测试（ADR-056）：
-/// Enabled + 非 None 导出器 → TracerProvider 注册且全局 ActivitySource 被采样；
-/// 关闭 / None → 不注册 TracerProvider（保持 dormant，与 ADR-009 预留状态一致）。
-/// </summary>
 public class TelemetryServiceCollectionExtensionsTests
 {
     private static IConfiguration Config(params (string key, string? value)[] items)

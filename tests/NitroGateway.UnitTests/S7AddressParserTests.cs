@@ -1,10 +1,9 @@
-﻿using NitroGateway.Domain.Devices;
+using NitroGateway.Domain.Devices;
 using NitroGateway.Protocols.S7;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>S7 地址解析器测试（ADR-019 P2-3）：DB 区与 M/I/Q 区。</summary>
 public class S7AddressParserTests
 {
     [Theory]
@@ -41,7 +40,6 @@ public class S7AddressParserTests
     }
 
     // ══════════════════════════════════════════════════
-    //  FormatForHsl（ADR-024 P1-3：地址自带类型优先 + 类型冲突显式报错）
     // ══════════════════════════════════════════════════
 
     [Theory]

@@ -67,7 +67,6 @@ public class LoginRateLimiterTests
     [Fact]
     public void ExpiredEntries_AreTrimmed_WhenOverCapacity()
     {
-        // ADR-022 P3-3：条目超上限时清理窗口已过期的记录，字典有界
         var limiter = new LoginRateLimiter(maxFailures: 3, window: TimeSpan.FromMilliseconds(50), maxEntries: 2);
         limiter.RecordFailure("expired|1");
 

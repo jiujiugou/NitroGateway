@@ -16,15 +16,6 @@ using Xunit;
 
 namespace NitroGateway.IntegrationTests;
 
-/// <summary>
-/// ADR-019：OPC UA 驱动进程内冒烟测试。本机未装 Prosys、Docker daemon 不可用，
-/// 改用 OPC Foundation Server SDK（1.5.378.145）自起进程内服务器，零外部依赖。
-/// 覆盖全流程：连接 → 读取 → 写入 → Ping → 断链（主动 Disconnect）→ 重连 →
-/// 服务器硬断链（Stop）→ 重启（同端口）→ 重连。
-///
-/// <para>服务器地址空间：ns=2 下模拟变量 i=1001 Int32 / i=1002 Float / i=1003 Bool / i=1004 String，
-/// 读写权限 CurrentReadOrWrite，模拟真实 PLC 点位表（与 PointList 批量生成默认起始地址 ns=2;i=1001 呼应）。</para>
-/// </summary>
 public sealed class OpcUaDriverIntegrationTests
 {
     [Fact]
@@ -465,7 +456,6 @@ public sealed class OpcUaDriverIntegrationTests
         {
             var config = BuildConfiguration();
             await config.Validate(ApplicationType.Server);
-            // ADR-019：进程内 Server 必须先生成应用证书。None 安全策略下 CreateSession 仍会走
             // CertificateValidator.ValidateDomains → GetDomainsFromCertificate(serverCertificate)，
             // 无证书时为 null → NRE → 被包装成 BadUnexpectedError[80010000]（实测根因）。
             var app = new ApplicationInstance

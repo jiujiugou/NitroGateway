@@ -8,9 +8,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-027 P2-1/P2-3/P3-6：HistoryViewModel 竞态守卫、分页 offset 与日期可空校验。
-/// </summary>
 public sealed class HistoryViewModelTests
 {
     [Fact]
@@ -96,7 +93,6 @@ public sealed class HistoryViewModelTests
         var second = vm.QueryCommand.ExecuteAsync(null); // 在途时重入应直接返回
         await second;
 
-        // ADR-047：store 查询经 Task.Run 移到线程池，等待第一次查询真正出队后再断言只触达一次
         await TestWait.UntilAsync(() => store.PagedDequeueCount >= 1);
         Assert.Single(store.PagedCalls); // 第二次查询未再触达存储
 
@@ -162,7 +158,6 @@ public sealed class HistoryViewModelTests
         vm.SelectedDevice = new DeviceOption(device.Id, device.Name);
         vm.SelectedPoint = new PointOption(device.Points.First().Id, "P1", "40001");
 
-        // DatePicker 清空后回写 DateTime? 为 null（ADR-027 P3-6），查询应给出提示而非沿用旧日期
         vm.FromDate = null;
         vm.ToDate = null;
         await vm.QueryCommand.ExecuteAsync(null);

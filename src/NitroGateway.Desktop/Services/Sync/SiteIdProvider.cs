@@ -3,7 +3,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Desktop.Services.Sync;
 
-/// <summary>站点标识提供者（ADR-036）：生效 siteId 的解析、保存与重新生成。</summary>
 public interface ISiteIdProvider
 {
     /// <summary>当前生效的站点标识</summary>
@@ -16,11 +15,6 @@ public interface ISiteIdProvider
     string Regenerate();
 }
 
-/// <summary>
-/// 生效 siteId 解析顺序：配置/环境变量（Site:Id）＞ 本地存储（site.json）＞ 自动生成并持久化。
-/// 保留值 "default"（旧版 appsettings 缺省）视为未初始化，一律进入自动生成路径；
-/// 启动时 GatewayHost 把解析结果写回配置，采集/转发/告警/同步统一取用（ADR-036）。
-/// </summary>
 public sealed class SiteIdProvider : ISiteIdProvider
 {
     private readonly ISiteSettingsStore _store;

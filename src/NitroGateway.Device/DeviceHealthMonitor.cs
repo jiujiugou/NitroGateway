@@ -135,7 +135,6 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
 
     private void NotifyListeners(Guid deviceId, string? deviceName, Domain.Devices.DeviceStatus old, Domain.Devices.DeviceStatus @new)
     {
-        // ADR-030 L1：监听器数量是诊断信息，健康变更（恢复/离线）日志已分别记录，此处降 Debug 避免每次变更刷屏
         _logger.LogDebug("HealthListener 数量: {Count}", _listeners.Count);
         UpdateSnapshot(deviceId, s => s with { Status = @new });
 

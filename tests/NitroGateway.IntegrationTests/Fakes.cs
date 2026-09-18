@@ -39,10 +39,6 @@ public sealed class FakeMeasurementStore : IMeasurementStore
             => Task.FromResult(OperationResult.Success());
 }
 
-/// <summary>
-/// 内存转发缓冲：记录待转发批次与已提交批次。
-/// 支持注入 Dequeue/Commit/MarkFailed 失败（ADR-001 P1-3 失败路径测试用）。
-/// </summary>
 public sealed class FakeForwardBuffer : IForwardBuffer
 {
     public List<BatchMeasurements> Pending { get; } = [];
@@ -59,7 +55,6 @@ public sealed class FakeForwardBuffer : IForwardBuffer
     /// <summary>注入标记失败失败，非 null 时 MarkFailedAsync 返回该失败</summary>
     public OperationalError? MarkFailedError { get; set; }
 
-    /// <summary>注入积压计数异常（ADR-017 P1-1 引擎韧性测试用），非 null 时 GetCountAsync 抛出</summary>
     public Exception? GetCountError { get; set; }
 
     public int Count => Pending.Count;
@@ -75,7 +70,6 @@ public sealed class FakeForwardBuffer : IForwardBuffer
         return Task.FromResult(OperationResult.Success());
     }
 
-    /// <summary>ADR-011：记录通道（HttpForwarderEngine 测试按 http 通道入队）</summary>
     public Task<OperationResult> EnqueueAsync(BatchMeasurements batch, string channel, CancellationToken ct = default)
     {
         Pending.Add(batch);
@@ -131,7 +125,6 @@ public sealed class FakeMqttClient : IMqttClient
     /// <summary>注入发布失败，非 null 时 PublishAsync 返回该失败</summary>
     public OperationResult? PublishResult { get; set; }
 
-    /// <summary>注入发布异常（ADR-017 P2-2 取消路径测试用），非 null 时 PublishAsync 直接抛出</summary>
     public Exception? PublishException { get; set; }
 
     public event Action<MqttConnectionState>? StateChanged;
@@ -200,7 +193,6 @@ public sealed class FakeMqttInnerClient : MQTTnet.IMqttClient
     {
         ConnectCalls++;
         Options = options;
-        // ADR-020 P1-2：替身尊重取消令牌——模拟真实 MQTTnet 在 ct 取消时抛 OCE 的行为
         if (cancellationToken.IsCancellationRequested)
             throw new OperationCanceledException(cancellationToken);
         if (ConnectException is not null) throw ConnectException;

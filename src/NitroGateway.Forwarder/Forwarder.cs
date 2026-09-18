@@ -59,12 +59,6 @@ public sealed class Forwarder : IForwarder
         _siteId = string.IsNullOrWhiteSpace(siteId) ? SiteOptions.DefaultSiteId : siteId.Trim();
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// 单批转发失败不会导致整体失败：失败批次已 MarkFailed（重试/死信），方法仍返回 Success，
-    /// 调用方无需感知个别批次结果；仅 Dequeue 失败返回 Failure，此时缓冲原状保留、下轮重试。
-    /// Activity 状态（ADR-001 P2-9）：全成功置 Ok，任一失败/异常/提交失败置 Error。
-    /// </remarks>
     public async Task<OperationResult> ForwardBatchAsync(int maxCount, CancellationToken ct = default)
     {
         using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.Forward);
@@ -78,14 +72,12 @@ public sealed class Forwarder : IForwarder
         if (dequeueResult.IsFailure)
         {
             _logger.LogError("转发出队失败: {Error}", dequeueResult.Error!.Message);
-            // ADR-001 P2-9：失败路径显式置 Error 状态，追踪不再恒为 Ok
             activity?.SetStatus(ActivityStatusCode.Error, dequeueResult.Error!.Message);
             return OperationResult.Failure(dequeueResult.Error);
         }
 
         if (dequeueResult.Value!.Count == 0)
         {
-            // ADR-017 P2-1：空轮也必须刷新指标，否则积压清空后 BufferBacklog 恒显旧值
             NitroMetrics.BufferBacklog.Set(0);
             activity?.SetStatus(ActivityStatusCode.Ok);
             return OperationResult.Success();
@@ -94,7 +86,6 @@ public sealed class Forwarder : IForwarder
         activity?.SetTag(GatewayActivityTags.BatchSize, dequeueResult.Value!.Count);
 
         var committed = new List<Guid>();
-        // 本轮是否出现过失败：失败路径置 Activity Error，只有全成功才置 Ok（ADR-001 P2-9）
         var anyFailure = false;
 
         foreach (var batch in dequeueResult.Value!)
@@ -122,9 +113,7 @@ public sealed class Forwarder : IForwarder
             }
             catch (OperationCanceledException)
             {
-                // ADR-017 P2-2：取消不是转发失败——不做 MarkFailed / failure 计数 / 节流收紧，
                 // 上抛让引擎按停机路径处理（正常停机会排空剩余 Pending）；已出队未处理批次
-                // 保持 InFlight，由下次启动恢复兜底（ADR-001 P0-1①）。
                 activity?.SetStatus(ActivityStatusCode.Error, "转发轮被取消");
                 throw;
             }
@@ -152,7 +141,6 @@ public sealed class Forwarder : IForwarder
             }
         }
 
-        // ADR-017 P3-1：改走异步 GetCountAsync，不再每轮同步查库（ADR-001 P3-13 约定）
         NitroMetrics.BufferBacklog.Set(await _buffer.GetCountAsync(ct));
 
         // 成功路径才置 Ok；任一批次失败/异常/提交失败已在上方置 Error

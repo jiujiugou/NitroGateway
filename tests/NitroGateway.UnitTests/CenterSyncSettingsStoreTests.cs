@@ -6,7 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>ADR-037 S5：中心同步设置 Token 落盘 DPAPI 加密与旧明文迁移。</summary>
 public sealed class CenterSyncSettingsStoreTests : IDisposable
 {
     private readonly string _filePath =

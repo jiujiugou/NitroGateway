@@ -213,10 +213,6 @@ public sealed class CenterConfigClient : ICenterConfigClient
         }
     }
 
-    /// <summary>
-    /// 快照 DTO → 领域模型。状态强制回退 Unknown（ADR-029：设备状态由 HealthMonitor 驱动，
-    /// 导入不伪造 Online/Offline）；枚举字符串容错回退默认值，与 DomainMapper 语义一致。
-    /// </summary>
     private static Device ToDomain(CenterDeviceDto d)
     {
         var device = new Device

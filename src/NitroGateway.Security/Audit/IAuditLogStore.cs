@@ -2,11 +2,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Security.Audit;
 
-/// <summary>
-/// 操作审计存储接口（ADR-065 A3）。实现放 Persistence（SQLite），Webapi 查询页经控制器读取。
-/// <para><b>写入契约：</b><see cref="WriteAsync"/> 必须 best-effort——审计落库失败绝不能阻断业务请求，
-/// 实现内部捕获异常仅记日志（由 AuditMiddleware 在请求热路径调用）。</para>
-/// </summary>
 public interface IAuditLogStore
 {
     /// <summary>
@@ -21,7 +16,6 @@ public interface IAuditLogStore
     Task<OperationResult<AuditLogQueryResult>> QueryAsync(AuditLogQuery query, CancellationToken ct = default);
 }
 
-/// <summary>审计查询过滤条件（ADR-065 A3：时间/操作者/动作/结果过滤）</summary>
 public sealed class AuditLogQuery
 {
     /// <summary>起始时间（UTC，含）</summary>

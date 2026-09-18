@@ -6,10 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// Web 端 SiteIdProvider（ADR-036）：解析顺序（配置 → app_meta → 自动生成）与
-/// 来源标记 SiteIdSource（供站点身份管理 API 区分「配置锁定 / 本地持久化 / 自动生成」）。
-/// </summary>
 public sealed class WebSiteIdProviderTests
 {
     /// <summary>与 SiteIdProvider.AppMetaKey（internal）一致的 app_meta 键名</summary>

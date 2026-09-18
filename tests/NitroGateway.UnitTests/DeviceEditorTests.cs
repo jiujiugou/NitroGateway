@@ -5,11 +5,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-029 P3：设备表单模型——协议/传输方式联动字段映射：
-/// Modbus TCP（UnitId/DataFormat）、Modbus RTU（+Transport/BaudRate/Parity）、
-/// S7（Rack/Slot/CpuType/PingAddress），与 Web DeviceForm.vue 对齐。
-/// </summary>
 public sealed class DeviceEditorTests
 {
     [Fact]
@@ -278,7 +273,6 @@ public sealed class DeviceEditorTests
     [Fact]
     public void FromDevice_normalizes_comboItem_prefixed_values()
     {
-        // ADR-036 绑定修复前，下拉框把选中项 ToString 存为
         // "System.Windows.Controls.ComboBoxItem: Modbus"，回填必须归一化。
         var device = new Device
         {
@@ -316,7 +310,6 @@ public sealed class DeviceEditorTests
         Assert.Equal("RTU", roundtrip.Protocol.Dialect);
     }
 
-    // ===== ADR-037 S4：字段级校验 =====
 
     [Fact]
     public void Validate_rejects_empty_name_and_endpoint()

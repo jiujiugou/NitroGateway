@@ -33,7 +33,6 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     /// <summary>设备行集合（UI 线程）</summary>
     public ObservableCollection<DeviceItem> Items { get; } = [];
 
-    /// <summary>设备数变更事件（ADR-037 S11：MainViewModel 复用本事件展示设备数，不再重复查询目录）。</summary>
     public event EventHandler<int>? DeviceCountChanged;
 
     [ObservableProperty]
@@ -47,13 +46,11 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     private bool _isLoading;
     [ObservableProperty] private string _statusText = "";
 
-    // ADR-038：设备管理统计卡（设备总数/在线/离线/点位数），随 RefreshAsync 重算
     [ObservableProperty] private int _totalCount;
     [ObservableProperty] private int _onlineCount;
     [ObservableProperty] private int _offlineCount;
     [ObservableProperty] private int _totalPoints;
 
-    /// <summary>加载完成标志（ADR-037 S3）：刷新中禁用刷新按钮，避免无反馈的防重入吞点击。</summary>
     public bool IsIdle => !IsLoading;
 
     public DevicesViewModel(
@@ -145,7 +142,6 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         await RefreshAsync();
     }
 
-    /// <summary>删除设备：确认后 UnregisterAsync（级联删除点位，ADR-021 P3-4 契约）</summary>
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private async Task DeleteDeviceAsync()
     {
@@ -172,7 +168,6 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         await RefreshAsync();
     }
 
-    /// <summary>点位管理：打开模态点位窗口（ADR-029 P2），关闭后刷新计数</summary>
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private void ManagePoints()
     {
@@ -205,7 +200,6 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
 
             _ui.Post(() =>
             {
-                // ADR-037 S7：先 diff 再增删改——既有行按 Id 原位更新（保留行实例/选中/滚动），
                 // 仅新增/消失的设备做集合增删
                 var incoming = devices.ToDictionary(d => d.Id);
                 for (var i = Items.Count - 1; i >= 0; i--)
@@ -265,10 +259,6 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         return text;
     }
 
-    /// <summary>
-    /// 归一化协议名（ADR-036 同款前缀清理）：早期 ComboBoxItem 绑定把选中项 ToString 存库，
-    /// 点位/批量生成的协议感知（S7 / OPC UA 地址提示）需拿到纯协议名。
-    /// </summary>
     private static string NormalizeProtocolName(string? name)
     {
         const string ComboBoxItemPrefix = "System.Windows.Controls.ComboBoxItem: ";
@@ -279,7 +269,6 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
             : name;
     }
 
-    /// <summary>把设备目录行 + 健康快照原位写入行模型（ADR-037 S7，属性可观察触发 UI 刷新）。</summary>
     private static void ApplySnapshot(DeviceItem item, Device device, DeviceHealthSnapshot? snapshot)
     {
         item.Name = device.Name;
@@ -310,7 +299,6 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     }
 }
 
-/// <summary>设备列表行（ADR-037 S7：可观察对象，增量刷新时原位更新避免重建/选中丢失）</summary>
 public sealed partial class DeviceItem : ObservableObject
 {
     public Guid Id { get; init; }

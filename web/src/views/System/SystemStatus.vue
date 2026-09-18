@@ -9,7 +9,6 @@
         <div class="stat-label">本站点</div>
         <div class="stat-value stat-value-site">{{ siteId || '-' }}</div>
       </div>
-      <!-- ADR-061：转发开关关闭（Disabled）显示「已关闭」且按 warning 样式，不误导为故障 -->
       <div class="stat-card" :class="mqttCardClass()">
         <div class="stat-label">MQTT</div>
         <div class="stat-value">{{ mqttStateLabel() }}</div>
@@ -24,7 +23,6 @@
       </div>
     </div>
 
-    <!-- ADR-059：MQTT 上云转发总开关——运行期启停，无需改配置重启 -->
     <div class="card" style="margin-top:20px">
       <div style="display:flex;align-items:center;gap:14px">
         <el-switch v-model="forwardMqttEnabled" :loading="forwardMqttLoading"
@@ -40,7 +38,6 @@
       </div>
     </div>
 
-    <!-- ADR-065 A2：转发看板——outbox 水位曲线 + 断点续传事件流（前端 3s 采样推导） -->
     <ForwarderBoard :backlog="backlog" :mqtt-state="mqtt.state" :forward-enabled="forwardMqttEnabled" />
 
     <!-- 设备熔断器状态（ADR-054：纯边缘形态恒展示） -->
@@ -114,11 +111,9 @@ const breakers = ref<any[]>([])
 const health = ref<any[]>([])
 const serialPorts = ref<any[]>([])
 const availablePorts = ref<string[]>([])
-// ADR-059：MQTT 上云转发开关（缺省启用；仅在首载与切换成功后更新，避免 3s 轮询覆盖用户操作）
 const forwardMqttEnabled = ref(true)
 const forwardMqttLoading = ref(false)
 
-/// ADR-059：切换开关——即时生效并持久化（重启保持）；失败回滚到服务端当前值并提示。
 async function toggleForwardMqtt(value: boolean) {
   forwardMqttLoading.value = true
   try {
@@ -137,7 +132,6 @@ async function refresh() {
     const { data: sys } = await client.get('/status/system')
     if (sys.data) {
       siteId.value = sys.data.siteId ?? ''
-      // ADR-061：状态字串含 Disabled（开关关闭）——connected 仅 Connected 为真，供下方卡片映射
       mqtt.value = { state: sys.data.mqttState, connected: sys.data.mqttState === 'Connected' }
       backlog.value = sys.data.bufferBacklog
       onlineDevices.value = sys.data.onlineDevices
@@ -150,7 +144,6 @@ async function refresh() {
   } catch {}
 }
 
-// ADR-007 P3-2：setInterval 需在 onUnmounted 清理，避免离开页面后继续轮询
 let timer: number | undefined
 onMounted(async () => {
   try { forwardMqttEnabled.value = await getForwarderEnabled() } catch { /* 保持缺省启用 */ }
@@ -159,7 +152,6 @@ onMounted(async () => {
 })
 onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 
-// ADR-007 P1-2：修复占位符恒返回 '-'；el-table formatter 签名 (row, column, cellValue, index)，多余参数忽略
 const shortId = (row: any) => row.deviceId?.slice(0, 8) ?? '-'
 
 function breakerTag(row: any): string {
@@ -172,7 +164,6 @@ function fmtTime(t: string): string {
   return t ? new Date(t).toLocaleTimeString() : '-'
 }
 
-// ADR-061：MQTT 状态枚举 → 中文文案（Disabled=转发开关关闭，非故障）
 function mqttStateLabel(): string {
   const map: Record<string, string> = {
     Connected: '已连接',

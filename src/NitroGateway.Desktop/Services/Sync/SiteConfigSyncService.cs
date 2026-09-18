@@ -57,7 +57,6 @@ public sealed class SiteConfigSyncService : BackgroundService
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                // 关闭期 ODE 属正常退出，不记错误（延续 ADR-030 关闭路径干净方向）
                 break;
             }
             catch (Exception ex)

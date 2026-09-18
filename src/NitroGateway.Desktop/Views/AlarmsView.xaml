@@ -34,7 +34,6 @@
                     <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center"
                                Foreground="{StaticResource TextSecondary}" />
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <!-- ADR-037 S3：加载中禁用刷新并显示进度条 -->
                         <Button Content="刷新" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsIdle}" />
                         <ProgressBar Width="90" Height="6" IsIndeterminate="True" VerticalAlignment="Center" Margin="10,0,0,0"
                                      Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
@@ -70,7 +69,6 @@
                         <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="阈值" Binding="{Binding Threshold, StringFormat=F2}" Width="90" />
                     </DataGrid.Columns>
                 </DataGrid>
-                <!-- ADR-037 S3：空态提示，有数据时折叠 -->
                 <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
                            Foreground="{StaticResource TextSecondary}" FontSize="13">
                     <TextBlock.Style>

@@ -5,11 +5,9 @@
     <div class="stat-card"><div class="value" style="color:#3fb950">{{ online }}</div><div class="label">在线设备</div></div>
     <div class="stat-card"><div class="value" style="color:#f85149">{{ offline }}</div><div class="label">离线/故障</div></div>
     <div class="stat-card"><div class="value" style="color:#a371f7">{{ totalPoints }}</div><div class="label">总点位数</div></div>
-    <!-- ADR-065 A1：告警/转发 KPI——今日告警（AlarmsController.Summary）+ 缓冲积压（/status/system） -->
     <div class="stat-card"><div class="value" style="color:#e6a23c">{{ alarmSummary.today }}</div><div class="label">今日告警</div></div>
     <div class="stat-card"><div class="value" style="color:#56d364">{{ backlog }}</div><div class="label">缓冲积压</div></div>
   </div>
-  <!-- ADR-065 A1：活跃告警汇总——复用 /alarms 现有数据，面试第一屏即可见告警闭环 -->
   <div class="card" style="margin-top:20px">
     <div class="card-header">活跃告警（{{ activeAlarms.length }}）</div>
     <el-table :data="activeAlarms" size="small" empty-text="暂无活跃告警">
@@ -62,7 +60,6 @@ const online = computed(() => devices.value.filter(d=>d.status==='Online').lengt
 const offline = computed(() => devices.value.filter(d=>d.status==='Offline'||d.status==='Error').length)
 const totalPoints = computed(() => devices.value.reduce((s,d)=>s+(d.points?.length??0), 0))
 
-// ADR-065 A1：告警汇总 + 缓冲积压 10s 轮询（与 App.vue topbar 同源 /status/system，量级极低）
 async function refreshKpis() {
   try { alarmSummary.value = await getAlarmSummary() } catch {}
   try { activeAlarms.value = await getActiveAlarms() } catch {}
@@ -75,13 +72,11 @@ onMounted(async () => {
   kpiTimer = window.setInterval(refreshKpis, 10000)
   conn = createLiveConnection()
   conn.on('Measurement', (data: any[]) => {
-    // ADR-007 P2-1：payload 字段为 devicePointId（对齐 PointSnapshot.devicePointId），原写 m.pointId 恒为 undefined
     data.forEach((m: any) => { latestData.value[m.devicePointId] = m })
   })
   conn.on('DeviceStatusChanged', (d: { deviceId: string; status: DeviceStatus }) => {
     const dev = devices.value.find(x => x.id === d.deviceId)
     if (dev) dev.status = d.status
-    // ADR-007 P2-3：挂载后上线的设备补订阅 Measurement 群组，否则收不到实时值
     if (d.status === 'Online') conn?.invoke('SubscribeDevice', d.deviceId).catch(() => {})
   })
   try { await conn.start() } catch (e) { console.warn('SignalR:', e) }

@@ -22,8 +22,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
     /// <summary>Modbus 单次最大寄存器数（协议限制，功能码 03/04 上限为 125）</summary>
     private const int MaxRegistersPerRequest = 125;
 
-    /// <summary>String 点位读取长度（字符）。ADR-003 P2-2：v1 固定 10 字符协议约定；
-    /// 点位级 StringLength 配置透传为后续工作，需改抽象读签名方可支持</summary>
     protected const int DefaultStringLength = 10;
 
     protected readonly ModbusAddressParser AddressParser = new();
@@ -134,7 +132,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
             }
             catch (Exception ex)
             {
-                // ADR-023：HSL 原始错误（PipeTcpNet[ip:port] : Socket Exception -> 接收数据超时）对用户不可读，
                 // 转成可操作文案：超时/断连归"无响应"，其余归"从站异常"，不透传内部细节。
                 return OperationalError.Timeout(ClassifyPingError(ex.Message));
             }
@@ -220,7 +217,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
             var pointList = points.ToList();
             if (pointList.Count == 0)
             {
-                // ADR-031：空点位设备也要发一次真实探测读（寄存器 0，与 PingAsync 一致）验证链路，
                 // 否则断开后 State 仍为 Connected 且无数据流量，设备永远假在线
                 try
                 {
@@ -250,7 +246,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
             }
 
             // 4. 全部点位均未取到值 → 通信级故障：复位状态，让重试管线重新建连
-            //    ADR-030 P3：超时后 TCP socket 状态不可信（可能残留响应字节导致下个请求错位），
             //    失败即重建连接是正确防护；重连频率由上层熔断器（连续 3 次失败 Trip）兜底，
             //    健康设备长连接不受影响（仅故障设备每轮重连，且连接日志为 Debug）。
             if (results.Count == 0)
@@ -259,7 +254,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
                 return OperationalError.Protocol($"批量读取失败：{pointList.Count} 个点位均未返回数据");
             }
 
-            // ADR-003 P3-5：部分点位失败仅跳过，用日志体现失败点数供上层诊断
             if (results.Count < pointList.Count)
                 Logger.LogWarning("批量读取部分失败：{Ok}/{Total} 个点位成功", results.Count, pointList.Count);
 
@@ -280,7 +274,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
     private sealed record ParsedPoint(DevicePoint Point, ModbusAddress Addr);
 
-    // ADR-003 P3-2：StartOffset/TotalRegisters 为死字段（ReadRangeAsync 自己按段计算），已移除
     private sealed record ReadRange(
         ModbusArea Area,
         List<ParsedPoint> Points);
@@ -306,10 +299,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
     // ───────────────────────── Range 合并 ─────────────────────────
 
-    /// <summary>
-    /// 按功能区 → 地址排序 → 贪心合并连续 Range。
-    /// 同一 Area 内，间隙 ≤ MaxMergeGap 寄存器 → 合并为一次读取（ADR-003 P3-3）。
-    /// </summary>
     private static List<ReadRange> MergeRanges(IReadOnlyList<ParsedPoint> parsed)
     {
         var ranges = new List<ReadRange>();
@@ -355,11 +344,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
     // ───────────────────────── 批量 Range 读取 ─────────────────────────
 
-    /// <summary>
-    /// Range 内按 DataType 分组，同类型且寄存器连续的点位合并为一次批量读。
-    /// ADR-003 P1-1：同类型点位可能被其他类型/空寄存器隔开，非连续段必须切分
-    /// （否则从首点连读会把间隔寄存器误读成后序点位）；异类/不连续回退逐点。
-    /// </summary>
     private async Task<List<RawPointValue>> ReadRangeAsync(ReadRange range, CancellationToken ct)
     {
         var results = new List<RawPointValue>();

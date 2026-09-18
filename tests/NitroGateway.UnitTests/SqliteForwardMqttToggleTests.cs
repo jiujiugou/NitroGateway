@@ -6,11 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// MQTT 转发总开关的 app_meta 持久化实现测试（ADR-059）：
-/// 内存缓存（热路径同步读）与持久化（app_meta 键值，重启保持）分离，
-/// 缺省/读失败按启用处理，持久化失败不改内存态。
-/// </summary>
 public sealed class SqliteForwardMqttToggleTests : IDisposable
 {
     private sealed class TempMetaDb : IDisposable
@@ -162,7 +157,6 @@ public sealed class SqliteForwardMqttToggleTests : IDisposable
     [Fact]
     public async Task SetEnabled_raises_EnabledChanged_only_on_actual_change()
     {
-        // ADR-061：SetEnabledAsync 持久化成功且实际值变化才触发事件；
         // 重复设置同一值不触发（避免多余断开/重连）。
         var toggle = NewToggle();
         var raised = new List<bool>();
@@ -181,7 +175,6 @@ public sealed class SqliteForwardMqttToggleTests : IDisposable
     [Fact]
     public async Task Initialize_does_not_raise_EnabledChanged()
     {
-        // ADR-061：启动加载持久值不触发事件（避免启动时误触发断开/重连）
         var toggle = NewToggle();
         var raised = new List<bool>();
         toggle.EnabledChanged += b => raised.Add(b);

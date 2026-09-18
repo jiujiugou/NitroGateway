@@ -9,11 +9,6 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// SqliteAlarmRepository / SqliteAlarmRuleRepository（EF Core 版）测试（ADR-002）：
-/// 告警保存/状态更新/活跃与历史查询、规则 upsert/按设备批量查询/删除，
-/// 以及异常统一分类（表缺失时返回 OperationResult 而非抛异常）。
-/// </summary>
 public class SqliteAlarmRepositoryTests
 {
     /// <summary>临时文件库：按 M005 迁移结构建 alarms / alarm_rules 表，释放时删除文件。</summary>
@@ -163,7 +158,6 @@ public class SqliteAlarmRepositoryTests
     [Fact]
     public async Task QueryAsync_Limit_TruncatesResults()
     {
-        // ADR-022 P2-2：limit 夹紧并 Take，防大窗口历史告警全量进内存
         var repo = new SqliteAlarmRepository(CreateContext(), NullLogger<SqliteAlarmRepository>.Instance);
         for (var i = 0; i < 3; i++)
             await repo.SaveAsync(NewAlarm(Guid.NewGuid()));
@@ -247,7 +241,6 @@ public class SqliteAlarmRepositoryTests
         Assert.Empty(result.Value!);
     }
 
-    /// <summary>ADR-065 A1：今日告警 KPI——按 occurred_at 精确计数（含已恢复，时间含边界）</summary>
     [Fact]
     public async Task CountOccurredSinceAsync_CountsOccurrencesAtBoundary()
     {

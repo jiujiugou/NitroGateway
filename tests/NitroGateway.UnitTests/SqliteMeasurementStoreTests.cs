@@ -6,10 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// SqliteMeasurementStore 测试（ADR-002）：
-/// P1-3 point_name/data_type 写入与查询回填、P1-1 查询/清理异常统一分类、Purge 删除。
-/// </summary>
 public class SqliteMeasurementStoreTests
 {
     /// <summary>临时文件库：按 M001 迁移结构建 measurements 表，释放时删除文件。</summary>
@@ -184,7 +180,6 @@ public class SqliteMeasurementStoreTests
         Assert.Contains("时序数据查询失败", result.Error.Message);
     }
 
-    /// <summary>ADR-005 P2-2：分页按 limit/offset 切片，时间升序</summary>
     [Fact]
     public async Task QueryPagedAsync_LimitAndOffset_ReturnsSlice()
     {
@@ -205,7 +200,6 @@ public class SqliteMeasurementStoreTests
         Assert.True((rows[0].Timestamp - now.AddMinutes(1)).Duration() < TimeSpan.FromMinutes(5));
     }
 
-    /// <summary>ADR-005 P2-2：pointId 为 null 时按设备查全部点位（分页版 QueryByDeviceAsync）</summary>
     [Fact]
     public async Task QueryPagedAsync_PointIdNull_QueriesWholeDevice()
     {
@@ -239,7 +233,6 @@ public class SqliteMeasurementStoreTests
         Assert.Contains("时序数据清理失败", result.Error.Message);
     }
 
-    /// <summary>ADR-002 P2-4：指定点位取最新一条，不依赖时间窗口</summary>
     [Fact]
     public async Task QueryLatestAsync_SinglePoint_ReturnsNewest()
     {
@@ -258,7 +251,6 @@ public class SqliteMeasurementStoreTests
         Assert.True((now - row.Timestamp).Duration() < TimeSpan.FromMinutes(5));
     }
 
-    /// <summary>ADR-002 P2-4：pointId 为 null 时每点返回最新一条</summary>
     [Fact]
     public async Task QueryLatestAsync_PointIdNull_ReturnsLatestPerPoint()
     {
@@ -281,7 +273,6 @@ public class SqliteMeasurementStoreTests
         Assert.All(rows, r => Assert.True((now - r.Timestamp).Duration() < TimeSpan.FromMinutes(5)));
     }
 
-    /// <summary>ADR-018 P2-1：分批删除——小批量上限下仍能清空全部过期行，边界之后保留</summary>
     [Fact]
     public async Task PurgeAsync_WithSmallBatchSize_DeletesAllOldRows_KeepsRecent()
     {
@@ -304,7 +295,6 @@ public class SqliteMeasurementStoreTests
         Assert.True((now.AddDays(-1) - row.Timestamp).Duration() < TimeSpan.FromMinutes(5));
     }
 
-    /// <summary>ADR-018 P3-2：同点位两条记录 timestamp 相同时，每点最多返回一条最新</summary>
     [Fact]
     public async Task QueryLatestAsync_PointIdNull_SameTimestamp_DeduplicatesPerPoint()
     {

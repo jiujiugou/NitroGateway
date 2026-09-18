@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
 using NitroGateway.Protocol.Abstractions;
@@ -7,10 +7,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ReliableProtocolDriver 超时注入测试（ADR-019 P2-4）：
-/// 管线超时由构造参数控制（生产取 DeviceConnection.RequestTimeoutMs），不再硬编码 3s。
-/// </summary>
 public class ReliableProtocolDriverTests
 {
     /// <summary>可编程内层驱动：延迟/失败次数/是否响应取消均可注入。</summary>

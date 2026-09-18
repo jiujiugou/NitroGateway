@@ -8,7 +8,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>ADR-022 P1-1/P1-2：Hub 鉴权与 DevicesController 写操作 RBAC 收窄（反射断言，防止回退）</summary>
 public class WebapiAuthorizationTests
 {
     [Fact]
@@ -62,7 +61,6 @@ public class WebapiAuthorizationTests
     [Fact]
     public void AuditLogsController_RequiresAdminOperator()
     {
-        // ADR-065 A3：操作审计属敏感数据，仅 Admin/Operator 可查（Viewer 不可见）
         var roles = typeof(AuditLogsController).GetCustomAttribute<AuthorizeAttribute>()?.Roles ?? "";
         var roleList = roles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         Assert.Contains(Roles.Admin, roleList);
@@ -73,7 +71,6 @@ public class WebapiAuthorizationTests
     [Fact]
     public void UserController_AdminActions_RequireAdminOnly()
     {
-        // ADR-066：用户管理接口仅 Admin（列表/新增/改角色/启停/重置密码/删除）；
         // 自助改密（me/password）单独断言，需对所有已登录角色开放
         var mutating = new[] { typeof(HttpPostAttribute), typeof(HttpPutAttribute), typeof(HttpDeleteAttribute) };
         foreach (var method in typeof(UserController).GetMethods(BindingFlags.Public | BindingFlags.Instance))

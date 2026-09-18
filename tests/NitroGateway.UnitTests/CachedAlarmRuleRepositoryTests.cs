@@ -6,11 +6,6 @@ using AlarmDomain = NitroGateway.Alarm.Domain;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// CachedAlarmRuleRepository / AlarmRuleCache 测试（ADR-032 P1-2）：
-/// 热路径规则读取经内存缓存（内层 GetAllAsync 只应加载一次），
-/// 写成功失效缓存、加载失败不落缓存且下次重试、TTL 兜底强制重载。
-/// </summary>
 public class CachedAlarmRuleRepositoryTests
 {
     /// <summary>
@@ -24,7 +19,6 @@ public class CachedAlarmRuleRepositoryTests
         /// <summary>GetAllAsync 被调用次数（= 内层 DB 查询次数）。</summary>
         public int GetAllCallCount { get; private set; }
 
-        /// <summary>GetAllIncludingDisabledAsync 被调用次数（ADR-043：管理页直读路径）。</summary>
         public int GetAllIncludingDisabledCallCount { get; private set; }
 
         /// <summary>置 true 时下一次 GetAllAsync 返回失败（模拟 DB 故障），随后自动复位。</summary>
@@ -239,7 +233,6 @@ public class CachedAlarmRuleRepositoryTests
     [Fact]
     public async Task GetAllIncludingDisabledAsync_ReturnsDisabledRules_AndBypassesCache()
     {
-        // ADR-043：管理页读取含禁用规则，必须绕过只存启用规则的缓存直读内层——
         // 既能看到禁用规则，也不污染热路径缓存（GetAllCallCount 不增长）。
         var inner = new FakeRuleRepository();
         var repo = new CachedAlarmRuleRepository(new AlarmRuleCache(), inner);

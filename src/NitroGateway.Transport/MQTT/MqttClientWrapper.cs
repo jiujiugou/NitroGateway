@@ -20,7 +20,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     private readonly MqttNet.IMqttClient _inner;
     private readonly Channel<MqttMessage> _channel;
     private readonly IEnumerable<IMqttStateListener> _stateListeners;
-    // ADR-061：转发总开关——关闭时断开连接且停止重连，状态置 Disabled；
     // null 表示未注册开关（如 Ingest 中心宿主），视为恒启用，行为与旧版一致。
     private readonly IForwardMqttToggle? _toggle;
 
@@ -34,12 +33,10 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     private readonly object _reconnectLock = new();
     private bool _reconnectLoopActive;
 
-    // ADR-020 P3-5：State/SetState 用锁同步——Singleton 实例可能被 Forwarder + MqttAlarmNotifier
     // 并发发布/重连路径并发读改，无同步时状态机可能被写丢（读-改-写非原子）。
     private readonly object _stateLock = new();
     private MqttConnectionState _state = MqttConnectionState.Disconnected;
 
-    /// <summary>客户端 ID：构造时固定一次（配置缺失时自动生成），避免每次 ConnectAsync 重新生成导致会话漂移（ADR-020 P3-7）</summary>
     private readonly string _clientId;
 
     private int _reconnectCount;
@@ -57,12 +54,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// <inheritdoc />
     public IAsyncEnumerable<MqttMessage> Messages => _channel.Reader.ReadAllAsync();
 
-    /// <summary>
-    /// 创建 MQTT 客户端实例。
-    /// </summary>
-    /// <param name="options">连接参数</param>
-    /// <param name="logger">日志记录器</param>
-    /// <param name="forwardMqttToggle">转发总开关（ADR-061）；null 视为恒启用</param>
     public MqttClientWrapper(
         MqttConnectionOptions options,
         ILogger<MqttClientWrapper> logger,
@@ -88,10 +79,8 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         _inner = inner;
         _stateListeners = stateListeners;
         _toggle = forwardMqttToggle;
-        // ADR-061：订阅开关状态变更——关闭即断开并停止重连，开启即恢复连接
         if (_toggle is not null)
             _toggle.EnabledChanged += OnEnabledChanged;
-        // ADR-020 P3-7：ClientId 构造时固定（绕过 AddNitroMqtt 直接构造时也只会生成一次），
         // 避免每次 ConnectAsync 生成新 ID 造成 CleanStart 会话漂移。
         _clientId = options.ClientId ?? $"NitroGateway-{Environment.MachineName}-{Guid.NewGuid():N}";
         _channel = Channel.CreateBounded<MqttMessage>(new BoundedChannelOptions(10_000)
@@ -106,7 +95,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// <inheritdoc />
     public async Task<OperationResult> ConnectAsync(CancellationToken ct = default)
     {
-        // ADR-061：转发总开关关闭时直接拒绝连接——不置 Connecting、不触发重连，状态保持 Disabled
         if (_toggle is not null && !_toggle.IsEnabled)
         {
             SetState(MqttConnectionState.Disabled);
@@ -137,7 +125,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
             if (result.ResultCode == MqttNet.MqttClientConnectResultCode.Success)
             {
-                // ADR-061 竞态防护：连接成功瞬间开关被关——立即断开并回 Disabled，
                 // 避免 UI 短暂显示「已连接」与「已关闭」不一致。
                 if (_toggle is not null && !_toggle.IsEnabled)
                 {
@@ -174,9 +161,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            // ADR-020 P1-2：取消不是连接失败——不触发重连（重连循环用独立 CTS，取消后继续重连会破坏停机语义），
             // 回落到 Disconnected 后上抛，交调用方停机/取消路径处理。
-            // ADR-061：开关关闭触发的取消（CancelReconnect）不得把 Disabled 覆盖成 Disconnected
             SetState(_toggle is not null && !_toggle.IsEnabled
                 ? MqttConnectionState.Disabled
                 : MqttConnectionState.Disconnected);
@@ -204,7 +189,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
                 await _inner.DisconnectAsync(options, ct);
             }
 
-            // ADR-061：开关关闭时断开统一回到 Disabled，而非可被监督循环重连的 Disconnected
             SetState(_toggle is not null && !_toggle.IsEnabled
                 ? MqttConnectionState.Disabled
                 : MqttConnectionState.Disconnected);
@@ -250,7 +234,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             if (result.ReasonCode is MqttNet.MqttClientPublishReasonCode.Success or
                 MqttNet.MqttClientPublishReasonCode.NoMatchingSubscribers)
             {
-                // ADR-020 P3-6：NoMatchingSubscribers 按成功处理——QoS1 为尽力投递，无订阅者时
                 // 消息被 Broker 丢弃但没有送达对象，不计失败不重试；遥测场景可接受，注释明确决策。
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 return OperationResult.Success();
@@ -354,10 +337,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         NotifyStateListeners(state);
     }
 
-    /// <summary>
-    /// ADR-061：订阅转发总开关状态变更——关闭即断开并停止重连，开启即恢复连接。
-    /// fire-and-forget 启动，异常已在下游方法内部隔离，不抛回事件源线程（Controller/UI）。
-    /// </summary>
     private void OnEnabledChanged(bool enabled)
     {
         if (enabled)
@@ -366,11 +345,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             _ = ApplyDisabledAsync();
     }
 
-    /// <summary>
-    /// ADR-061：开关关闭——取消重连 + 置 Disabled + 断开内层连接。
-    /// <para><b>顺序关键：</b>先 SetState(Disabled) 再断开，避免 <see cref="OnDisconnectedAsync"/>
-    /// 在状态仍为 Connected 时误启动重连循环（否则关闭会被重连撤销）。</para>
-    /// </summary>
     private async Task ApplyDisabledAsync(CancellationToken ct = default)
     {
         CancelReconnect();
@@ -396,9 +370,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// ADR-061：开关开启——恢复连接（订阅重放由 CleanStart + <see cref="ReplaySubscriptionsAsync"/> 兜底）。
-    /// </summary>
     private async Task ApplyEnabledAsync(CancellationToken ct = default)
     {
         try
@@ -418,10 +389,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// ADR-020 P1-1：通知注册的 <see cref="IMqttStateListener"/>（SignalR 推送等）。
-    /// fire-and-forget + 异常隔离——监听者故障只记日志，不影响连接状态机与事件链。
-    /// </summary>
     private void NotifyStateListeners(MqttConnectionState state)
     {
         foreach (var listener in _stateListeners)
@@ -464,7 +431,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             Payload = payloadBytes,
             Qos = (int)e.ApplicationMessage.QualityOfServiceLevel,
             ReceivedAt = DateTime.UtcNow,
-            // ADR-036：携带发送方 ClientId（含机器名），供中心站点注册/冲突检测
             ClientId = _clientId
         };
 
@@ -548,7 +514,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
                     }
                     catch (OperationCanceledException)
                     {
-                        // ADR-020 P1-2：取消（DisconnectAsync/DisposeAsync 触发 CancelReconnect）正常退出重连
                         return;
                     }
                 }
@@ -566,7 +531,6 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            // ADR-020 P3-3：fire-and-forget 启动的重连循环必须兜底任何未预期异常——否则未观测异常
             // 且状态卡在 Reconnecting 永不自愈；置 Faulted 交由 MqttHostedService 监督循环周期复位。
             _logger.LogError(ex, "MQTT 重连循环异常，置 Faulted 由监督循环兜底");
             SetState(MqttConnectionState.Faulted);

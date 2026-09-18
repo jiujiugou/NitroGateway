@@ -32,7 +32,6 @@ public sealed class PointManager : IPointManager
         if (result.IsFailure) return result.Error!;
 
         _logger.LogInformation("点位已添加: {PointName} [{PointId}] → Device {DeviceId}", point.Name, point.Id, deviceId);
-        // ADR-002 P2-2：点位配置变更使设备目录缓存失效
         _cache.Invalidate();
         return point;
     }
@@ -57,7 +56,6 @@ public sealed class PointManager : IPointManager
     public async Task<OperationResult<IReadOnlyList<DevicePoint>>> ImportAsync(
         Guid deviceId, IReadOnlyList<DevicePoint> points, CancellationToken ct = default)
     {
-        // ADR-005 P2-1：优先走单事务批量保存（一次往返）；
         // 批量失败时回退逐条保存，保留「失败点名称」诊断信息。
         OperationResult batchResult;
         try

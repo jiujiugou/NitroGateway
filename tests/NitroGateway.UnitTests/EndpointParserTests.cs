@@ -1,9 +1,8 @@
-﻿using NitroGateway.Protocols;
+using NitroGateway.Protocols;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>端点解析测试（ADR-019 P3-6）：IPv4 / 缺省端口 / 带括号 IPv6 / 非法格式。</summary>
 public class EndpointParserTests
 {
     [Theory]

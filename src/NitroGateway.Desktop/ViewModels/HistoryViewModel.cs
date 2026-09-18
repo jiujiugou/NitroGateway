@@ -10,19 +10,11 @@ using NitroGateway.Storage.TimeSeries;
 
 namespace NitroGateway.Desktop.ViewModels;
 
-/// <summary>
-/// 历史查询页：按 设备 + 点位 + 日期区间 分页查询时序库（QueryPagedAsync，ADR-005 P2-2）。
-/// 查询窗口为 [FromDate 00:00, ToDate 次日 00:00)（本地时区）。
-/// </summary>
 public sealed partial class HistoryViewModel : ObservableObject
 {
     /// <summary>单页条数（与 QueryPagedAsync 上限一致，翻页用 offset 递增）。</summary>
     private const int PageSize = 1000;
 
-    /// <summary>
-    /// 加载版本号：设备/点位切换或发起新查询时递增，
-    /// UI 回调校验版本一致才应用，过期结果直接丢弃（ADR-027 P2-1）。
-    /// </summary>
     private int _loadVersion;
 
     private readonly IDeviceSnapshotCache _cache;
@@ -53,7 +45,6 @@ public sealed partial class HistoryViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanGoNext))]
     private bool _hasMore;
 
-    /// <summary>加载完成标志（ADR-037 S3）：查询中禁用查询/翻页按钮。</summary>
     public bool IsIdle => !IsLoading;
 
     /// <summary>上一页可用：非首页且不在查询中。</summary>
@@ -172,7 +163,6 @@ public sealed partial class HistoryViewModel : ObservableObject
             var fromUtc = FromDate.Value.Date.ToUniversalTime();
             var toUtc = ToDate.Value.Date.AddDays(1).ToUniversalTime();
 
-            // ADR-047：先捕获 deviceId/pointId 到局部变量（异步期间不依赖可变属性），
             // 再包 Task.Run 把查询移出 UI 线程（SQLite async 是同步外包，否则历史查询点击冻结窗口）。
             var deviceId = SelectedDevice.Id;
             var pointId = SelectedPoint.Id;

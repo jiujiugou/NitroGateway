@@ -104,17 +104,9 @@ public sealed class CollectionEngine : BackgroundService
         _logger.LogInformation("CollectionEngine Stopped.");
     }
 
-    /// <summary>
-    /// 优雅停止：请求生命周期停止 → 等待当前轮最多 30 秒 → 超时则取消当前轮并最多再等 5 秒。
-    /// <para><b>关闭协调（ADR-016 P1-1）：</b>StopAsync 起始标记 draining → 等最后一轮结束 → 标记 stopped；
-    /// 转发引擎（<c>ForwarderEngine</c>）随后排空转发缓冲。MQTT 不在本处断开——
-    /// <c>MqttClientWrapper</c> 为 Singleton，宿主在全部 StopAsync 完成后才释放，排空窗口内仍可发布。</para>
-    /// </summary>
-    /// <param name="cancellationToken">宿主取消令牌；等待超时阈值同样受其约束</param>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("CollectionEngine Stopping...");
-        // ADR-016 P1-1：先标记 draining——Forwarder 停机排空前据此知道"还有最后一轮数据会入缓冲"
         _lifecycle.RequestStop();
 
         var current = _currentRound;
@@ -129,7 +121,6 @@ public sealed class CollectionEngine : BackgroundService
             if (completed != current)
             {
                 _logger.LogWarning("当前采集轮超时，开始取消。");
-                // ADR-016 P3-1：局部捕获 + 容忍 ODE——ExecuteAsync 的 finally 可能恰好 Dispose 该 CTS
                 var roundCts = _roundCts;
                 try { roundCts?.Cancel(); } catch (ObjectDisposedException) { }
                 await Task.WhenAny(
@@ -138,7 +129,6 @@ public sealed class CollectionEngine : BackgroundService
             }
         }
 
-        // ADR-016 P1-1：最后一轮已结束（或没有在途轮），标记 stopped；Forwarder 收到后排空剩余缓冲
         _lifecycle.MarkStopped();
         await base.StopAsync(cancellationToken);
     }

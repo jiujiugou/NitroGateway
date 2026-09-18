@@ -6,7 +6,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>AddNitroForwarder 注册参数校验测试（ADR-017 P3-2）</summary>
 public class ForwarderRegistrationTests
 {
     /// <summary>非正数间隔启动即报错并指明字段，避免 PeriodicTimer 运行时抛晦涩异常</summary>
@@ -35,7 +34,6 @@ public class ForwarderRegistrationTests
         Assert.Contains(services, s => s.ServiceType == typeof(IMessageSerializer));
     }
 
-    /// <summary>ADR-011 P2：配置驱动——Channels=http 注册 HTTP 引擎与 IHttpClient，不注册 MQTT 引擎</summary>
     [Fact]
     public void AddNitroForwarder_ConfigHttp_RegistersHttpEngineAndClient()
     {
@@ -53,7 +51,6 @@ public class ForwarderRegistrationTests
         Assert.DoesNotContain(services, s => s.ImplementationFactory?.Method.ReturnType == typeof(ForwarderEngine));
     }
 
-    /// <summary>ADR-011 P2：Channels=both 同时注册 MQTT 与 HTTP 两个引擎</summary>
     [Fact]
     public void AddNitroForwarder_ConfigBoth_RegistersBothEngines()
     {
@@ -71,7 +68,6 @@ public class ForwarderRegistrationTests
         Assert.Contains(services, s => s.ServiceType == typeof(IHttpClient));
     }
 
-    /// <summary>ADR-011 P2：Channels 非法值注册期即报错（快速失败，不静默降级 mqtt）</summary>
     [Fact]
     public void AddNitroForwarder_InvalidChannels_Throws()
     {

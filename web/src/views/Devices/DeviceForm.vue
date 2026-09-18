@@ -6,8 +6,6 @@
         <el-form-item label="设备名称"><el-input v-model="f.name" placeholder="例如：一号车间 PLC" /></el-form-item>
         <el-form-item label="协议">
           <el-select v-model="f.protocol.name" style="width:100%" @change="onProtocolChange">
-            <!-- ADR-007 P2-2：本通用表单只服务 Modbus/S7 等寄存器协议；OPC UA 设备独立分区（/opcua*），
-                 见 12-OPC-UA接入设计.md 与 ADR-073。Mitsubishi 待 slnx 启用后再放回 -->
             <el-option label="Modbus" value="Modbus" />
             <el-option label="S7" value="S7" />
           </el-select>
@@ -17,7 +15,6 @@
             <el-option label="TCP（网口）" value="TCP" />
             <el-option label="RTU（串口）" value="RTU" />
           </el-select>
-          <!-- ADR-024 P3-2：S7 仅 TCP（默认 102 端口），不再显示可编辑的 TCP/RTU 输入框 -->
           <el-input v-else-if="f.protocol.name === 'S7'" :model-value="'TCP'" disabled />
         </el-form-item>
         <el-form-item label="状态">
@@ -72,7 +69,6 @@
 
       <div v-else class="form-row">
         <el-form-item label="连接地址">
-          <!-- ADR-024 P3-2：占位按协议区分，S7 默认端口 102（Modbus 502） -->
           <el-input v-model="f.connection.endpoint" :placeholder="endpointPlaceholder" />
         </el-form-item>
         <el-form-item v-if="f.protocol.name === 'Modbus'" label="从站地址">
@@ -90,7 +86,6 @@
         <el-form-item label="重试间隔(ms)"><el-input-number v-model="f.connection.retryIntervalMs" :min="100" /></el-form-item>
       </div>
 
-      <!-- ADR-024 P3-1：S7 连接参数（Rack/Slot/CpuType/PingAddress），后端 S7Driver 依赖这些参数 -->
       <div v-if="f.protocol.name === 'S7'" class="form-row">
         <el-form-item label="Rack（机架）"><el-input-number v-model="s7.rack" :min="0" :max="7" style="width:100%" /></el-form-item>
         <el-form-item label="Slot（插槽）"><el-input-number v-model="s7.slot" :min="0" :max="31" style="width:100%" /></el-form-item>
@@ -144,7 +139,6 @@ const f = ref({
   status: 'Online'
 })
 const serial = ref({ unitId: 1, baudRate: 9600, dataBits: 8, parity: 'None', stopBits: 'One', dataFormat: 'ABCD' })
-// ADR-024 P3-1：S7 连接参数，值域与后端 S7Driver.ParseCpuType 一致
 const s7CpuTypes = [
   { value: 'S-1200', label: 'S7-1200（默认，Rack 0 / Slot 1）' },
   { value: 'S-1500', label: 'S7-1500（Rack 0 / Slot 1）' },
@@ -169,7 +163,6 @@ function syncParams() {
     delete p.CpuType
     delete p.PingAddress
   } else if (f.value.protocol.name === 'S7') {
-    // ADR-024 P3-1：S7 必须落库 Rack/Slot/CpuType/PingAddress，否则后端只能用默认值（S7-300/400 必连不上）
     delete p.DataFormat
     delete p.UnitId
     p.Rack = s7.value.rack
@@ -220,7 +213,6 @@ function onProtocolChange() {
     if (!f.value.protocol.dialect) f.value.protocol.dialect = 'TCP'
     if (ep === '127.0.0.1:102') f.value.connection.endpoint = '127.0.0.1:502'
   } else if (f.value.protocol.name === 'S7') {
-    // ADR-024 P3-2：S7 仅 TCP（102 端口）；从 Modbus 默认地址切过来时同步换端口
     f.value.protocol.dialect = 'TCP'
     if (ep === '127.0.0.1:502') f.value.connection.endpoint = '127.0.0.1:102'
   }

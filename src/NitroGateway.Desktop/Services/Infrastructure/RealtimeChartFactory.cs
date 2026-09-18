@@ -6,17 +6,8 @@ using SkiaSharp;
 
 namespace NitroGateway.Desktop.Services.Infrastructure;
 
-/// <summary>
-/// 实时曲线图表配置工厂（ADR-045 P3 表现层关注点）。
-/// 把「图表怎么画」从 RealtimeViewModel 中剥离：
-/// 配色/坐标轴/labeler 等渲染细节集中在此，ViewModel 只负责数据与绑定。
-/// </summary>
 public static class RealtimeChartFactory
 {
-    /// <summary>
-    /// 创建实时曲线系列：实线 2px 靛蓝 + 同色系淡蓝渐变填充。
-    /// 颜色与 Styles.xaml PrimaryBrush #2563EB 对齐；关动画避免每帧产生逐点动画对象（ADR-045 P3）。
-    /// </summary>
     public static LineSeries<DateTimePoint> CreateSeries() => new()
     {
         Name = "实时值",
@@ -24,7 +15,6 @@ public static class RealtimeChartFactory
         GeometrySize = 0,
         LineSmoothness = 0.2,
         Stroke = new SolidColorPaint(SKColor.Parse("#2563EB")) { StrokeThickness = 2 },
-        // ADR-045 P3：关动画，避免每帧产生逐点动画对象
         AnimationsSpeed = TimeSpan.Zero
     };
 

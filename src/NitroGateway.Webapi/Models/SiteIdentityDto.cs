@@ -1,9 +1,5 @@
 namespace NitroGateway.Webapi.Models;
 
-/// <summary>
-/// 站点身份视图（站点身份管理 API，ADR-036）：当前生效站点标识 + 来源 + 生效提示。
-/// 与桌面设置页「站点标识」区语义对齐：查看 / 修改 / 重新生成。
-/// </summary>
 public sealed class SiteIdentityDto
 {
     /// <summary>当前生效的站点标识（MQTT topic 第三层 nitrogateway/{siteId}/… 与配置同步归属性）</summary>

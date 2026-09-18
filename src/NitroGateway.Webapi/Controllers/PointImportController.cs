@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
@@ -65,7 +65,6 @@ public class PointImportController : ControllerBase
 
         var access = Enum.TryParse<PointAccess>(req.Access, true, out var acc) ? acc : PointAccess.ReadOnly;
 
-        // ADR-024 P3-3：起始地址为字符串（Modbus "40001" / S7 "DB1.DBD0"），非法格式返回 400 而非 500
         IReadOnlyList<DevicePoint> points;
         try
         {

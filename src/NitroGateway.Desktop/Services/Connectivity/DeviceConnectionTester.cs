@@ -4,11 +4,6 @@ using NitroGateway.Protocols;
 
 namespace NitroGateway.Desktop.Services.Connectivity;
 
-/// <summary>
-/// 桌面端连接测试实现（ADR-044/ADR-023）。
-/// 构造注入 <see cref="IProtocolDriverFactory"/>（桌面 GatewayHost 已注册 AddNitroProtocol），
-/// 与采集引擎共用同一驱动实现，保证「测试结果 = 实际采集同一条链路」。
-/// </summary>
 public sealed class DeviceConnectionTester : IDeviceConnectionTester
 {
     private readonly IProtocolDriverFactory _driverFactory;
@@ -36,7 +31,6 @@ public sealed class DeviceConnectionTester : IDeviceConnectionTester
                 return new ConnectionTestResult(false, sw.ElapsedMilliseconds, connectResult.Error?.Message ?? "连接失败");
             }
 
-            // ADR-023：连接成功只代表链路/串口已通，不代表目标从站存在；
             // 必须 Ping（最小读请求）确认从站响应，否则对 UnitId 校验型从站是假阳性。
             var pingResult = await driver.PingAsync(ct);
             sw.Stop();

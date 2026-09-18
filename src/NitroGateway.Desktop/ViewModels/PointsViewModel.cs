@@ -11,10 +11,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Desktop.ViewModels;
 
-/// <summary>
-/// 设备点位管理（ADR-029 P2）：打开点位窗口后加载该设备点位列表，
-/// 增/删/改走 IPointManager（Scoped，命令内建作用域解析）。
-/// </summary>
 public sealed partial class PointsViewModel : ObservableObject, IDisposable
 {
     private readonly Guid _deviceId;

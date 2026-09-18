@@ -67,7 +67,6 @@ public class SecurityConfigValidationTests
     [Fact]
     public void DefaultTestPassword_UnderProductionEnv_Throws()
     {
-        // ADR-052 问题2：生产环境仍用默认测试密码 admin123 → 拒绝启动（防测试账号带上生产）
         var config = BuildConfig(
             ("Security:JwtSecretKey", StrongKey),
             ("Security:ExpireHours", "8"),
@@ -113,7 +112,6 @@ public class SecurityConfigValidationTests
     [Fact]
     public void PlaintextDefaultPassword_UnderProductionEnv_Throws()
     {
-        // compose/.env 以明文覆盖默认测试密码（admin123）→ 生产拒绝启动（ADR-052 同思路）
         var config = BuildConfig(
             ("Security:JwtSecretKey", StrongKey),
             ("Security:ExpireHours", "8"),

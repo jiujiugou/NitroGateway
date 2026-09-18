@@ -3,10 +3,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-003 P1-1：同类型点位只有寄存器连续才能合并为一次批量读，
-/// 非连续段必须切分，否则从首点连读会把间隔寄存器误读成后序点位。
-/// </summary>
 public class ModbusBatchPlannerTests
 {
     [Fact]

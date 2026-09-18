@@ -1,12 +1,5 @@
 namespace NitroGateway.Security.Auth;
 
-/// <summary>
-/// 运行时用户账号（ADR-066：用户 DB 化，不再由配置文件承载运行时账号）。
-/// 与 <see cref="UserConfig"/>（配置文件种子定义）相对：<c>UserAccount</c> 是 users 表的行模型，
-/// 存密码哈希、启停状态与时间戳，登录/授权/RBAC 全部基于本模型。
-/// <para><b>安全约束：</b>密码只存 <see cref="PasswordHasher{TUser}"/> 哈希（与配置用户同格式，兼容首启种子），
-/// 任何接口/存储实现不得暴露明文密码；<see cref="PasswordHash"/> 仅内部校验使用。</para>
-/// </summary>
 public sealed class UserAccount
 {
     /// <summary>主键（users.id，自增）</summary>

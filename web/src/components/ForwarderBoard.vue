@@ -14,7 +14,7 @@
     </div>
     <div ref="chartRef" style="height:200px;margin-top:12px"></div>
     <div class="fb-note">
-      ADR-001 断点续传：MQTT 断开时数据留在本地 outbox（水位上升），重连后按序补传直至水位归零。
+      断点续传：MQTT 断开时数据留在本地 outbox（水位上升），重连后按序补传直至水位归零。
       下方事件流由前端每 3s 采样水位变化推导，展示「断网→堆积→续传→清空」全过程。
     </div>
     <div class="fb-events" v-if="events.length">
@@ -30,7 +30,6 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
-// ADR-007 P3-5：按需引入 echarts（同 HistoryView 模式）
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components'

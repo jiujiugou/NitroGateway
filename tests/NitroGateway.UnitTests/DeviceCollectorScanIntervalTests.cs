@@ -11,11 +11,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-062：点位级 ScanIntervalMs 降频采样——DeviceCollector 在熔断检查前先做到期判定，
-/// 全部未到期 → 跳过本轮：不调驱动、不触发熔断（TryEnterProbe/RecordSuccess/RecordFailure 全不碰）、
-/// 不更新健康快照（保持上次状态，既不误报在线也不误判离线）。
-/// </summary>
 public class DeviceCollectorScanIntervalTests
 {
     private static readonly Device Device = new()
@@ -96,7 +91,6 @@ public class DeviceCollectorScanIntervalTests
         Assert.Equal(CircuitState.Closed, breakers.Registry.Get(Device.Id).State);
     }
 
-    /// <summary>无 enabled 点位（GetDuePoints=null）→ 仍走 ADR-031 探活：ReadDeviceAsync 被调用。</summary>
     [Fact]
     public async Task CollectDeviceAsync_NoEnabledPoints_StillProbes()
     {
@@ -110,7 +104,7 @@ public class DeviceCollectorScanIntervalTests
 
         await collector.CollectDeviceAsync(Device, CancellationToken.None);
 
-        Assert.Equal(1, reader.ReadCallCount); // 空点位设备仍走真实探活（ADR-031 回归）
+        Assert.Equal(1, reader.ReadCallCount);
         Assert.True(reporter.Called);
     }
 

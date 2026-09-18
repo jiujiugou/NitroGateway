@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using Xunit;
@@ -123,7 +123,6 @@ public class PointBatchServiceTests
     }
 
     // ══════════════════════════════════════════════════
-    //  S7 批量生成（ADR-024 P3-3：DB 区按字节步长递增）
     // ══════════════════════════════════════════════════
 
     /// <summary>S7 Float 占 4 字节：DB1.DBD0 → DBD4 → DBD8。</summary>

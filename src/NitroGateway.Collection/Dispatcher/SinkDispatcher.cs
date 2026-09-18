@@ -6,12 +6,6 @@ using NitroGateway.Domain.Events;
 
 namespace NitroGateway.Collection;
 
-/// <summary>
-/// 事件分发器（BackgroundService）。消费有界 Channel，为每个 <see cref="PointStoredEvent"/>
-/// 创建独立 DI scope 并遍历所有 <see cref="IPointStoredSink"/> 异步推送。
-/// <para><b>边界：</b>Channel 容量 1000 条，满时丢弃最旧事件并记录警告；
-/// 单个 Sink 异常只记录日志，不影响其他 Sink 与后续事件；停止时先排空剩余事件（限时 5s，ADR-016 P2-3）。</para>
-/// </summary>
 public sealed class SinkDispatcher : BackgroundService
 {
     /// <summary>停机排空时间上限：防止慢 Sink 把停机拖死。</summary>
@@ -75,7 +69,6 @@ public sealed class SinkDispatcher : BackgroundService
         }
         catch (OperationCanceledException) { /* 正常关闭 */ }
 
-        // ADR-016 P2-3：停机排空——剩余事件尽量送达（限时），避免"取消即丢"与注释不符
         var drainDeadline = DateTime.UtcNow + DrainTimeout;
         while (_channel.Reader.TryRead(out var e))
         {

@@ -12,7 +12,6 @@ public sealed class GatewayLifecycle
     /// <summary>采集侧最后一轮已完成：转发侧可以开始停机排空。</summary>
     public bool IsStopped { get { lock (_lock) return _stopped; } }
 
-    /// <summary>采集引擎 StopAsync 起始调用：标记 draining（ADR-016 P1-1）。</summary>
     public void RequestStop() { lock (_lock) { _draining = true; } }
 
     /// <summary>采集引擎完成最后一轮后调用：标记 stopped，转发引擎据此启动排空。</summary>

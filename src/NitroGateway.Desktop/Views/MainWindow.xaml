@@ -63,7 +63,6 @@
                     <StackPanel DockPanel.Dock="Top" Margin="20,24,20,20">
                         <StackPanel Orientation="Horizontal">
                             <Border Width="38" Height="38" CornerRadius="9">
-                                <!-- ADR-037 S10：品牌块渐变（令牌化画刷，低配机无阴影开销） -->
                                 <Border.Background>
                                     <StaticResource ResourceKey="BrandGradientBrush" />
                                 </Border.Background>

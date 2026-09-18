@@ -84,10 +84,8 @@ OpcUaDriver : IBrowseableDriver
 |---|---|---|---|
 | **Subscription** | `Subscription` + `SubscriptionOptions{PublishingInterval, KeepAliveCount, LifetimeCount, MaxNotificationsPerPublish}`、`session.CreateSubscription(options)`、`subscription.ApplyChangesAsync` / `CreateItemsAsync` | ❌ 未实现（能力声明 `SupportsSubscription=true` 但引擎轮询） | **P1-1a 订阅管理器**：`OpcUaSubscriptionManager`（每设备一个 Subscription），管理创建/启停/重建 |
 | **MonitoredItem** | `MonitoredItem` + `MonitoredItemOptions{SamplingInterval, QueueSize, DiscardOldest, Filter=DataChangeFilter(死区)}`、`CreateMonitoredItem` / `AddItem` | ❌ 未实现 | **P1-1b**：每点位 `CreateMonitoredItem` → `AddItem` → `ApplyChangesAsync`；启动/停用点位增删 |
-| **SamplingInterval** | `MonitoredItem.SamplingInterval` | ❌ 未映射 | `DevicePoint.ScanIntervalMs` → SamplingInterval（0 = 继承全局/最快），与 ADR-062 语义对齐 |
 | **PublishingInterval** | `Subscription.PublishingInterval` | ❌ | 由全局采集配置（`Collection:IntervalMs` 或新增 OPC UA 配置）映射 |
 | **DataChange** | `MonitoredItem.Notification` 事件 + `MonitoredItemNotificationEventArgs` → `DataValue` | ❌ 未接入 | **P1-1c**：事件回调 → `DataValue{Value, StatusCode, SourceTimestamp, ServerTimestamp}` → `RawPointValue` → 复用 `IPointValuePipeline`（缩放/死区/双写与轮询同一条管道） |
-| StatusCode | `StatusCode.IsGood/IsBad/IsUncertain` | ⚠️ 仅 Bad 二元（Bad 跳过） | **P1-1d**：Uncertain 决策（跳过 or 映射 `QualityCode.Uncertain` 上行）；Bad 仍跳过不产伪值（ADR-019） |
 | SourceTimestamp | `DataValue.SourceTimestamp` | ✅ 已取（缺失本地兜底） | 无 |
 | ServerTimestamp | `DataValue.ServerTimestamp` | ❌ 未用 | 可选：`RawPointValue` 加字段或忽略（记录决策） |
 
@@ -186,7 +184,6 @@ OpcUaDriver : IBrowseableDriver
 | 因子 | 分 | 证据 / 风险点 |
 |---|---|---|
 | 规模 | 4 | Protocol 订阅管理器 + Collection 引擎对接 + 新抽象 `ISubscriptionSource` + 状态机 |
-| 约束 | 3 | 适用 ADR-019（不产伪值）/053（死区）/062（点位级降频）；订阅与轮询语义并存；需 ADR 决策 |
 | 故障影响 | 4 | 数据管道首环；订阅断开不补发 = 丢数据；状态机错 = 误报/漏报在线 |
 | 生命周期 | 4 | 新增对外抽象 + 采集运行路径改变（影响后续所有 OPC UA 数据流） |
 | 耦合 | 4 | Protocol→Collection→Pipeline→Persistence→Forwarder；事件驱动 + 轮询双路径 |
@@ -206,7 +203,6 @@ OpcUaDriver : IBrowseableDriver
 | 因子 | 分 | 证据 / 风险点 |
 |---|---|---|
 | 规模 | 3 | OpcUaDriver 内部重构 + 重连状态机 + 与健康监控联动 |
-| 约束 | 3 | 适用 ADR-019；`ReliableProtocolDriver` 语义对齐；`DriverState` 迁移对齐 |
 | 故障影响 | 4 | 可靠性核心；做错会误判在线/离线、丢订阅数据 |
 | 生命周期 | 3 | 驱动运行路径改变，影响采集可用性 |
 | 耦合 | 3 | 驱动↔采集引擎↔`DeviceHealthMonitor`/`CircuitBreaker` |

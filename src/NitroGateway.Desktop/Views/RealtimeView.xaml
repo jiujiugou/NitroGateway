@@ -76,7 +76,6 @@
                             <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="时间" Binding="{Binding TimestampText}" Width="86" />
                         </DataGrid.Columns>
                     </DataGrid>
-                    <!-- ADR-037 S3：空态提示（未选设备/无点位时显示），有点位时折叠 -->
                     <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
                                Foreground="{StaticResource TextSecondary}" FontSize="13">
                         <TextBlock.Style>

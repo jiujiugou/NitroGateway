@@ -3,18 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime">
 
-    <!-- ADR-038：Segoe MDL2 图标字形资源。字形引用收拢于此，保证 Views/*.xaml 零 # 字面量（DesktopThemeTests 回归） -->
     <sys:String x:Key="IconDevice">&#xE787;</sys:String>
     <sys:String x:Key="IconDevicesTotal">&#xE7F3;</sys:String>
     <sys:String x:Key="IconOnline">&#xE73E;</sys:String>
     <sys:String x:Key="IconOffline">&#xE711;</sys:String>
     <sys:String x:Key="IconPoints">&#xE71B;</sys:String>
 
-    <!-- ===================================================================
-         NitroGateway 桌面端 设计系统（ADR-037）
-         所有颜色集中于本文件的设计令牌；Views/*.xaml 禁止出现 # 色值字面量
-         （DesktopThemeTests 逐行回归强制）。改主题只改这一处。
-         =================================================================== -->
 
     <!-- ===================== 设计令牌 ===================== -->
     <!-- 页面 / 卡片 -->
@@ -49,7 +43,6 @@
     <SolidColorBrush x:Key="DangerLightBrush" Color="#FEF2F2" />
     <SolidColorBrush x:Key="SuccessBrush" Color="#10B981" />
 
-    <!-- ADR-037 S1：列表/告警令牌（原散落各视图的硬编码色值收拢于此） -->
     <SolidColorBrush x:Key="AlternatingRowBrush" Color="#F8FAFC" />
     <SolidColorBrush x:Key="BadRowBrush" Color="#FEE2E2" />
     <SolidColorBrush x:Key="SeverityEmergencyBrush" Color="#FDE8E8" />
@@ -67,13 +60,11 @@
     <SolidColorBrush x:Key="CurveCardBorderBrush" Color="#E2E8F0" />
     <SolidColorBrush x:Key="ErrorBrush" Color="#EF4444" />
 
-    <!-- ADR-037 S2：设备状态语义色（与 Web 端 DeviceStatusTag.vue 对齐，回归测试强制） -->
     <SolidColorBrush x:Key="StatusOnlineBrush" Color="#67C23A" />
     <SolidColorBrush x:Key="StatusOfflineBrush" Color="#F56C6C" />
     <SolidColorBrush x:Key="StatusErrorBrush" Color="#E6A23C" />
     <SolidColorBrush x:Key="StatusUnknownBrush" Color="#A0AEC0" />
     <SolidColorBrush x:Key="StatusMaintenanceBrush" Color="#9060EB" />
-    <!-- ADR-038：状态徽章/统计卡软底色（约等于 Web DeviceStatusTag 的 12% 透明度叠加白底） -->
     <SolidColorBrush x:Key="StatusOnlineBg" Color="#EDF8E7" />
     <SolidColorBrush x:Key="StatusOfflineBg" Color="#FEEDED" />
     <SolidColorBrush x:Key="StatusErrorBg" Color="#FCF4E8" />
@@ -92,7 +83,6 @@
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C7D0DA" />
     <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#A8B3C0" />
 
-    <!-- ADR-037 S10：品牌块渐变（轻度渐变，不加阴影降低低配机渲染负担） -->
     <LinearGradientBrush x:Key="BrandGradientBrush" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="#3B82F6" Offset="0" />
         <GradientStop Color="#1D4ED8" Offset="1" />
@@ -152,8 +142,6 @@
         <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
-    <!-- ADR-039: DataGridTextColumn 生成的 TextBlock 默认以顶部对齐渲染，导致与模板列（设备名/徽章等）的垂直居中不一致；
-         此共享样式强制单元格文本垂直居中，消除行内文字“上飘”的不对称。 -->
     <Style x:Key="DataGridCellTextStyle" TargetType="TextBlock">
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
@@ -285,7 +273,6 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="CaretBrush" Value="{StaticResource PrimaryBrush}" />
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisualStyle}" />
-        <!-- ADR-037 S4：字段级校验错误外观——红框 + 悬停错误文案（由 INotifyDataErrorInfo 自动触发） -->
         <Setter Property="Validation.ErrorTemplate">
             <Setter.Value>
                 <ControlTemplate>
@@ -527,10 +514,6 @@
                     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                     <Setter Property="Template">
                         <Setter.Value>
-                            <!-- ADR-041: WPF 默认 DataGridCell 模板不应用 Padding，导致单元格内容
-                                 （含 DataGridTextColumn 生成的 TextBlock、模板列根元素）全部贴住单元格
-                                 左边界，与表头 14 内边距水平错位约 17px（125% DPI）；自定义模板用
-                                 Padding 包裹 ContentPresenter，使所有列内容与表头文字左缘对齐。 -->
                             <ControlTemplate TargetType="DataGridCell">
                                 <Border Background="{TemplateBinding Background}"
                                         BorderBrush="{TemplateBinding BorderBrush}"

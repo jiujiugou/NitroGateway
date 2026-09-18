@@ -7,11 +7,6 @@ using Polly;
 
 namespace NitroGateway.Transport.HTTP;
 
-/// <summary>
-/// <see cref="IHttpClient"/> 的实现，基于 <see cref="System.Net.Http.HttpClient"/> + Polly 重试。
-/// ADR-020 P2-2：仅幂等 HTTP 方法（GET/PUT/DELETE/HEAD/OPTIONS/TRACE）启用重试；
-/// 非幂等（POST 上传）不重试，避免超时后云端已处理导致重复批次。
-/// </summary>
 public sealed class HttpClientWrapper : IHttpClient, IDisposable
 {
     private readonly HttpConnectionOptions _options;
@@ -20,7 +15,6 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
     private readonly ResiliencePipeline<HttpResponseMessage> _resilience;
     private readonly ResiliencePipeline<HttpResponseMessage> _noRetry;
 
-    // ADR-020 P3-5：并发安全——Singleton 实例可能被多发布者并发调用，状态与计数读写加锁/Interlocked 同步
     private readonly object _stateLock = new();
     private int _consecutiveFailures;
     private HttpConnectionState _state = HttpConnectionState.Disconnected;
@@ -83,7 +77,6 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
             })
             .Build();
 
-        // ADR-020 P2-2：非幂等请求的直通管线（不重试）。空管线仅执行一次回调。
         _noRetry = new ResiliencePipelineBuilder<HttpResponseMessage>().Build();
     }
 
@@ -92,12 +85,10 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
     {
         try
         {
-            // ADR-020 P2-2：重试只对幂等方法生效；POST 等非幂等请求走直通管线
             var pipeline = IsIdempotent(request.Method) ? _resilience : _noRetry;
             var response = await pipeline.ExecuteAsync(
                 async token =>
                 {
-                    // ADR-020 P2-3：每次尝试新建 HttpRequestMessage——复用同一实例重试会抛
                     // "request message was already sent"（HttpClient 不允许重复发送同一消息）
                     using var httpMsg = BuildHttpMessage(request);
                     return await _inner.SendAsync(httpMsg, token);
@@ -115,7 +106,6 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // ADR-020 P2-1：调用方取消不是失败——上抛交停机/取消路径，不计连续失败
             throw;
         }
         catch (Exception ex)
@@ -131,8 +121,6 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
     {
         try
         {
-            // ADR-020 P2-2：POST 非幂等，禁重试——超时后云端可能已处理，重试会产生重复批次；
-            // ADR-011 落地时以 batchId 幂等键（服务端去重）重新开启重试。
             var response = await _noRetry.ExecuteAsync(
                 async token => await _inner.PostAsJsonAsync(path, payload, JsonOptions, token), ct);
 
@@ -146,7 +134,6 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // ADR-020 P2-1：调用方取消不是失败——上抛交停机/取消路径，不计连续失败
             throw;
         }
         catch (Exception ex)
@@ -233,9 +220,6 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
         }
     }
 
-    /// <summary>
-    /// ADR-020 P2-1：按异常类型分类错误，避免把连接失败/协议错误一律误报为超时。
-    /// </summary>
     private static OperationalError ClassifyError(Exception ex, string context)
     {
         return ex switch

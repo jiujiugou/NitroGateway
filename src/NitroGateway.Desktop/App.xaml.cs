@@ -37,7 +37,6 @@ public partial class App : Application, IDisposable
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         DispatcherUnhandledException += OnDispatcherUnhandledException;
 
-        // ADR-037 S8：先显示启动反馈窗口，宿主就绪后再切主窗口；
         // 启动失败在启动窗内提示（迁移+服务启动可能数秒，避免白屏无反馈）
         var splash = new StartupWindow();
         splash.Show();

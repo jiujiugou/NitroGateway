@@ -1,4 +1,4 @@
-﻿using HslCommunication;
+using HslCommunication;
 using HslCommunication.Profinet.Siemens;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
@@ -7,17 +7,6 @@ using NitroGateway.Shared;
 
 namespace NitroGateway.Protocols.S7;
 
-/// <summary>
-/// Siemens S7 驱动，基于 HslCommunication。地址支持 DB 区（DB1.DBD0）与 M/I/Q 区（M100、I0.0、Q0.2）。
-/// <para>
-/// <b>并发闸门（ADR-019 P2-1）：</b>单实例内全部通信（读/写/连接/断开/Ping）经 <see cref="_gate"/> 串行化，
-/// 防止 1s 采集读 + Webapi 写 + 健康 Ping 并发访问同一个非线程安全 <see cref="SiemensS7Net"/> 客户端导致帧交错/协议失步。
-/// </para>
-/// <para>
-/// <b>失败读不产出伪值（ADR-019 P1-1）：</b>所有读显式检查 Hsl 结果的 IsSuccess，
-/// Hsl 失败时 Content 为默认值（float→0），直接取 Content 会把故障读当作 0.0 + Quality Good 写入时序库并上云。
-/// </para>
-/// </summary>
 public sealed class S7Driver : IProtocolDriver, IDisposable
 {
     /// <summary>String 点位读取长度（字符）。与 Modbus 的 DefaultStringLength 对齐（协议约定）</summary>
@@ -31,7 +20,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
     public DriverState State { get; private set; } = DriverState.Disconnected;
     public DriverCapability Capability => S7DriverCapability.Instance;
 
-    /// <summary>仅供测试注入已构造客户端（未连接时读操作返回 Failure 而非伪值，ADR-019 P1-1 红绿对照）</summary>
     internal S7Driver(DeviceConnection connection, ILogger logger, SiemensS7Net client) : this(connection, logger)
     {
         _client = client;
@@ -62,7 +50,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
             var client = new SiemensS7Net(cpuType) { IpAddress = ip, Port = port ?? 102, Rack = rack, Slot = slot };
             try
             {
-                // ADR-019 P3-3：连接走异步 API（不再同步 ConnectServer 阻塞），建连后响应取消
                 var r = await client.ConnectServerAsync();
                 ct.ThrowIfCancellationRequested();
 
@@ -79,7 +66,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
             }
             catch
             {
-                // ADR-024 P1-2：建连成功后被取消也走这里——必须关闭已建立的连接，防止 PLC 连接悬挂
                 client.Dispose();
                 throw;
             }
@@ -124,8 +110,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
             if (_client is null) return OperationalError.Unavailable("S7 未连接");
             try
             {
-                // ADR-019 P3-2：ping 地址可配置（默认 DB1.DBW0），PLC 无 DB1 时不再恒 ping 失败；
-                // ADR-024 P2-2：位地址（DBX/Mx.y）按 Bool 读，否则按 Int16 读
                 var address = _connection.Parameters.GetValueOrDefault("PingAddress")?.ToString() ?? "DB1.DBW0";
                 HslCommunication.OperateResult r = S7AddressParser.IsBitAddress(address)
                     ? await _client.ReadBoolAsync(address)
@@ -153,7 +137,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
 
             try
             {
-                // ADR-019 P1-1/P2-2：按 DataType 全量映射读方法并显式检查 IsSuccess，
                 // 失败抛异常转 OperationResult，驱动层不产出伪值
                 var value = await ReadTypedAsync(_client, point.DataType, FormatAddress(point));
                 var raw = new RawPointValue { Point = point, Value = value, Timestamp = DateTime.UtcNow };
@@ -176,7 +159,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         var pointList = points.ToList();
         if (pointList.Count == 0)
         {
-            // ADR-031：空点位设备也要发一次真实探测读（PingAddress）验证链路，
             // 否则断开后客户端残留且无数据流量，设备永远假在线
             await _gate.WaitAsync(ct);
             try
@@ -214,7 +196,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
             if (r.IsSuccess) results.Add(r.Value!);
         }
 
-        // ADR-019 P3-1：与 Modbus 对齐——全部失败返回 Failure 并复位 Faulted，
         // 避免 S7 设备死掉后 DeviceCollector 报 0/0、熔断器 RecordSuccess、HealthMonitor 不感知故障
         if (results.Count == 0)
         {
@@ -236,7 +217,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
             if (_client is null) return OperationalError.Unavailable("S7 未连接");
             try
             {
-                // ADR-019 P2-2：按 DataType 全量映射写方法，不再恒 Convert.ToSingle
                 var r = await WriteTypedAsync(_client, point.DataType, FormatAddress(point), value);
                 return r.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Protocol(r.Message);
             }
@@ -273,11 +253,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         _gate.Dispose();
     }
 
-    /// <summary>
-    /// 拼接 Hsl 地址。DB 区沿用地址串自带类型（DBD/DBW/DBB/DBX，含位偏移）；
-    /// M/I/Q 区类型由点位 DataType 推导（Bool→位、Byte/String→B、Int16/UInt16→W、其余→D），
-    /// 因为非 DB 区地址串通常不带类型后缀（如 M100），Hsl 需要显式类型字符才能按类型读写（ADR-019 P2-3）。
-    /// </summary>
     private static string FormatAddress(DevicePoint point) =>
         S7AddressParser.FormatForHsl(point.Address, point.DataType);
 
@@ -298,7 +273,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         _               => await ReadCheckedAsync(client.ReadFloatAsync(address), "读取 Float")
     };
 
-    /// <summary>解析 CpuType 连接参数。默认 S-1200；未知型号显式报错，不再静默默认（ADR-024 P1-1/P2-1）</summary>
     internal static SiemensPLCS ParseCpuType(string? raw) => raw switch
     {
         null or "" => SiemensPLCS.S1200,
@@ -309,7 +283,6 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         var other => throw new ArgumentException($"未知的 S7 CpuType: {other}（支持 S-1200/S-1500/S-300/S-400）")
     };
 
-    /// <summary>读取 0-255 整数连接参数；支持数字与字符串（API/CSV 传参），不再 (int) 强转抛 InvalidCastException（ADR-024 P2-1）</summary>
     private byte ToByteParam(string key, byte defaultValue)
     {
         if (!_connection.Parameters.TryGetValue(key, out var raw) || raw is null)

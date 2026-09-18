@@ -10,12 +10,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// SqliteForwardOutbox 数据可靠性测试（ADR-001 P0-1/P0-2 + P1-6 补充）。
-/// ADR-001 P1-4 后每个操作使用独立连接，因此用临时文件库（而非共享 :memory: 连接）承载测试。
-/// 覆盖：InFlight 启动恢复、损坏负载恢复、入队异常分类、正常往返、
-/// MarkFailed 超限即丢弃、死信方法（停用）查询/重试/丢弃、Commit 删除。
-/// </summary>
 public class SqliteForwardOutboxTests
 {
     /// <summary>临时文件库：建表并在释放时删除文件；Pooling=False 避免文件句柄占用。</summary>
@@ -135,7 +129,6 @@ public class SqliteForwardOutboxTests
         };
     }
 
-    /// <summary>ADR-011 P1：通道隔离出队——mqtt/http 各行只被各自通道取出，互不争抢</summary>
     [Fact]
     public async Task DequeueAsync_ByChannel_IsolatesChannels()
     {
@@ -158,7 +151,6 @@ public class SqliteForwardOutboxTests
         Assert.Equal(mqttBatch.Id, mqttItem.Id);
     }
 
-    /// <summary>ADR-011 P1：旧无通道 API 默认落到 mqtt 通道（接口只增不删，旧行为不变）</summary>
     [Fact]
     public async Task EnqueueAndDequeue_WithoutChannel_DefaultsToMqtt()
     {
@@ -176,11 +168,6 @@ public class SqliteForwardOutboxTests
     private static string Serialize(BatchMeasurements batch) =>
         JsonSerializer.Serialize(batch, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-    /// <summary>
-    /// P0-1①：遗留 InFlight 在首次使用时重置为 Pending，进程崩溃后批次可继续出队。
-    /// ADR-018 P3-5：启动恢复从构造器移出（构造器不再同步打开连接阻塞首解析），
-    /// 因此构造后 Count 仍为 0，首次 Dequeue 触发恢复后再出队。
-    /// </summary>
     [Fact]
     public async Task Constructor_ResetsStaleInFlight_ToPending()
     {
@@ -311,7 +298,6 @@ public class SqliteForwardOutboxTests
         Assert.False(RowExists(db.ConnectionString, batch.Id.ToString()));
     }
 
-    /// <summary>ADR-009 P2-1：MarkFailed 超限丢弃时上报 ForwardTotal{status=dropped}</summary>
     [Fact]
     public async Task MarkFailed_OverMaxRetries_ReportsDroppedMetric()
     {
@@ -330,7 +316,6 @@ public class SqliteForwardOutboxTests
         Assert.Contains("nitro_forward_total{status=\"dropped\"}", exported);
     }
 
-    /// <summary>ADR-001 P3-13：GetCountAsync 异步返回 Pending 批次数，不含死信</summary>
     [Fact]
     public async Task GetCountAsync_ReturnsPendingCount_ExcludesDeadLetters()
     {
@@ -344,10 +329,6 @@ public class SqliteForwardOutboxTests
         Assert.Equal(1, count);
     }
 
-    /// <summary>
-    /// ADR-017 P1-1：DB 瞬时故障时 GetCountAsync 不抛出，按 0 处理——
-    /// 否则 BackgroundService 未捕获异常会触发 StopHost 整机退出。
-    /// </summary>
     [Fact]
     public async Task GetCountAsync_OnDbError_ReturnsZeroInsteadOfThrowing()
     {
@@ -493,7 +474,6 @@ public class SqliteForwardOutboxTests
         Assert.Contains("死信丢弃失败", result.Error.Message);
     }
 
-    /// <summary>ADR-018 P2-3：达到入队上限后拒绝入队并返回 Storage 失败，不静默丢数据</summary>
     [Fact]
     public async Task Enqueue_WhenQueueFull_ReturnsFailure()
     {
@@ -511,7 +491,6 @@ public class SqliteForwardOutboxTests
         Assert.Contains("已满", third.Error.Message);
     }
 
-    /// <summary>ADR-018 P2-3：按入队时间清理过期死信，保留期内死信不动</summary>
     [Fact]
     public async Task PurgeDeadLetters_RemovesOldKeepsRecent()
     {
@@ -547,7 +526,6 @@ public class SqliteForwardOutboxTests
         }
     }
 
-    /// <summary>ADR-018 P3-1：Commit 只删 InFlight 行，Pending 行（未实际发送）不被 stale commit 误删</summary>
     [Fact]
     public async Task Commit_DoesNotDeletePendingRow()
     {

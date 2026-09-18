@@ -11,11 +11,6 @@ using NitroGateway.Domain.Devices;
 
 namespace NitroGateway.Desktop.ViewModels;
 
-/// <summary>
-/// 告警规则管理页（ADR-043）：为设备/点位配置「条件触发报警」。
-/// 展示全部规则（含禁用），新增/编辑走模态对话框，保存后经 <see cref="IAlarmRuleRepository"/> 落库；
-/// 规则仓储为 Scoped（EF DbContext），每次操作新建 scope（与 <see cref="AlarmsViewModel"/> 同模式）。
-/// </summary>
 public sealed partial class AlarmRulesViewModel : ObservableObject
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -35,7 +30,6 @@ public sealed partial class AlarmRulesViewModel : ObservableObject
     private bool _isLoading;
     [ObservableProperty] private string _statusText = "";
 
-    /// <summary>加载完成标志（ADR-037 S3）：刷新中禁用刷新按钮，避免无反馈的防重入吞点击。</summary>
     public bool IsIdle => !IsLoading;
 
     private bool HasSelection => SelectedRule is not null;

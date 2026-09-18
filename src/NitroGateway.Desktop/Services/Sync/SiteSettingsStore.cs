@@ -4,7 +4,6 @@ using NitroGateway.Desktop.Hosting;
 
 namespace NitroGateway.Desktop.Services.Sync;
 
-/// <summary>站点标识本地设置（ADR-036）。</summary>
 public sealed class SiteSettings
 {
     /// <summary>当前站点标识；空串表示尚未初始化</summary>
@@ -18,10 +17,6 @@ public interface ISiteSettingsStore
     void Save(SiteSettings settings);
 }
 
-/// <summary>
-/// siteId 本地存储（ADR-036）：<c>%LocalAppData%\NitroGateway\site.json</c>，
-/// 与 center-sync.json 同目录同模式；文件损坏/缺失回退空值，不阻断启动。
-/// </summary>
 public sealed class SiteSettingsStore : ISiteSettingsStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

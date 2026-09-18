@@ -9,7 +9,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>ADR-023：PingAsync 必须把 HSL 原始错误转成用户可读文案，不透传内部细节</summary>
 public class ModbusDriverBaseTests
 {
     [Fact]
@@ -70,7 +69,6 @@ public class ModbusDriverBaseTests
         public override void Dispose() { }
     }
 
-    /// <summary>ADR-031：空点位设备也要真实探测链路（寄存器 0），探测失败必须返回 Failure 并复位 Faulted，不再空成功</summary>
     [Fact]
     public async Task ReadBatchAsync_EmptyPoints_ProbeFails_ReturnsFailureAndFaulted()
     {
@@ -82,7 +80,6 @@ public class ModbusDriverBaseTests
         Assert.Equal(DriverState.Faulted, driver.State);
     }
 
-    /// <summary>ADR-031：空点位设备探测成功时仍返回空列表（连接可达但无数据可说）</summary>
     [Fact]
     public async Task ReadBatchAsync_EmptyPoints_ProbeOk_ReturnsEmptySuccess()
     {

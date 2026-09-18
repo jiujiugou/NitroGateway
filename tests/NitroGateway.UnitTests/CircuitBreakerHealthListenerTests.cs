@@ -1,4 +1,4 @@
-﻿using NitroGateway.Collection;
+using NitroGateway.Collection;
 using NitroGateway.DeviceManagement.Events;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
@@ -7,10 +7,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-030 P2：设备健康判定 Offline 时，熔断器 Trip 之外还应 Evict 连接池，
-/// 释放全失败后滞留的 Faulted 驱动/socket；Online 恢复只 Reset 不 Evict。
-/// </summary>
 public class CircuitBreakerHealthListenerTests
 {
     [Fact]

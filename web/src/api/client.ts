@@ -2,7 +2,6 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 const client = axios.create({
-  // ADR-007 P1-1：相对路径，dev 走 Vite 代理(/api → 5100)，生产走 nginx /api/ 反代；
   // 写死后端地址会导致生产部署下浏览器直连自身 localhost:5100 而全部失败
   baseURL: '/api',
   timeout: 10000,
@@ -28,7 +27,6 @@ client.interceptors.response.use(
       if (window.location.pathname !== '/login')
         window.location.href = '/login'
     } else if (err.response?.status === 403) {
-      // ADR-066：Admin 动作对非 Admin 返回 403（后端策略兜底），前端给出明确提示而非静默失败
       ElMessage.error(err.response?.data?.error?.message ?? '无权限执行该操作')
     }
     return Promise.reject(err)

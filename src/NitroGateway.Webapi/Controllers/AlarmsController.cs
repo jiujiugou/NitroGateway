@@ -27,10 +27,6 @@ public class AlarmsController : ControllerBase
             : BadRequest(ApiResponse<List<AlarmDto>>.Fail("Alarms", r.Error!.Message));
     }
 
-    /// <summary>
-    /// 告警汇总（ADR-065 A1 仪表盘 KPI）：活跃告警数 + 今日发生告警数。
-    /// 「今日」按服务器本地时区 0 点起算（网关运行在现场时区，本地语义最直观）。
-    /// </summary>
     [HttpGet("summary")]
     public async Task<ActionResult<ApiResponse<AlarmSummaryDto>>> Summary()
     {
@@ -78,7 +74,6 @@ public class AlarmsController : ControllerBase
     [HttpGet("history")]
     public async Task<ActionResult<ApiResponse<List<AlarmDto>>>> History([FromQuery] DateTime from, [FromQuery] DateTime to, [FromQuery] string? siteId = null, [FromQuery] int limit = 1000)
     {
-        // ADR-022 P2-2：limit 夹紧 1..1000，仓储层 Take 限制结果集，防大窗口全量内存
         var safeLimit = Math.Clamp(limit, 1, 1000);
         var r = await _alarms.QueryAsync(from, to, siteId, safeLimit);
         return r.IsSuccess

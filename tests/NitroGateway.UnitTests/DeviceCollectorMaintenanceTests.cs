@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NitroGateway.Collection;
 using NitroGateway.DeviceManagement;
@@ -10,10 +10,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-002 P2-2（方案 1）：DeviceCollector 的维护模式过滤以 HealthMonitor 实时状态为准，
-/// 不依赖设备目录缓存中的 Status（配置缓存可能滞后一个采集周期）。
-/// </summary>
 public class DeviceCollectorMaintenanceTests
 {
     private readonly FakeDeviceManager _manager = new();
@@ -94,7 +90,6 @@ public class DeviceCollectorMaintenanceTests
         Assert.Equal(onlineDevice.Id, read.Id);
     }
 
-    /// <summary>ADR-009 P1-1/P1-2：每轮采集刷新 devices_online 并上报整轮耗时（哑火指标接线回归）</summary>
     [Fact]
     public async Task CollectOnceAsync_ReportsOnlineAndDurationMetrics()
     {
@@ -160,7 +155,6 @@ public class DeviceCollectorMaintenanceTests
     {
         public List<Device> ReadDevices { get; } = [];
 
-        // ADR-062：返回非空到期子集 → 允许流走到 ReadDeviceAsync（维护模式过滤才是不采集的原因）
         public IReadOnlyList<DevicePoint>? GetDuePoints(Device device) => [new DevicePoint
         {
             Id = Guid.NewGuid(),

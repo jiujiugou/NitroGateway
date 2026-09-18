@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NitroGateway.Storage.Disk;
@@ -6,13 +6,6 @@ using NitroGateway.Telemetry;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// 磁盘守卫（ADR-012）：7×24 无人值守下在磁盘写满前预警并降级。
-/// 按周期检查 SQLite 数据文件所在目录与 logs/ 目录的剩余空间（取最小值），
-/// 等级变化（Healthy → Warning → Critical，恢复带滞后防抖）通过 <see cref="IDiskStatus.Changed"/> 通知联动方。
-/// <para><b>边界：</b>只评估不干预——降级动作由消费方（DataDispatcher 暂停写入、ForwarderEngine 暂停出队、
-/// DiskHealthCheck 报告）执行；SQLITE_FULL 兜底分类（ADR-002 P3-4）语义不变。</para>
-/// </summary>
 public sealed class DiskGuardService : BackgroundService, IDiskStatus
 {
     private readonly string _dbDirectory;

@@ -78,7 +78,6 @@ public sealed class CircuitBreaker : ICircuitBreaker
             if (state == CircuitState.HalfOpen)
             {
                 if (_probing && DateTime.UtcNow - _probeStarted > ProbeTimeout)
-                    // ADR-016 P3-5：探测卡住超 30s 自动释放，允许新探测进入——
                     // 若旧探测仍在途（如 TCP 超时 >30s），短暂出现两个并发探测，属有意放宽，
                     // 防止慢读永久阻塞恢复探测。
                     _probing = false;

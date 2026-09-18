@@ -3,10 +3,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-016 P1-1：GatewayLifecycle 语义——draining/stopped 单向推进，
-/// RequestStop 不再把标志复位为 false（原实现语义与命名相反）。
-/// </summary>
 public class GatewayLifecycleTests
 {
     [Fact]

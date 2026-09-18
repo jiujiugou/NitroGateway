@@ -8,17 +8,6 @@ using OpenTelemetry;
 
 namespace NitroGateway.Telemetry.Tracing;
 
-/// <summary>
-/// 把已结束的 Activity 以 JSON Lines（.jsonl）追加写入本地滚动文件的导出器（ADR-057）。
-/// 供 <c>Telemetry:Tracing:Exporter=File</c> 使用：无需 OTLP collector 即可把 span 落盘归档/排查，
-/// 文件可直接打开查看或用 jq/脚本解析。文件按本地日期滚动：{LogDirectory}/traces-yyyyMMdd.jsonl。
-/// 磁盘安全（ADR-057 补充）：三档保留策略，防止长期采集写爆磁盘——
-///   1) <see cref="TelemetryTracingOptions.MaxRetainedDays"/>：按本地日期保留 N 天，更旧的整文件删除（默认 7 天）；
-///   2) <see cref="TelemetryTracingOptions.MaxFileBytes"/>：单文件超限后滚动到同一天的分段文件（默认 10 MB）；
-///   3) <see cref="TelemetryTracingOptions.MaxTotalBytes"/>：目录总大小超限后删除最旧分段（默认 512 MB，正在写的文件除外）。
-/// 保留清理由内部定时器（每小时）与每次换文件（跨日/超限滚动）触发；Otlp/Console 导出不落本地磁盘，无需保留策略。
-/// 线程安全：Export 可能来自后台批次线程，统一走锁；Dispose 时冲刷并关闭写入器。
-/// </summary>
 internal sealed class FileActivityExporter : BaseExporter<Activity>
 {
     private static readonly Regex FileNamePattern = new(

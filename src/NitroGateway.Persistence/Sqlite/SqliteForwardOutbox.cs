@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -9,47 +9,6 @@ using NitroGateway.Telemetry;
 
 namespace NitroGateway.Persistence.Sqlite;
 
-/// <summary>
-/// 转发 Outbox（SQLite 持久化实现）。实现 <see cref="IForwardBuffer"/>：FIFO、至少一次投递、
-/// 两阶段提交、重试上限（超限即丢弃）。
-///
-/// <para><b>为什么是 Outbox 而不是 Buffer：</b>这不是内存队列，而是一张持久化表（forward_buffer）——
-/// 采集侧同步写入、转发侧（MQTT/HTTP）异步消费，进程崩溃不丢、重启续传，即"事务性 Outbox"模式。
-/// 类名 SqliteForwardOutbox 对应该语义；契约接口 IForwardBuffer 保持稳定（Storage 纯接口，接口只增不删）。</para>
-///
-/// <para><b>状态机：</b></para>
-/// <list type="table">
-///   <listheader><term>状态</term><description>含义</description></listheader>
-///   <item><term>Pending</term><description>待转发（入队目标态，可被出队）</description></item>
-///   <item><term>InFlight</term><description>已出队、转发中（出队事务内标记；进程崩溃后可恢复）</description></item>
-/// </list>
-/// <para><b>重试超限即丢弃（简化，2026-08-22）：</b>重试 <see cref="_maxRetries"/> 次仍失败不再进死信队列——
-/// 普通遥测旧值不值钱（云端侧按时间戳/主键幂等，补发过期数据也无意义），直接 DELETE 丢弃并记 Warning 日志 +
-/// <c>dropped</c> 指标；死信 UI/保留任务随之移除。</para>
-///
-/// <para><b>状态转换（每个转换对应一处 SQL 操作）：</b></para>
-/// <list type="table">
-///   <listheader><term>转换</term><description>触发位置（方法 → SQL）</description></listheader>
-///   <item><term>→ Pending</term><description>EnqueueAsync：INSERT（status='Pending', retry_count=0, channel 随行写入）</description></item>
-///   <item><term>Pending → InFlight</term><description>DequeueAsync：同一事务 SELECT + UPDATE status='InFlight'（两阶段出队阶段一）</description></item>
-///   <item><term>InFlight →（删除）</term><description>CommitAsync：DELETE WHERE id IN @ids AND status='InFlight'（带状态守卫，ADR-018 P3-1）</description></item>
-///   <item><term>InFlight → Pending /（删除）</term><description>MarkFailedAsync：重试计数+1，超限（retry_count+1 &gt;= max）直接 DELETE 丢弃，否则回 Pending（重试上限）</description></item>
-///   <item><term>InFlight → Pending（崩溃恢复）</term><description>EnsureRecoveredAsync：UPDATE 遗留 InFlight → Pending（延迟到首次使用，ADR-018 P3-5）</description></item>
-/// </list>
-///
-/// <para><b>至少一次（at-least-once）语义：</b>出队（标记 InFlight）与确认删除（Commit）之间若进程崩溃，
-/// 遗留 InFlight 在下次启动首次使用时重置为 Pending 重新出队——因此<b>可能重复投递</b>，消费端须幂等。
-/// 出队时反序列化失败的行经 RecoverCorruptRowAsync 复用 MarkFailedAsync 重试/丢弃路径（P0-1②）。</para>
-///
-/// <para><b>异常契约（本类所有方法统一，除特别注明）：</b></para>
-/// <list type="bullet">
-///   <item>DB/IO/锁等异常：归类为 <see cref="OperationResult"/> 失败返回，<b>不抛出</b>
-///       ——后台服务不因单次存储故障整机退出（ADR-001 P0-2 / ADR-017 P1-1）；</item>
-///   <item>取消：当 <c>ct</c> 已取消时抛 <see cref="OperationCanceledException"/>，由调用方按停机/断连处理
-///       （Forwarder/HTTP/Collection 引擎循环层与 StatusController 均显式捕获 OCE）；</item>
-///   <item><see cref="GetCountAsync"/> 特例：DB 故障按 0 返回（不抛出），仅取消抛 OCE。</item>
-/// </list>
-/// </summary>
 public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
 {
     /// <summary>死信清理单批删除行数上限（每批独立事务，批间让出写锁窗口）</summary>
@@ -68,10 +27,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     /// <summary>启动恢复是否已完成（volatile 读取，避免每操作都进闸门）</summary>
     private bool _recoveryCompleted;
 
-    /// <summary>
-    /// 待转发批次数（不含死信）。同步查询，仅保留接口兼容（接口只增不删）；
-    /// async 路径请用 <see cref="GetCountAsync"/>，避免同步阻塞（ADR-001 P3-13）。
-    /// </summary>
     public int Count
     {
         get
@@ -82,16 +37,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
             return conn.ExecuteScalar<int>("SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'");
         }
     }
-    /// <summary>
-    /// 构造缓冲。启动恢复（InFlight → Pending）不再在构造器内同步执行（ADR-018 P3-5）：
-    /// 原实现在 DI 首次解析时同步打开连接，DB 锁/不可用时（busy_timeout 5s）阻塞首解析；
-    /// 改为首次被使用时经 <see cref="EnsureRecoveredAsync"/> 异步完成，恢复完成前其余操作等待同一闸门，
-    /// 保证顺序正确。恢复失败仅告警不阻断（下次操作仍会重试）。
-    /// </summary>
-    /// <param name="connectionString">SQLite 连接串</param>
-    /// <param name="logger">日志记录器</param>
-    /// <param name="maxRetries">最大重试次数，超过后移入死信队列。默认 5</param>
-    /// <param name="maxPending">Pending 入队上限，达到后拒绝入队（ADR-018 P2-3）。默认 100000</param>
     public SqliteForwardOutbox(
         string connectionString,
         ILogger<SqliteForwardOutbox> logger,
@@ -107,10 +52,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     /// <summary>释放启动恢复闸门（Singleton，宿主关闭时调用）。</summary>
     public void Dispose() => _recoveryGate.Dispose();
 
-    /// <summary>
-    /// 打开独立连接并应用库级 PRAGMA（WAL/busy_timeout）。
-    /// ADR-001 P1-4：每操作独立连接，避免 Collection/Forwarder/Alarm 跨线程并发共享同一连接。
-    /// </summary>
     private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken ct)
     {
         var conn = new SqliteConnection(_connectionString);
@@ -119,19 +60,11 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         return conn;
     }
 
-    /// <summary>
-    /// 异步获取待转发批次数（不含死信）。ADR-001 P3-13：async 路径不再同步 ExecuteScalar。
-    /// ADR-017 P1-1：与其余方法一致，DB 瞬时故障不抛出——记 Warning 并按 0 处理，
-    /// 避免 BackgroundService 因单次计数查询故障整机退出（StopHost）；调用方依赖
-    /// "不抛异常"契约（ForwarderEngine 积压检查 / 停机排空 / StatusController）。
-    /// 取消仍抛出（OCE），由调用方按停机路径处理。
-    /// </summary>
     public async Task<int> GetCountAsync(CancellationToken ct = default)
     {
         try
         {
             // 计数反映恢复后状态：首读即触发启动恢复（InFlight→Pending、清理历史死信），
-            // 与其余写操作一致（ADR-018 P3-5 惰性恢复语义，2026-08-22 起 GetCount 也参与）。
             await EnsureRecoveredAsync(ct);
             await using var conn = await OpenConnectionAsync(ct);
             return await conn.ExecuteScalarAsync<int>(
@@ -200,19 +133,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         }
     }
 
-    /// <summary>
-    /// 入队一批待转发数据：序列化为 CamelCase JSON 后以 Pending 状态插入（retry_count=0）。
-    /// 达到入队上限（<see cref="_maxPending"/>）时拒绝入队并返回 Storage 失败（ADR-018 P2-3），
-    /// 由 DataDispatcher 记 Error 告警，避免 MQTT 长期离线时 Pending 无限累积。
-    /// 单条 INSERT，DB 异常归类返回不抛出（保证 DataDispatcher 的失败降级分支可达）；取消抛 OCE。
-    /// </summary>
     public async Task<OperationResult> EnqueueAsync(BatchMeasurements batch, CancellationToken ct = default)
         => await EnqueueAsync(batch, IForwardBuffer.MqttChannel, ct);
 
-    /// <summary>
-    /// 入队到指定通道（ADR-011）：channel 列随行写入，出队按通道隔离。
-    /// 其余语义与 <see cref="EnqueueAsync(BatchMeasurements, CancellationToken)"/> 一致。
-    /// </summary>
     public async Task<OperationResult> EnqueueAsync(BatchMeasurements batch, string channel, CancellationToken ct = default)
     {
         // P0-2：入队异常统一走 SqliteErrorClassifier，与 Dequeue/Commit/MarkFailed 一致，
@@ -224,7 +147,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
             var payload = JsonSerializer.Serialize(batch, _json);
             await using var conn = await OpenConnectionAsync(ct);
 
-            // ADR-018 P2-3：入队上限防护（COUNT + INSERT 非原子，并发下可能略超上限，best-effort 足够）
             var pending = await conn.ExecuteScalarAsync<int>(
                 "SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending'");
             if (pending >= _maxPending)
@@ -259,10 +181,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     CancellationToken ct = default)
         => await DequeueAsync(maxCount, IForwardBuffer.MqttChannel, ct);
 
-    /// <summary>
-    /// 出队指定通道最多 maxCount 批 Pending 数据（ADR-011）：FIFO 按 (channel, enqueued_at) 升序。
-    /// 其余语义与 <see cref="DequeueAsync(int, CancellationToken)"/> 一致。
-    /// </summary>
     public async Task<OperationResult<IReadOnlyList<BatchMeasurements>>> DequeueAsync(
     int maxCount,
     string channel,
@@ -362,12 +280,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         }
     }
 
-    /// <summary>
-    /// 确认转发成功：单事务内按 ID 批量删除已出队批次（InFlight → 移除）。
-    /// ADR-018 P3-1：仅删除处于 InFlight 的行——若该行已被 MarkFailed 重置为 Pending
-    /// （未实际发送）而 stale commit 到达，不能把未发送数据删掉；非 InFlight 视为已提交/已失败，跳过。
-    /// 空列表直接成功；DB 异常归类返回，取消抛 OCE（契约见类注释）。
-    /// </summary>
     public async Task<OperationResult> CommitAsync(IReadOnlyList<Guid> batchIds, CancellationToken ct = default)
     {
         if (batchIds.Count == 0) return OperationResult.Success();
@@ -458,7 +370,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     /// </summary>
     public async Task<OperationResult<IReadOnlyList<DeadLetterEntry>>> GetDeadLettersAsync(int maxCount, CancellationToken ct = default)
     {
-        // ADR-002 P1-1/P3-5：死信查询异常统一分类，ct 传给 Dapper（与 Enqueue/Dequeue 一致）
         try
         {
             await EnsureRecoveredAsync(ct);
@@ -501,7 +412,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     /// </summary>
     public async Task<OperationResult> RetryDeadLetterAsync(Guid batchId, CancellationToken ct = default)
     {
-        // ADR-002 P1-1/P3-5：死信重试异常统一分类，ct 传给 Dapper
         try
         {
             await EnsureRecoveredAsync(ct);
@@ -534,7 +444,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     /// </summary>
     public async Task<OperationResult> DiscardDeadLetterAsync(Guid batchId, CancellationToken ct = default)
     {
-        // ADR-002 P1-1/P3-5：死信丢弃异常统一分类，ct 传给 Dapper
         try
         {
             await EnsureRecoveredAsync(ct);
@@ -560,13 +469,6 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         }
     }
 
-    /// <summary>
-    /// 【停用】ADR-018 P2-3：按入队时间清理过期死信（物理删除），与 measurements 保留清理对称，
-    /// 死信特性已移除（2026-08-22），保留仅因 <see cref="IForwardBuffer"/> 接口只增不删。
-    /// 防止坏消息持续累积死信表。分批删除（单批 ≤ <see cref="DefaultPurgeBatchSize"/> 行，
-    /// 每批独立事务）避免大 DELETE 长时间持锁；本 SQLite 编译版不支持 DELETE ... LIMIT，
-    /// 用 SELECT id 限批 → 按 id 批量删除 实现分批。DB 异常归类返回，取消抛 OCE（契约见类注释）。
-    /// </summary>
     public async Task<OperationResult> PurgeDeadLettersAsync(DateTime before, CancellationToken ct = default)
     {
         try

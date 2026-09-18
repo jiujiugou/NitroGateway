@@ -4,11 +4,6 @@ using System.Text;
 
 namespace NitroGateway.Desktop.Services.Settings;
 
-/// <summary>
-/// ADR-037 S5：本机用户级数据保护（DPAPI CryptProtectData，CurrentUser 作用域）。
-/// 用 P/Invoke 而非新增 NuGet 依赖；加密结果仅本机当前用户可解，
-/// 配置文件拷到其他机器/用户需重新输入 Token。
-/// </summary>
 internal static class DpapiProtector
 {
     /// <summary>禁止弹出 UI 提示（守护进程/服务场景友好）。</summary>

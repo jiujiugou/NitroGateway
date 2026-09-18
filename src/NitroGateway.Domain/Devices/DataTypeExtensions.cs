@@ -1,4 +1,4 @@
-﻿namespace NitroGateway.Domain.Devices;
+namespace NitroGateway.Domain.Devices;
 
 /// <summary>DataType 扩展方法</summary>
 public static class DataTypeExtensions
@@ -24,11 +24,6 @@ public static class DataTypeExtensions
         _ => 1
     };
 
-    /// <summary>
-    /// 获取数据类型占用的 S7 字节宽度，用于 DB 区批量生成地址递增（ADR-024 P3-3）。
-    /// Byte=1, Int16/UInt16=2, Int32/UInt32/Float=4, Int64/UInt64/Double=8, String=10（与驱动默认字符串长度对齐）；
-    /// Bool 位地址不支持批量生成（位步进需按字节内偏移处理，批量场景易错，见 PointBatchService）。
-    /// </summary>
     public static int ByteSize(this DataType type) => type switch
     {
         DataType.Bool => 1,

@@ -8,12 +8,6 @@ using ForwarderImpl = NitroGateway.Forwarder.Forwarder;
 
 namespace NitroGateway.IntegrationTests;
 
-/// <summary>
-/// Forwarder 指标刷新测试（ADR-017 P2-1）：
-/// BufferBacklog gauge 在空轮也必须刷新为 0，不能停在最后一个非零值；
-/// 有积压时按缓冲实际剩余数刷新（并验证改走 GetCountAsync，P3-1）。
-/// 本类与其它 Forwarder 测试同处 "Forwarder" 串行集合（见 ForwarderCollection）。
-/// </summary>
 [Collection("Forwarder")]
 public class ForwarderMetricsTests
 {

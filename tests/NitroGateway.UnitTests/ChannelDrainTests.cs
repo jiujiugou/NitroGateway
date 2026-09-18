@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Collection;
 using NitroGateway.Domain.Devices;
@@ -10,10 +10,6 @@ using Xunit;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-016 P2-3：MeasurementWriteHost / SinkDispatcher 停机时排空 Channel 剩余项，
-/// 与"优雅退出"注释一致，不再取消即丢。
-/// </summary>
 public class ChannelDrainTests
 {
     // ═══════════ MeasurementWriteHost：主循环写操作带 stoppingToken，

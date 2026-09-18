@@ -1,9 +1,5 @@
 namespace NitroGateway.Storage.TimeSeries;
 
-/// <summary>
-/// 站点信息（ADR-036 中心站点管理）：唯一标识 + 可读显示名 + 来源指纹 + 冲突标记。
-/// 冲突 = 同一 siteId 被不同 MQTT ClientId（机器）上报过，提示现场配置撞号。
-/// </summary>
 public sealed class SiteInfo
 {
     /// <summary>站点唯一标识（上行 topic 第三层，不可变）</summary>

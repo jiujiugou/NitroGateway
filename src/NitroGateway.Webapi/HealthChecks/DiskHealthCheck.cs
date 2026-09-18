@@ -1,12 +1,8 @@
-﻿using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NitroGateway.Storage.Disk;
 
 namespace NitroGateway.Webapi.HealthChecks;
 
-/// <summary>
-/// 磁盘健康检查（ADR-012）：Critical → Unhealthy，Warning → Degraded，Healthy → Healthy。
-/// 等级由 DiskGuardService 周期刷新，这里只读快照，不做磁盘 IO。
-/// </summary>
 public sealed class DiskHealthCheck : IHealthCheck
 {
     private readonly IDiskStatus _disk;

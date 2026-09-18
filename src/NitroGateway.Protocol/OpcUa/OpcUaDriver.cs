@@ -16,27 +16,6 @@ using Opc.Ua.Configuration;
 
 namespace NitroGateway.Protocols.OpcUa;
 
-/// <summary>
-/// OPC UA 协议驱动（采集侧 Client），基于 OPC Foundation .NET Standard SDK 1.5.378.156。
-/// 生命周期：<c>ConnectAsync</c>（选端点 + 建 Session）→ Read/Write → <c>DisconnectAsync</c>。
-/// 同时支持轮询与 Subscription；订阅通知仅作为原始值来源，仍复用 Collection 既有管道。Browse
-/// （<see cref="IBrowseableDriver"/>，ADR-070）已实现，供配置工具/前端选点，采集引擎不调。
-/// </summary>
-/// <remarks>
-/// <para><b>并发闸门（ADR-019 P2-1）：</b>OPC UA Session 非线程安全，全部通信（读/写/连接/断开/Ping）
-/// 经 <see cref="_gate"/> 串行化，防止 1s 采集读 + Webapi 写 + 健康 Ping 并发访问同一 Session 导致
-/// 请求交错/协议失步（与 Modbus/S7 驱动同一约束）。</para>
-/// <para><b>失败读不产伪值（ADR-019 P1-1）：</b>Read 响应显式检查 <c>StatusCode</c>，
-/// Bad/Uncertain 状态跳过该点位（SDK 在 Bad 时 <c>WrappedValue</c> 为默认值，直接取会把故障读当作
-/// 0.0 + Good 写入时序库并上云）；全部失败复位 <see cref="DriverState.Faulted"/>，让上层重试管线重新建连。</para>
-/// <para><b>连接安全（ADR-073 层4）：</b>安全档位（<c>SecurityPolicy</c>/<c>SecurityMode</c>/
-/// <c>UserName</c>/<c>Password</c>）由 <see cref="DeviceConnection.Parameters"/> 显式声明，None 仅
-/// 显式配置才允许；建连前 GetEndpoints 手工按策略/模式选端点，无隐式 None 回退。应用证书在
-/// <c>opcua/pki/own</c> 生成，失败显式返回 <see cref="OperationalError"/> 而非静默降级。服务端证书按
-/// <c>opcua/pki/trusted</c> 白名单校验（<c>AutoAcceptUntrustedCertificates=false</c>，无 Accept 回调）；
-/// 未信任证书由 SDK 判 <c>BadCertificateUntrusted</c> 拒绝并进入 <c>opcua/pki/rejected</c>，经证书管理
-/// API 信任后重试（D8）。</para>
-/// </remarks>
 public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscriptionSource, IDisposable
 {
     /// <summary>应用证书 SubjectName；首次连接自动生成到 opcua/pki/own 目录存储</summary>
@@ -109,7 +88,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
 
             try
             {
-                // ADR-019 P2-4：操作超时与设备请求超时对齐（取 RequestTimeoutMs，下限 1s）
                 var requestTimeout = Math.Max(1000, _connection.RequestTimeoutMs);
 
                 // 1) 程序化构建 ApplicationConfiguration（不依赖 XML 配置文件，SDK 1.5 支持直接构造）
@@ -399,7 +377,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
             var pointList = points.ToList();
             if (pointList.Count == 0)
             {
-                // ADR-031：空点位设备也要发一次真实探测读验证链路，否则断开后仍 Connected 且无流量 → 假在线
                 return await ProbeLinkAsync(ct);
             }
 
@@ -430,7 +407,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
             for (var i = 0; i < validPoints.Count && i < response.Results.Count; i++)
             {
                 var dv = response.Results[i];
-                // ADR-019 P1-1：Bad/Uncertain 不产伪值（SDK Bad 时 WrappedValue 为默认值）
                 if (StatusCode.IsBad(dv.StatusCode))
                 {
                     _logger.LogWarning("点位 {Name} 读取 Bad: {Code}", validPoints[i].Name, dv.StatusCode);
@@ -445,7 +421,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 });
             }
 
-            // ADR-019 P3-1 + ADR-072 D5：全部失败复位 Faulted，让重试管线重新建连
             // （与 Modbus/S7 对齐）；自愈重连窗口内不置 Faulted（保持 Connected，防与上层抢道）
             if (results.Count == 0)
             {
@@ -487,7 +462,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                     {
                         NodeId = ToNodeId(uaAddr),
                         AttributeId = Attributes.Value,
-                        // ADR-019：按点位声明类型构造 Variant。Webapi 写入值通常来自 JSON（数值一律为 double），
                         // 若直接按 .NET 类型映射，Float 点会发成 Double → 服务端 BadTypeMismatch（实测）。
                         Value = new DataValue(ToVariant(point.DataType, value))
                     }
@@ -1134,12 +1108,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         _ => v.Value
     };
 
-    /// <summary>领域值 → Variant（写路径），按点位声明的 <see cref="DataType"/> 强制类型化。</summary>
-    /// <remarks>
-    /// Float 用 <c>Convert.ToSingle</c>、Int64 用 <c>Convert.ToInt64</c> 等，不复用 Variant 默认的 .NET 类型：
-    /// 否则 Float 点被 JSON 数值（一律为 double）写入时会发成 Double Variant → 服务端 BadTypeMismatch（ADR-019 实测）。
-    /// 转换失败抛 <see cref="InvalidOperationException"/>，由 WriteAsync 上层捕获返回 Protocol 错误。
-    /// </remarks>
     private static Variant ToVariant(DataType dataType, object value)
     {
         try

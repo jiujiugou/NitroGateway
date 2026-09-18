@@ -29,7 +29,6 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <!-- ADR-038 统计卡片：设备总数 / 在线 / 离线 / 点位数 -->
             <Grid Grid.Row="0" Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -109,7 +108,6 @@
                     <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center"
                                Foreground="{StaticResource TextSecondary}" />
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <!-- ADR-037 S3：加载中禁用刷新并显示进度条，避免无反馈的防重入吞点击 -->
                         <Button Content="刷新" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsIdle}"
                                 Margin="0,0,8,0" />
                         <Button Content="+ 新增设备" Command="{Binding AddDeviceCommand}"
@@ -130,7 +128,6 @@
                           AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
                           RowHeight="48">
                     <DataGrid.Columns>
-                        <!-- ADR-038：设备名列 = 图标 + 名称/协议双层，行内即展示协议信息 -->
                         <DataGridTemplateColumn Header="设备名称" Width="*">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -152,7 +149,6 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <!-- ADR-038：状态徽章（软底 + 圆点，对齐 Web DeviceStatusTag 语义色） -->
                         <DataGridTemplateColumn Header="状态" Width="88">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -200,7 +196,6 @@
                         <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="错误" Binding="{Binding LastError}" Width="*" />
                     </DataGrid.Columns>
                 </DataGrid>
-                <!-- ADR-037 S3：空态提示，有数据时折叠 -->
                 <TextBlock Text="暂无数据" HorizontalAlignment="Center" VerticalAlignment="Center"
                            Foreground="{StaticResource TextSecondary}" FontSize="13">
                     <TextBlock.Style>

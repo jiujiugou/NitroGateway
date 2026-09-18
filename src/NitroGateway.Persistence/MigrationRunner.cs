@@ -30,7 +30,6 @@ public static class MigrationRunner
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
 
-        // ADR-002 P2-1：WAL + synchronous=NORMAL + busy_timeout（WAL 为库级持久设置）
         SqlitePragmas.Apply(connection);
 
         // ── 2. 预迁移备份（仅当库已存在；WAL 下先 checkpoint 再复制，保证一致性） ──
@@ -65,7 +64,6 @@ public static class MigrationRunner
         var backupDir = Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "backups");
         Directory.CreateDirectory(backupDir);
 
-        // ADR-002 P3-3：WAL 模式下先 checkpoint(TRUNCATE) 把已提交数据合并回主库文件，
         // 再复制，避免备份缺最近已提交数据或拿到不一致快照
         using (var checkpoint = connection.CreateCommand())
         {
@@ -117,11 +115,6 @@ public static class MigrationRunner
 
     // ═══════ 工具 ═══════
 
-    /// <summary>
-    /// 从连接串中提取文件路径（ADR-018 P3-6）。
-    /// 用 SqliteConnectionStringBuilder 解析，兼容 "Data Source=..." 两侧空格、
-    /// 大小写与别名等变体；连接串非法时抛出（启动期快速失败）。
-    /// </summary>
     internal static string ExtractDataSource(string connectionString)
         => new SqliteConnectionStringBuilder(connectionString).DataSource;
 }

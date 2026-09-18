@@ -19,10 +19,6 @@ using AlarmRuleDomain = NitroGateway.Alarm.Domain.AlarmRule;
 
 namespace NitroGateway.UnitTests;
 
-/// <summary>
-/// ADR-022 控制器层测试：Devices 非法输入 400 / 忽略客户端 ID、
-/// AlarmRules 非法 Guid/枚举 400。fakes 均记录调用供断言。
-/// </summary>
 public class WebapiControllerTests
 {
 
@@ -188,7 +184,6 @@ public class WebapiControllerTests
         Assert.NotEqual(clientPointId, points.LastAdded!.Id);
     }
 
-    // ────── DevicesController：连接测试语义（ADR-023）──────
 
     [Fact]
     public async Task Devices_TestConnection_ConnectAndPingOk_ReturnsSuccess()
@@ -315,7 +310,6 @@ public class WebapiControllerTests
         Enabled = true
     };
 
-    // ── SiteController：站点身份管理（ADR-036）查看 / 修改 / 重新生成 ──
 
     [Fact]
     public void Site_Get_ReturnsCurrentIdentity()

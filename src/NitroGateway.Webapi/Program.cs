@@ -27,14 +27,12 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 // ── 参数 ──
-// ADR-014：健康检查与 AddNitroSqlite 统一读取 Persistence:ConnectionString；
 // 此前误读不存在的 Persistence:DbPath，导致 sqlite 健康检查拿到空连接串。
 var dbConnectionString = builder.Configuration["Persistence:ConnectionString"]
     ?? throw new InvalidOperationException("Persistence:ConnectionString 未配置。");
 
 // ── Serilog ──
 
-// ADR-014：Serilog 作为唯一日志输出（appsettings.json 已移除 Logging 段），
 // 清掉宿主内置 Console/Debug 提供程序，避免与 Serilog Console sink 双写。
 builder.Logging.ClearProviders();
 builder.Host.UseSerilog((context, services, configuration) =>
@@ -59,10 +57,7 @@ builder.Services.AddNitroProtocol();
 builder.Services.AddNitroSignalR();
 // ADR-054：web 收敛为纯边缘（Linux 网关管理端，Gateway 单一形态），不再有 Center 模式。
 // 采集/转发/MQTT 发布/告警评估无条件注册——中心（如需多现场）另立独立项目，不复用 webapi 双模式。
-// ADR-016 P1-1：Forwarder 必须先于 Collection 注册——HostedService 按注册序反向停止，
 // 这样关闭时先停采集（最后一轮入缓冲）再停转发（停机排空），MQTT 由 Singleton 兜底保持连接。
-// ADR-022 P3-7：Forwarder 轮询间隔配置化（与 Collection 一致），缺省 5000ms
-// ADR-011 P2：配置驱动注册（Forwarder:Channels 决定 MQTT/HTTP 引擎），缺省 mqtt 单通道
 builder.Services.AddNitroAlarm();
 builder.Services.AddNitroForwarder(builder.Configuration);
 builder.Services.AddNitroCollection(builder.Configuration);
@@ -70,7 +65,6 @@ builder.Services.AddNitroMqtt(builder.Configuration);
 // ADR-069：命令回写（云→网关→PLC，带回执）——订阅 commands topic，与转发共用同一 IMqttClient 单例。
 builder.Services.AddNitroCommand();
 
-// ── 站点标识 + 配置同步（ADR-036 / ADR-033 阶段 4：边缘→中心 push）──
 // 站点 ID：配置/环境变量 Site:Id → app_meta 持久化 → 自动生成并持久化；Singleton 构造时解析。
 // 首解析发生在 Program 启动（InitializeDatabase 建表后）写回配置，供采集/转发/告警/状态页统一取用。
 builder.Services.AddSingleton<ISiteIdProvider, SiteIdProvider>();
@@ -93,7 +87,6 @@ builder.Services.AddSingleton<IConfigSyncOutboxStore>(_ => new ConfigSyncOutboxS
 // 周期同步：拉中心快照双向 UpdatedAt 合并 + 上报 outbox；未配置 ConfigSync:CenterUrl 时静默跳过。
 builder.Services.AddHostedService<WebConfigSyncService>();
 
-// ADR-056：启用 OpenTelemetry 追踪（OTLP/Console 导出），service.name=nitrogateway-webapi；
 // 配置见 appsettings Telemetry:Tracing，可用环境变量覆盖（Endpoint 空时走 OTEL_EXPORTER_OTLP_ENDPOINT）。
 builder.Services.AddNitroTelemetry(builder.Configuration, "nitrogateway-webapi");
 
@@ -103,7 +96,6 @@ var healthChecks = builder.Services.AddHealthChecks()
     .AddCheck<DiskHealthCheck>("disk", tags: ["disk"]);
 // ADR-054：MQTT 健康检查依赖转发链路（IMqttClient），边缘形态恒注册，不再按 Center 跳过。
 healthChecks.AddCheck<MqttHealthCheck>("mqtt", tags: ["mqtt", "ready"]);
-// ADR-011 P4：HTTP 北向通道检查——仅 http/both 通道启用时注册（IHttpClient 只在此时存在）
 var forwarderChannels = builder.Configuration["Forwarder:Channels"] ?? "mqtt";
 if (forwarderChannels.Trim().Equals("http", StringComparison.OrdinalIgnoreCase) ||
     forwarderChannels.Trim().Equals("both", StringComparison.OrdinalIgnoreCase))
@@ -158,12 +150,10 @@ var app = builder.Build();
 // ── 建表 ──
 app.InitializeDatabase();
 
-// ADR-036：站点标识解析并写回配置——建表（app_meta 持久化可用）后首次 resolve；
 // 解析结果写回 Configuration，使构造期读 Site:Id 的采集/转发/告警/StatusController 拿到真实值而非 default。
 var siteId = app.Services.GetRequiredService<ISiteIdProvider>().Current;
 app.Configuration["Site:Id"] = siteId;
 
-// ADR-059：MQTT 转发总开关——迁移完成后把持久值（app_meta）加载进内存，
 // 供 DataDispatcher 采集热路径与 ForwarderController 读取；缺省/失败按启用处理，不阻断启动。
 await using (var toggleScope = app.Services.CreateAsyncScope())
 {
@@ -171,7 +161,6 @@ await using (var toggleScope = app.Services.CreateAsyncScope())
     await toggle.InitializeAsync();
 }
 
-// ADR-066：首启种子——users 表为空时从配置用户（Security:Users，已在 AddNitroSecurity 归一化为哈希）灌入，
 // 保住 admin/admin123 开发登录；表非空则跳过（配置仅引导，运行时账号全部落库、由 UserController 管理）。
 await using (var userScope = app.Services.CreateAsyncScope())
 {
@@ -180,7 +169,6 @@ await using (var userScope = app.Services.CreateAsyncScope())
     await userStore.SeedIfEmptyAsync(configUsers);
 }
 
-// ADR-022 P3-6：Swagger 仅开发环境暴露；生产 API 面不对外展示（本地开发由 launchSettings 驱动）
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -196,7 +184,6 @@ app.MapHealthChecks("/healthz", new() { Predicate = _ => true });
 app.MapHealthChecks("/readyz", new() { Predicate = r => r.Tags.Contains("ready") });
 app.MapMetrics();
 app.MapControllers();
-// ADR-022 P1-1：Hub 强制登录（JWT 经 query string access_token 校验），禁止匿名订阅
 app.MapHub<LiveDataHub>("/hubs/live").RequireAuthorization();
 app.Run();
 

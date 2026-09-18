@@ -9,16 +9,11 @@ public interface IAlarmRuleRepository
     /// <summary>获取某设备某点位的所有启用规则</summary>
     Task<OperationResult<IReadOnlyList<AlarmRule>>> GetByPointAsync(Guid deviceId, Guid pointId, CancellationToken ct = default);
 
-    /// <summary>获取某设备的所有启用规则（ADR-002 P2-3：按设备批量加载，避免评估热路径逐点查询）</summary>
     Task<OperationResult<IReadOnlyList<AlarmRule>>> GetByDeviceAsync(Guid deviceId, CancellationToken ct = default);
 
     /// <summary>获取所有启用规则</summary>
     Task<OperationResult<IReadOnlyList<AlarmRule>>> GetAllAsync(CancellationToken ct = default);
 
-    /// <summary>
-    /// 获取所有规则（含禁用）。仅管理页低频调用（ADR-043）：用于展示/恢复禁用规则，
-    /// 语义上不受 <see cref="GetAllAsync"/> 的 Enabled 过滤影响；缓存实现须绕过缓存直读内层。
-    /// </summary>
     Task<OperationResult<IReadOnlyList<AlarmRule>>> GetAllIncludingDisabledAsync(CancellationToken ct = default);
 
     /// <summary>保存规则（新增或更新）</summary>

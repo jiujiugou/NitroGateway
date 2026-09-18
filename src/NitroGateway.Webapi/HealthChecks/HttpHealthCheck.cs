@@ -3,10 +3,6 @@ using NitroGateway.Transport.HTTP;
 
 namespace NitroGateway.Webapi.HealthChecks;
 
-/// <summary>
-/// HTTP 北向通道健康检查（ADR-011 P4）：Connected → Healthy，其余状态 → Degraded。
-/// 仅当 Forwarder:Channels 含 http 时注册（无 IHttpClient 时该检查不出现）。
-/// </summary>
 public sealed class HttpHealthCheck : IHealthCheck
 {
     private readonly IHttpClient _http;

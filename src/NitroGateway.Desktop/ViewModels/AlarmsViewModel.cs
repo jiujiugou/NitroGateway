@@ -32,7 +32,6 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
     private bool _isLoading;
     [ObservableProperty] private string _statusText = "";
 
-    /// <summary>加载完成标志（ADR-037 S3）：刷新中禁用刷新按钮，避免无反馈的防重入吞点击。</summary>
     public bool IsIdle => !IsLoading;
 
     public AlarmsViewModel(
@@ -65,7 +64,6 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
         {
             var nameMap = await LoadDeviceNamesAsync();
 
-            // ADR-027 P2-2：IAlarmRepository 为 Scoped（EF DbContext），
             // 单例 VM 每次刷新新建 scope，避免 DbContext/change tracker 跨轮询累积
             using var scope = _scopeFactory.CreateScope();
             var alarms = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
@@ -85,7 +83,6 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
 
             _ui.Post(() =>
             {
-                // ADR-037 S7：先 diff 再增删改——既有行按 Id 原位更新（保留行实例/滚动），
                 // 新告警按发生时间倒序插入顶部，消失的告警移除
                 var ordered = history.Value!.OrderByDescending(a => a.OccurredAt).ToList();
                 var incoming = ordered.ToDictionary(a => a.Id);
@@ -135,7 +132,6 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
 
     private static string ShortId(Guid id) => id.ToString("N")[..8];
 
-    /// <summary>把告警域模型 + 活跃集合原位写入行模型（ADR-037 S7，属性可观察触发 UI 刷新）。</summary>
     private static void ApplyAlarm(
         AlarmItem item, NitroGateway.Alarm.Domain.Alarm alarm,
         IReadOnlyDictionary<Guid, string> nameMap, IReadOnlySet<Guid> activeIds)
@@ -152,7 +148,6 @@ public sealed partial class AlarmsViewModel : ObservableObject, IDisposable
     public void Dispose() => _timer.Stop();
 }
 
-/// <summary>告警列表行（ADR-037 S7：可观察对象，增量刷新时原位更新避免重建/滚动跳动）</summary>
 public sealed partial class AlarmItem : ObservableObject
 {
     public Guid Id { get; init; }

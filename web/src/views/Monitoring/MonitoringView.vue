@@ -345,7 +345,6 @@ onMounted(async () => {
   conn.on('DeviceStatusChanged', (d: { deviceId: string; status: string }) => {
     const dev = devices.value.find(x => x.id === d.deviceId)
     if (dev) dev.status = d.status as any
-    // ADR-007 P2-3：挂载后上线的设备补订阅 Measurement 组，否则收不到实时值
     if (d.status === 'Online') conn?.invoke('SubscribeDevice', d.deviceId).catch(() => {})
   })
   conn.onreconnected(() => { connected.value = true })
@@ -393,7 +392,6 @@ async function loadChartHistory() {
   renderChart()
 }
 
-// SignalR Measurement 命中选中点位 → 追加环形缓冲，超上限批量裁剪（对齐桌面端 ADR-037 S12）
 function appendChartPoint(m: any) {
   if (!chartDeviceId.value || !chartPointId.value) return
   if (m.deviceId !== chartDeviceId.value || m.devicePointId !== chartPointId.value) return

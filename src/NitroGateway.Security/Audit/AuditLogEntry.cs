@@ -1,10 +1,5 @@
 namespace NitroGateway.Security.Audit;
 
-/// <summary>
-/// 一条操作审计记录（ADR-065 A3）：由 <see cref="AuditMiddleware"/> 对 /api/* 非 GET 请求采集，
-/// 经 <see cref="IAuditLogStore"/> 落库，供操作日志查询页（写值/登录/配置变更）追溯。
-/// 刻意不含请求体——写类操作的变更内容属敏感数据（ADR-004 P3-3），只记录 Who/What/When/Result/IP。
-/// </summary>
 public sealed class AuditLogEntry
 {
     /// <summary>审计记录 ID</summary>

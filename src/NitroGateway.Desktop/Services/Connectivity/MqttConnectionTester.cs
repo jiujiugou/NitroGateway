@@ -6,12 +6,6 @@ using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Desktop.Services.Connectivity;
 
-/// <summary>
-/// MQTT Broker 连接测试实现（ADR-067）：Connect + 发布测试消息双验，参照设备连接测试
-/// （ADR-023 防假阳性）——只连通不代表可用，发布成功才确认「可写入」。
-/// 构造 <see cref="MqttClientWrapper"/> 独立临时实例（无状态监听者），与运行中转发连接完全隔离；
-/// 不重连（<see cref="MqttConnectionOptions.MaxReconnectAttempts"/> 置 0），避免失败拖长等待。
-/// </summary>
 public sealed class MqttConnectionTester : IMqttConnectionTester
 {
     /// <summary>

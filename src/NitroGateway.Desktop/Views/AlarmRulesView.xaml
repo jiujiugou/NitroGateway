@@ -40,7 +40,6 @@
                         <Button Content="删除" Command="{Binding DeleteRuleCommand}" Style="{StaticResource DangerButtonStyle}"
                                 Margin="0,0,8,0" />
                         <Button Content="刷新" Command="{Binding RefreshCommand}" IsEnabled="{Binding IsIdle}" />
-                        <!-- ADR-037 S3：加载中显示进度条 -->
                         <ProgressBar Width="90" Height="6" IsIndeterminate="True" VerticalAlignment="Center" Margin="10,0,0,0"
                                      Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
                     </StackPanel>
@@ -51,7 +50,6 @@
                 <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True"
                           HeadersVisibility="Column" SelectedItem="{Binding SelectedRule}">
                     <DataGrid.RowStyle>
-                        <!-- 禁用规则整行置灰，便于现场区分启用/禁用（ADR-043） -->
                         <Style TargetType="DataGridRow" BasedOn="{StaticResource DataGridRowStyle}">
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Enabled}" Value="False">
@@ -69,7 +67,6 @@
                         <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="状态" Binding="{Binding EnabledText}" Width="80" />
                     </DataGrid.Columns>
                 </DataGrid>
-                <!-- ADR-037 S3：空态提示，有数据时折叠 -->
                 <TextBlock Text="暂无规则，点击「新增」为设备/点位配置触发条件"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            Foreground="{StaticResource TextSecondary}" FontSize="13">
