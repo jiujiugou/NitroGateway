@@ -503,6 +503,19 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// 指数退避自动重连。超过最大次数后状态变为 Faulted，
     /// 由 MqttHostedService 监督循环周期复位（ADR-006 P1-3）。
     /// </summary>
+    /// <summary>
+    /// 第 attempt 次重连的退避延迟（毫秒）。提取为纯函数以便属性测试。
+    /// <para>指数封顶 + long 运算：原式 <c>base * 2^(attempt-1)</c> 在 attempt≈23 时 int 溢出为负，
+    /// 负延迟传入 <c>Task.Delay</c> 会抛 ArgumentOutOfRangeException、重连永久停摆——属性测试发现。
+    /// 返回恒落在 [0, maxMs]。</para>
+    /// </summary>
+    internal static int ComputeBackoffDelayMs(int baseMs, int attempt, int maxMs)
+    {
+        var exponent = Math.Clamp(attempt - 1, 0, 30);
+        var raw = (long)baseMs * (1L << exponent);
+        return (int)Math.Min(raw, maxMs);
+    }
+
     private async Task TryReconnectAsync()
     {
         try
@@ -519,9 +532,8 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
                 {
                     _reconnectCount++;
 
-                    var delayMs = Math.Min(
-                        _options.ReconnectBackoffBaseMs * (int)Math.Pow(2, _reconnectCount - 1),
-                        _options.ReconnectMaxIntervalMs);
+                    var delayMs = ComputeBackoffDelayMs(
+                        _options.ReconnectBackoffBaseMs, _reconnectCount, _options.ReconnectMaxIntervalMs);
 
                     _logger.LogInformation("MQTT 重连 {Attempt}/{Max}，等待 {Delay}ms",
                         _reconnectCount, _options.MaxReconnectAttempts, delayMs);

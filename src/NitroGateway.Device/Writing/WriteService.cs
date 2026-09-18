@@ -157,7 +157,7 @@ public sealed class WriteService : IWriteService
     /// 工程值 → 驱动写入值。String / Bool 不缩放；数值型默认 ScaleFactor=1/ScaleOffset=0 时恒等，
     /// 否则反算原始值 raw = (value − ScaleOffset) / ScaleFactor。
     /// </summary>
-    private static object ToRawValue(DevicePoint point, object typedValue)
+    internal static object ToRawValue(DevicePoint point, object typedValue)
     {
         if (point.DataType is DataType.String or DataType.Bool)
             return typedValue;
@@ -171,7 +171,7 @@ public sealed class WriteService : IWriteService
     }
 
     /// <summary>按点位 DataType 把用户输入（JsonElement/字符串/number/bool）转换为强类型值。</summary>
-    private static OperationResult<object> ConvertValue(DataType type, object value)
+    internal static OperationResult<object> ConvertValue(DataType type, object value)
     {
         try
         {
@@ -216,7 +216,7 @@ public sealed class WriteService : IWriteService
     }
 
     /// <summary>宽松布尔解析：支持 bool、0/1、true/false、ON/OFF（含大小写变体）。</summary>
-    private static bool ToBool(object? value) => value switch
+    internal static bool ToBool(object? value) => value switch
     {
         bool b   => b,
         byte by  => by != 0,

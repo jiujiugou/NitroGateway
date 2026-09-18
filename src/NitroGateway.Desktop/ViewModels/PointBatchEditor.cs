@@ -69,7 +69,7 @@ public sealed partial class PointBatchEditor : ObservableObject, INotifyDataErro
             var pad = NameTemplate.Count(c => c == '#');
             if (pad == 0)
                 return NameTemplate;
-            return NameTemplate.Replace(new string('#', pad), 1.ToString().PadLeft(pad, '0'));
+            return NameTemplate.Replace(new string('#', pad), 1.ToString(System.Globalization.CultureInfo.InvariantCulture).PadLeft(pad, '0'));
         }
     }
 

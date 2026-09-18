@@ -52,7 +52,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _bridge.FrameReady += OnFrame;
         // ADR-037 S11：设备数并入 DevicesViewModel 刷新事件（同一 5s 节奏，不再重复查询目录）
         devices.DeviceCountChanged += OnDeviceCountChanged;
-        DeviceCountText = devices.Items.Count.ToString();
+        DeviceCountText = devices.Items.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
 
         SelectedNav = NavItems[0];
     }
@@ -99,12 +99,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 };
 
             if (frame.BufferBacklog is int backlog)
-                BufferBacklogText = backlog.ToString("N0");
+                BufferBacklogText = backlog.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
         });
     }
 
     /// <summary>DevicesViewModel 刷新后同步设备数（事件已在 UI 线程触发）。</summary>
-    private void OnDeviceCountChanged(object? sender, int count) => DeviceCountText = count.ToString();
+    private void OnDeviceCountChanged(object? sender, int count) => DeviceCountText = count.ToString(System.Globalization.CultureInfo.CurrentCulture);
 
     public void Dispose()
     {

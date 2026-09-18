@@ -12,6 +12,13 @@ const router = createRouter({
     { path: '/devices/:id', name: 'DeviceDetail', component: () => import('../views/Devices/DeviceDetailView.vue') },
     { path: '/devices/:id/edit', name: 'DeviceEdit', component: () => import('../views/Devices/DeviceForm.vue') },
     { path: '/devices/:deviceId/points', name: 'Points', component: () => import('../views/Points/PointList.vue') },
+    // ADR-007 P2-2：OPC UA 设备独立分区（/opcua*），与通用 Modbus/S7 设备区分开心智，
+    // 见 12-OPC-UA接入设计.md 与 ADR-073。API 仍是协议无关的 /devices*，后端零改动。
+    { path: '/opcua', name: 'OpcUaDevices', component: () => import('../views/OpcUa/OpcUaDeviceList.vue') },
+    { path: '/opcua/new', name: 'OpcUaDeviceNew', component: () => import('../views/OpcUa/OpcUaDeviceForm.vue') },
+    { path: '/opcua/:id', name: 'OpcUaDeviceDetail', component: () => import('../views/OpcUa/OpcUaDeviceDetail.vue') },
+    { path: '/opcua/:id/edit', name: 'OpcUaDeviceEdit', component: () => import('../views/OpcUa/OpcUaDeviceForm.vue') },
+    { path: '/opcua/:id/points', name: 'OpcUaPoints', component: () => import('../views/OpcUa/OpcUaPointList.vue') },
     // ADR-073 D8：OPC UA 证书信任管理（仅 Admin/Operator；后端 AdminOperator 策略兜底，前端仅 UX）
     { path: '/opcua/certificates', name: 'OpcUaCertificates', component: () => import('../views/OpcUa/OpcUaCertificatesView.vue'), meta: { roles: ['Admin', 'Operator'] } },
     { path: '/monitoring', name: 'Monitoring', component: () => import('../views/Monitoring/MonitoringView.vue') },

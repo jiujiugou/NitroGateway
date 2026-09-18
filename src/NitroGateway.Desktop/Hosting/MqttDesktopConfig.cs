@@ -28,7 +28,7 @@ internal static class MqttDesktopConfig
             configuration["MQTT:Host"] = settings.MqttHost;
 
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MQTT__Port")))
-            configuration["MQTT:Port"] = settings.MqttPort.ToString();
+            configuration["MQTT:Port"] = settings.MqttPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MQTT__UseTls")))
             configuration["MQTT:UseTls"] = settings.MqttUseTls ? "true" : "false";

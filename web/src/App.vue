@@ -13,13 +13,23 @@
         <router-link to="/dashboard" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📊</span><span>仪表盘</span>
         </router-link>
-        <router-link to="/devices" class="nav-item" active-class="nav-active">
-          <span class="nav-icon">🔌</span><span>设备管理</span>
-        </router-link>
-        <!-- ADR-073 D8：OPC UA 证书信任管理（仅 Admin/Operator 可见；后端 AdminOperator 策略兜底） -->
-        <router-link v-if="canManageCertificates" to="/opcua/certificates" class="nav-item" active-class="nav-active">
-          <span class="nav-icon">🔐</span><span>OPC UA 证书</span>
-        </router-link>
+        <!-- 设备管理分组（可收缩）：Modbus/S7（/devices*）与 OPC UA（/opcua*）独立分区列为二级。
+             ADR-007 P2-2 分区决策不变；证书管理入口已下沉到 OPC UA 设备页（ADR-073 D8），不再占侧边栏。 -->
+        <div class="nav-group">
+          <div class="nav-group-title" role="button" @click="deviceOpen = !deviceOpen" :title="deviceOpen ? '收起设备管理' : '展开设备管理'">
+            <span class="nav-icon">🔌</span><span>设备管理</span>
+            <span class="nav-group-caret" :class="{ collapsed: !deviceOpen }">▾</span>
+          </div>
+          <div v-show="deviceOpen" class="nav-group-body">
+            <router-link to="/devices" class="nav-item nav-sub" active-class="nav-active">
+              <span>Modbus / S7 设备</span>
+            </router-link>
+            <!-- ADR-007 P2-2：OPC UA 设备独立分区（/opcua*），与通用 Modbus/S7 设备分开管理 -->
+            <router-link to="/opcua" class="nav-item nav-sub" active-class="nav-active">
+              <span>OPC UA 设备</span>
+            </router-link>
+          </div>
+        </div>
         <router-link to="/monitoring" class="nav-item" active-class="nav-active">
           <span class="nav-icon">📡</span><span>实时监控</span>
         </router-link>
@@ -104,13 +114,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getSystemStatus } from './api/status'
 import { createLiveConnection } from './api/signalr'
 import { getMe, saveMe, clearMe, changeMyPassword, type CurrentUser } from './api/user'
 import type { HubConnection } from '@microsoft/signalr'
 
+const route = useRoute()
 const mqttConnected = ref(false)
 const mqttDisabled = ref(false)
 const backlog = ref(0)
@@ -119,12 +131,18 @@ let conn: HubConnection | null = null
 
 // ADR-066：当前登录用户（顶部栏显示 + 侧边栏菜单门控）
 const currentUser = ref<CurrentUser | null>(null)
-// ADR-073 D8：证书信任面板仅对可写角色（Admin/Operator）展示（后端 AdminOperator 策略兜底）
-const canManageCertificates = computed(() => currentUser.value != null && ['Admin', 'Operator'].includes(currentUser.value.role))
 const pwdVisible = ref(false)
 const pwdForm = ref({ current: '', next: '' })
 const pwdLoading = ref(false)
 const pwdMin = 8
+
+// 设备管理分组可收缩；落在 /devices* 或 /opcua* 时自动展开（深链/守卫跳转后不把当前项藏起来）
+const deviceOpen = ref(true)
+watch(() => route.path, (p) => {
+  if (p === '/devices' || p.startsWith('/devices/') || p === '/opcua' || p.startsWith('/opcua/')) {
+    deviceOpen.value = true
+  }
+})
 
 // 登录后/刷新时拉取自己的用户信息并缓存（角色变更后重进页面即生效）
 async function refreshMe() {
@@ -216,6 +234,15 @@ onUnmounted(() => {
 .nav-item:hover { background:#f0f2f5; color:#1a202c; }
 .nav-active { background:#ecf5ff!important; color:#409eff!important; }
 .nav-icon { font-size:16px; width:22px; text-align:center; }
+.nav-group { display:flex; flex-direction:column; gap:1px; margin:2px 0 4px; }
+.nav-group-title { display:flex; align-items:center; gap:10px; padding:9px 14px; color:#4a5568; font-size:13px; font-weight:600; cursor:pointer; border-radius:8px; user-select:none; transition:background .15s; }
+.nav-group-title:hover { background:#f0f2f5; color:#1a202c; }
+.nav-group-caret { margin-left:auto; font-size:11px; color:#a0aec0; transition:transform .15s; }
+.nav-group-caret.collapsed { transform:rotate(-90deg); }
+.nav-group-body { display:flex; flex-direction:column; gap:1px; }
+.nav-item.nav-sub { padding:8px 14px 8px 42px; font-size:13px; color:#718096; border-left:2px solid transparent; margin-left:8px; }
+.nav-item.nav-sub:hover { color:#1a202c; }
+.nav-item.nav-sub.nav-active { border-left-color:#409eff; }
 .sidebar-footer { padding:16px 20px; border-top:1px solid #eef0f4; }
 .version-tag { display:inline-block; padding:2px 10px; background:#f5f7fa; border:1px solid #e4e7ed; border-radius:12px; color:#a0aec0; font-size:11px; }
 .main-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }

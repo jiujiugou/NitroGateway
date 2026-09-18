@@ -19,7 +19,7 @@ namespace NitroGateway.Alarm.Repository;
 /// <para><b>线程安全：</b>读快路径无锁；刷新经 SemaphoreSlim 闸门 + 双检，
 /// 防并发事件重复加载（与 DeviceSnapshotCache 同模式）。</para>
 /// </remarks>
-public sealed class AlarmRuleCache
+public sealed class AlarmRuleCache : IDisposable
 {
     /// <summary>刷新闸门：同一时刻只允许一个加载者重建缓存。</summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -98,4 +98,7 @@ public sealed class AlarmRuleCache
         cached = _rules;
         return !_invalidated && cached is not null && DateTimeOffset.UtcNow - _loadedAt < _ttl;
     }
+
+    /// <summary>释放刷新闸门（Singleton，宿主关闭时调用）。</summary>
+    public void Dispose() => _gate.Dispose();
 }

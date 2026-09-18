@@ -657,7 +657,7 @@ public sealed partial class RealtimePointItem : ObservableObject
     {
         ValueText = snapshot.Value?.ToString() ?? "—";
         QualityText = snapshot.Quality == QualityCode.Good ? "Good" : snapshot.Quality.ToString();
-        TimestampText = snapshot.Timestamp.ToLocalTime().ToString("HH:mm:ss");
+        TimestampText = snapshot.Timestamp.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.CurrentCulture);
         IsBad = snapshot.Quality != QualityCode.Good;
     }
 }

@@ -199,3 +199,6 @@ app.MapControllers();
 // ADR-022 P1-1：Hub 强制登录（JWT 经 query string access_token 校验），禁止匿名订阅
 app.MapHub<LiveDataHub>("/hubs/live").RequireAuthorization();
 app.Run();
+
+/// <summary>供 WebApplicationFactory&lt;Program&gt; 引用的入口标记（ASP.NET Core 集成测试约定）。</summary>
+public partial class Program;

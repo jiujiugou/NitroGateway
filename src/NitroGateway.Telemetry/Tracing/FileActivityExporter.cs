@@ -86,7 +86,7 @@ internal sealed class FileActivityExporter : BaseExporter<Activity>
     /// 大小判断用自维护的 <see cref="_bytesWritten"/>（StreamWriter 缓冲未冲刷时 BaseStream.Length 不准）。</summary>
     private void EnsureWriter(DateTime now)
     {
-        var date = now.ToString("yyyyMMdd");
+        var date = now.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
         if (_writer is not null
             && _currentDate == date
             && (_options.MaxFileBytes <= 0 || _bytesWritten < _options.MaxFileBytes))

@@ -1,31 +1,39 @@
-# NitroGateway 项目测试标准（FACTORY-TEST）
+# NitroGateway 出厂测试标准（FACTORY-TEST）
 
-## 0. 文档目的与判定总则
+## 0. 轨道划分与判定总则
 
-**目的**：定义验证“项目可以使用、可长期运行”的可量化测试标准，作为出厂验收与版本发布依据。
+**两条轨道（放行时合并判定）**
+- **A · 软件可实现（T0~T8）**：纯软件 / 回环 / 模拟器闭环，无需真实 PLC，每次发布可回归。
+- **B · 必须真实硬件（H1~H4）**：必须接真实 PLC / 真实串口 / 目标边缘主机，出厂与现场验收执行；执行前先按 §12.1 登记被测硬件。
 
-**适用范围**：工厂环境模拟验收、发布前回归、多设备/长时间运行专项验证。
-
-**判定总则**
-- 测试分三级：**P0 基线门禁**（必须全过）/ **P1 核心场景**（多设备、长稳，必须全过）/ **P2 辅助场景**（可记录缺陷后置）
-- **放行规则**：P0 + P1 全部通过 → 判定“可用、可长期运行”；任一 P0/P1 不通过 → 判定不通过，修复后回归
-- 每次测试的实测数据与结论记录到 `notes/worklog/YYYY-MM-DD.md`
+**分级与放行**
+- P0 基线门禁（必须全过）/ P1 核心场景（必须全过）/ P2 辅助场景（可记录缺陷后置）
+- 放行规则：
+  - A 轨 P0+P1 全过 → 判定“可用、可长期运行”，软件放行。
+  - B 轨按**出货组合**逐项：随货交付的协议/部署形态对应 P0 项必须通过 → 可发货；不随货项目在判定表标 N/A。
+- 每次测试实测数据与结论记录到 `notes/worklog/YYYY-MM-DD.md`。
 
 ## 1. 测试环境与工具
 
+### 1.1 软件模拟栈（A 轨）
+
 | 组件 | 工具 | 要求 |
 |---|---|---|
-| Modbus 从站模拟 | Modbus Slave / ModRSsim2 / pymodbus | ≥10 台，端口 :502，每台 50 点位 |
+| Modbus 从站模拟 | ModbusSlaveSim（首选）/ Witte mbslave / pymodbus | ≥10 台，端口 :502，每台 50 点位（搭建见附录 A） |
 | MQTT Broker | `eclipse-mosquitto:2`（docker compose） | 端口 :1883 |
 | 网络扰动 | clumsy（Windows）/ tc（Linux） | 200ms 延迟 + 5% 丢包 |
 | 后端 | `dotnet run --project src/NitroGateway.Webapi` | :5100 |
 | 前端 | `cd web && npm run dev` | :5173，登录 admin/admin123 |
-| 监控 | `/metrics` `/healthz` `/readyz` + `dotnet-counters` | 观测口径见第 2 节 |
+| 监控 | `/metrics` `/healthz` `/readyz` + `dotnet-counters` | 口径见 §2 |
 
 **测试前置条件（保证基线干净）**
-- 使用干净 SQLite 数据库：备份/删除 `src/NitroGateway.Webapi/nitrogateway.db*` 后重启，记录初始文件大小
-- 记录初始死信数（`GET /api/deadletters`），长稳测试前清理历史死信
-- 记录基线指标：启动时刻的内存、backlog、SQLite 大小、`collection_total` 计数
+- 干净 SQLite：备份/删除 `src/NitroGateway.Webapi/nitrogateway.db*` 后重启，记录初始文件大小
+- 清历史死信（`GET /api/deadletters`），记录初始死信数
+- 记录基线：启动内存、backlog、SQLite 大小、`collection_total`
+
+### 1.2 被测硬件（B 轨）
+
+登记表见 §12.1。每台被测设备型号/参数/位置在测试前填入，B 轨每条记录关联该登记行。
 
 ## 2. 观测点与健康判定口径（所有测试共用）
 
@@ -44,7 +52,7 @@
 | 磁盘 | SQLite 文件 + `logs/` 目录 | 8h 增量 ≤50MB；日志仅保留 7 天 |
 | 落库失败 | `nitro_store_write_failures_total` | 全程不增长 |
 
-## 3. T0 构建与启动基线（P0，10 分钟）
+## 3. T0 构建与启动基线（A 轨 · P0，10 分钟）
 
 | # | 标准 | 操作 | 通过标准 |
 |---|---|---|---|
@@ -55,7 +63,7 @@
 | T0.5 | 启动 | 顺序启动 MQTT → 网关 | ≤15s 内 `/healthz` 200；`/readyz` Healthy；`nitro_mqtt_state=2` |
 | T0.6 | 登录 | `POST /api/auth/login` admin/admin123 | 200 且返回 JWT |
 
-## 4. T1 单设备端到端功能（P0，20 分钟）
+## 4. T1 单设备端到端功能（A 轨 · P0，20 分钟）
 
 | # | 标准 | 操作 | 通过标准 |
 |---|---|---|---|
@@ -65,7 +73,7 @@
 | T1.4 | MQTT 转发 | 订阅 `nitrogateway/{deviceId}/measurements` | 收到与采集一致的数据 |
 | T1.5 | 前端访问 | 仪表盘 + 系统状态页 | MQTT 已连接、设备 Online、数据刷新 |
 
-## 5. T2 多设备并发（P0 核心，30 分钟）
+## 5. T2 多设备并发（A 轨 · P0 核心，30 分钟）
 
 前置：10 个 Modbus 从站 × 每站 50 点位。
 
@@ -80,7 +88,7 @@
 
 **判定**：T2.1~T2.6 全过 → 多设备并发能力达标。
 
-## 6. T3 长时间运行 8 小时（P0 核心，8 小时）
+## 6. T3 长时间运行 8 小时（A 轨 · P0 核心，8 小时）
 
 前置：1 台设备 × 10 点位 × 1s 采集周期（或沿用 T2 环境），先记录基线指标。
 
@@ -98,7 +106,7 @@
 
 **判定**：T3.1~T3.9 全过 → 长时间运行达标。测试记录至少包含时间点、内存、backlog、SQLite 大小四列实测数据。
 
-## 7. T4 故障恢复（P1，1.5 小时）
+## 7. T4 故障恢复（A 轨 · P1，1.5 小时）
 
 ### 7.1 网络异常（Modbus 侧）
 
@@ -131,7 +139,7 @@
 | T4.4.2 | 增删点位 | 添加 10 / 删除 5 / 批量生成 500 | 下一轮生效，现有采集不受影响 |
 | T4.4.3 | CSV 导入导出 | export → 改 Scale → import | 导出列头正确，导入后 Scale 生效 |
 
-## 8. T5 安全与权限（P1，10 分钟）
+## 8. T5 安全与权限（A 轨 · P1，10 分钟）
 
 | # | 标准 | 操作 | 通过标准 |
 |---|---|---|---|
@@ -141,7 +149,7 @@
 | T5.4 | 审计 | 检查 Serilog 日志 | 所有 `/api/*` 操作有 AUDIT 记录 |
 | T5.5 | SignalR | 无 Token 建连 | 拒绝建立 WebSocket |
 
-## 9. T6 前端验收（P2，10 分钟）
+## 9. T6 前端验收（A 轨 · P2，10 分钟）
 
 | 页面 | 检测项 | 通过标准 |
 |---|---|---|
@@ -156,11 +164,11 @@
 | 死信管理 | 列表/重放/丢弃 | 操作成功 |
 | Swagger | `/swagger` | 可访问 |
 
-## 10. T7 中心形态端到端（B 方案：多现场 → 一中心，P1，40 分钟）
+## 10. T7 中心形态端到端（A 轨 · 现场→中心，P1，40 分钟）
 
 前置: 启动中心栈 `docker compose -f docker-compose.center.yml up -d --build`（mqtt + ingest + 中心 gateway + web）；
 现场端二选一——Windows 桌面端（`src/NitroGateway.Desktop`）或另一台机器/容器跑网关；Modbus 从站模拟器 ≥1 台。
-本场景验证「现场 → broker → ingest → 中心库 → 中心 Web」全链路（closure E2 的 T1/T2 中心部分）。
+验证「现场 → broker → ingest → 中心库 → 中心 Web」全链路。
 
 | # | 标准 | 操作 | 通过标准 |
 |---|---|---|---|
@@ -173,27 +181,100 @@
 | T7.7 | 断网续传 | 停现场端 MQTT 一段时间后恢复 | 现场 `forward_buffer` 排队不丢，恢复后补发清空；中心库最终一致 |
 | T7.8 | 中心重启 | `docker compose -f docker-compose.center.yml restart ingest` | 重启后继续入库，迁移幂等不报错，中心库不丢不重复 |
 
-**判定**：T7.1~T7.8 全过 → 中心形态（多现场 → 一中心）可用，闭环 E2 的中心段验证完成。
+**判定**：T7.1~T7.8 全过 → 中心形态可用。
 
-## 11. 最终判定表（验收汇总）
+## 11. T8 软件补齐门禁（A 轨 · P1/P2，纯软件可闭环）
 
-| # | 标准场景 | 级别 | 通过标准 | 结果 |
+T0~T7 未覆盖、但纯软件即可验证的缺口。随发布回归一起跑。
+
+| # | 标准 | 操作 | 通过标准 | 级别 |
 |---|---|---|---|---|
-| 1 | 构建 + 测试 + 启动 | P0 | T0 全过 | [ ] |
-| 2 | 单设备端到端 | P0 | T1 全过（采集入库 + MQTT 转发） | [ ] |
-| 3 | 10 设备并发 + 隔离 | P0 | T2 全过 | [ ] |
-| 4 | 8 小时长稳 | P0 | T3 全过（内存/SQLite/日志/重启恢复） | [ ] |
-| 5 | 断网 30s 自动恢复 | P1 | CB Open→Closed，设备自动 Online | [ ] |
-| 6 | MQTT 断连节流补发 | P1 | 积压清空、无丢数 | [ ] |
-| 7 | 进程 kill 数据不丢 | P1 | 重启后数据完整 | [ ] |
-| 8 | 运行时改配置不中断 | P1 | 下一轮生效 | [ ] |
-| 9 | RBAC 权限隔离 | P1 | 401/403 生效、审计齐全 | [ ] |
-| 10 | 前端页面可用 | P2 | T6 全过 | [ ] |
-| 11 | 中心形态端到端 | P1 | T7 全过（现场→broker→ingest→中心库→Web） | [ ] |
+| T8.1 | 数值/字节序闭环 | 用 hsl-probe 向设备写已知种子值（覆盖 9 种数据类型 + String）→ 网关采集 2 轮 → `GET /api/measurements/history` 读回比对；对 32/64 位多字点改 `DataFormat=CDAB` 复测 | 读回值与种子一致、高低字顺序正确；类型转换/落库失败日志 0；`nitro_store_write_failures_total` 不增长 | P1 |
+| T8.2 | 缩放/死区/降频 | 给点位配工程缩放（raw×Scale）、死区阈值、降频 → 模拟器按已知值序列步进 | 库内值 = raw×Scale；死区内变化不落新行；降频后记录间隔符合配置 | P1 |
+| T8.3 | 命令回写 + 幂等 | `POST /api/write` 写 00001 线圈与 40001(Float) → 模拟器读回确认；同一 commandId 重复提交 2 次；viewer 写 → 403；WriteGuard 超范围/超变化率写；查 `commands/ack` 回执 | 设备值 = 目标值；重复 commandId 仅生效一次；越权 403；越界写被拒且设备值不变；ack 均到达 | P1 |
+| T8.4 | 告警端到端 | 建规则（Temp>80, Duration 10s）→ 模拟器拉高值持续 >10s → `GET /api/alarms`；确认；值回落 | 状态机 Active→Acknowledged→Resolved 正确、Active 期间不重复生成；Notification 开启时有 MQTT 告警消息 | P1 |
+| T8.5 | OPC UA 纯软件对测 | 起外部 OPC UA 仿真服务器（能推 DataChange，如 UA Simulation Server / Prosys，工具未内置需自备）→ 配 OPC UA 设备读/写/Browse；服务器侧改值；断服务器再恢复 | 读回一致；订阅推送入库（非轮询）；断线→CB Open→恢复后自动 Online；Browse 出地址空间 | P1 |
+| T8.6 | 版本升级迁移 | 用上一发布版本的 SQLite 备份启动当前版本 | FluentMigrator 迁移成功无异常；设备/点位/历史保留；采集继续正常 | P2 |
 
-**放行结论**：P0 + P1 全部通过 → 判定可用；任一项不通过 → 记录缺陷到 `notes/ADR/` 后修复并回归。
+## 12. H 系列 · 必须真实硬件（B 轨）
 
-## 12. 缺陷分级
+适用：出货/现场验收。每条只对**随货交付的协议或部署形态**执行，不随货的在判定表标 N/A。
+A 轨已用模拟器验证的**逻辑**不再重复；H 系列只验**真实线缆/真实设备/真实主机**上才成立的部分（时序、电气、厂商兼容、物理断连、平台基线）。
+
+### 12.1 被测硬件登记表（执行前填写）
+
+| # | 用途 | 设备/型号/固件 | 关键参数 | 位置/地址 | 备注 |
+|---|---|---|---|---|---|
+| A | 目标边缘主机 | | 型号 / OS / 磁盘 | | systemd / docker / Desktop 交付形态 |
+| B | Modbus/TCP 从站 | | IP:端口 / 寄存器表 | | 真实 PLC/仪表，任意厂商 |
+| C | Modbus RTU 总线 | | 串口号 / 波特率 / 校验 / ≥2 从站 UnitId | | USB-RS485 或原生 COM |
+| D | S7 PLC | | CpuType / Rack / Slot | | 需 TIA/博途做真值对照 |
+| E | OPC UA 端点 | | 端点 URL / 安全策略 / 证书 | | 带 UA 的控制器或真实 UA 服务器 |
+| F | Mitsubishi FX/Q | | IP:端口 | | 驱动未启用时不测（§12.2） |
+| G | 现场链路（可选） | | 交换机/网线/无线 | | H4 用 |
+
+### 12.2 H1 协议真机对测矩阵
+
+| # | 场景 | 操作 | 通过标准 | 级别 |
+|---|---|---|---|---|
+| H1-MB-RTU | Modbus RTU 物理串口采集 | 网关串口（原生 COM / USB-RS485）接 C 总线 ≥2 从站；注册 2 台设备（UnitId 1/2）× ≥10 点；采集参数与从站拨码一致 | 两站值正确（与现场仪表一致）；1s 周期无乱帧、CRC 错误计数不涨；拔从站 1 → 其 CB=Open 且从站 2 不中断；恢复 ≤35s Online；参数配错时稳定失败、不崩溃、日志可定位 | P0（RTU 出货） |
+| H1-MB-TCP | 真实 Modbus/TCP 从站兼容抽查 | 对 B 真实设备注册采集 + 写值 | 读回与仪表/PLC 本体一致，无该型号特例（寄存器范围/异常响应） | P1 |
+| H1-S7 | S7 真机采集 | 按 D 型号设 CpuType/Rack/Slot（与 TIA 工程一致）；DB（如 DB1.DBW0/DBD4）、M、I、Q 各 ≥2 点；与博途在线值对照；改错 Rack/Slot/CpuType 复测 | 各地址区读数正确、类型不错位；断电/停机→恢复后 ≤35s 自动回 Online | P0（S7 出货） |
+| H1-UA | OPC UA 真实端点 | 连 E；证书双向信任（服务器证书入 `opcua/pki/trusted`）；Browse→配 NodeId；读/写；订阅 DataChange；断会话 | 安全连接成功；值正确；服务器侧改值推送到达；断线自动重建会话并恢复订阅 | P0（UA 出货） |
+| H1-MEL | Mitsubishi MC 真机 | 仅当驱动重新启用并纳入 slnx 后执行：FX/Q 的 D/M/X/Y 读写 | 值正确、写生效 | 暂不执行（未启用） |
+
+### 12.3 H2 命令写写真机闭环
+
+| # | 场景 | 操作 | 通过标准 | 级别 |
+|---|---|---|---|---|
+| H2.1 | 真机回写生效 | 在 H1 已连通设备上 `POST /api/write` 写 Bool/数值到现场输出点（Q/线圈/D 寄存器，人工确认安全）→ 读回确认 | 现场值/动作正确、ack 到达；记录往返时延 | P0（回写随货出货） |
+| H2.2 | WriteGuard 真机侧 | 超范围/超变化率写值 | 被拒且现场值未改变 | P0 |
+| H2.3 | 越权写 | viewer 角色对真机写值 | 403，设备无动作 | P1 |
+
+### 12.4 H3 目标主机长稳与性能基线
+
+| # | 场景 | 操作 | 通过标准 | 级别 |
+|---|---|---|---|---|
+| H3.1 | 主机 8h 长稳 | 按交付形态（systemd+watchdog / docker / Desktop）部署到 A；接 H1 真机或 ≥10 从站模拟采集，跑 8h；采集 CPU/内存/GC/磁盘/SQLite 增量/MQTT 上行字节/采集耗时 P99/温度 | §2 健康口径全过；无进程退出；内存 ≤ 初始 2 倍；SQLite 增量 ≤50MB/8h | P0（每个交付主机型号一次） |
+| H3.2 | 性能指纹基线 | 记录 H3.1 各项数值入库 | 形成该主机型号基线，供后续回归对照 | P1 |
+| H3.3 | 主机断电重启 | 冷断电→重上电 | watchdog/systemd 自拉起，SQLite 完好，恢复采集无需人工 | P0 |
+
+### 12.5 H4 现场链路/断电抗性
+
+| # | 场景 | 操作 | 通过标准 | 级别 |
+|---|---|---|---|---|
+| H4.1 | 断 PLC 网线/串口 | 拔线→恢复 | 对应设备 CB=Open、其余不受影响；恢复 ≤35s Online；缓冲补发不丢 | P1 |
+| H4.2 | 断现场交换机 | 关交换机→恢复 | MQTT/采集自动恢复、backlog 归零、无死信新增 | P1 |
+| H4.3 | PLC 断电重启 | 现场设备掉电→上电 | 网关 ≤35s 自动回 Online，无人工 | P1 |
+| H4.4 | 全链路停电冷启动 | 网关 + PLC + 交换机全断电→上电 | 各角色按序自拉起；数据无永久丢失（仅按超限策略入死信）；SQLite 完好 | P1 |
+
+## 13. 最终判定表（验收汇总）
+
+| # | 标准场景 | 轨 | 级别 | 通过标准 | 结果 |
+|---|---|---|---|---|---|
+| 1 | 构建 + 测试 + 启动 | A | P0 | T0 全过 | [ ] |
+| 2 | 单设备端到端 | A | P0 | T1 全过 | [ ] |
+| 3 | 10 设备并发 + 隔离 | A | P0 | T2 全过 | [ ] |
+| 4 | 8 小时长稳 | A | P0 | T3 全过 | [ ] |
+| 5 | 断网 30s 自动恢复 | A | P1 | T4.1 全过 | [ ] |
+| 6 | MQTT 断连节流补发 | A | P1 | T4.2 全过 | [ ] |
+| 7 | 进程 kill 数据不丢 | A | P1 | T4.3.1 过 | [ ] |
+| 8 | 运行时改配置不中断 | A | P1 | T4.4 全过 | [ ] |
+| 9 | RBAC 权限隔离 | A | P1 | T5 全过 | [ ] |
+| 10 | 前端页面可用 | A | P2 | T6 全过 | [ ] |
+| 11 | 中心形态端到端 | A | P1 | T7 全过 | [ ] |
+| 12 | 软件补齐（数值/回写/告警/UA/迁移） | A | P1 | T8.1~T8.5 全过 | [ ] |
+| 13 | 协议真机对测 | B | P0 | 出货协议对应 H1 行全过 | [ ] |
+| 14 | 写值回写真机闭环 | B | P0 | H2 全过（回写出货时） | [ ] |
+| 15 | 目标主机长稳 + 基线 | B | P0 | H3 全过（交付主机型号） | [ ] |
+| 16 | 现场链路/断电抗性 | B | P1 | H4 全过 | [ ] |
+
+**放行结论**
+- A 轨（1~12）P0+P1 全过 → 软件放行（可打包/试运行）。
+- B 轨按出货组合：随货交付的 P0 项（13/14/15）通过，P1 项（16）按现场范围记录 → 可发货；不随货项目标 N/A。
+- 任一不通过 → 记录缺陷到 `notes/ADR/` 后修复并回归。
+
+## 14. 缺陷分级
 
 | 级别 | 定义 | 示例 | 处理 |
 |---|---|---|---|
@@ -201,35 +282,19 @@
 | P1 | 核心场景不达标 | 长稳内存超 2 倍、故障隔离失效、指标超阈值 | 必须修复 |
 | P2 | 体验/文档类 | 前端样式、提示文案 | 可记录后置 |
 
-## 13. 演示场景（验收/面试演示用）
+## 附录 A · 模拟现场搭建（A 轨环境）
 
-**场景 1 — 断连自动化恢复（2 分钟）**
-
-关掉 Modbus 模拟器 → 看网关日志中 CB 三态变化 → 前端设备变 Offline → 重启模拟器 → 前端自动变 Online。全程无人工操作。
-
-**场景 2 — 数据不丢（1 分钟）**
-
-网关采集一会 → kill 进程 → 重启 → SQLite 数据完整 → ForwardBuffer 无丢失。
-
-**场景 3 — MQTT 节流（1 分钟）**
-
-关 MQTT Broker → ForwardingThrottle 批量从 1000 降到 100 → 开 Broker → 自动恢复 1000。
-
-## 14. 现场模拟方案（首选：ModbusSlaveSim :502 + UnitId 1~10）
-
-首选 `D:\resource\Modbus.project\ModbusSlaveSim`（程序化 Modbus TCP 从站模拟器，CSV 驱动、单进程多从站多 IP）：
-10 个从站共用 `127.0.0.1:502`，靠 UnitId 1~10 区分。
-一键启动（自动读 `tools/factory-test/points-device-01~10.csv`，文件名 NN 即 UnitId）：
+首选 `D:\resource\Modbus.project\ModbusSlaveSim`（CSV 驱动、单进程多从站多 IP）；10 个从站共用 `127.0.0.1:502`，靠 UnitId 1~10 区分。一键启动（自动读 `tools/factory-test/points-device-01~10.csv`，文件名 NN 即 UnitId）：
 
 ```powershell
 cd D:\resource\Modbus.project
 dotnet run --project ModbusSlaveSim -- --csv-dir D:\Code\NitroGateway\tools\factory-test
 ```
 
-这正是产品 ModbusTCP 驱动设计的目标场景（同 IP:端口建多个设备、分别填 UnitId 1/2/3...，见 `DeviceForm.vue` 注释）。
+这正是产品 ModbusTCP 驱动设计的目标场景（同 IP:端口建多个设备、分别填 UnitId 1/2/3...）。
 设计说明与 CSV 格式见 `D:\resource\Modbus.project\docs\ModbusSlaveSim-设计说明.md`。
 
-### 14.1 模拟器配置（每台从站 4 个 Function 块）
+### A.1 模拟器配置（每台从站 4 个 Function 块）
 
 | 功能区 | 起始地址 | 数量 | 产品点位前缀 |
 |---|---|---|---|
@@ -240,27 +305,23 @@ dotnet run --project ModbusSlaveSim -- --csv-dir D:\Code\NitroGateway\tools\fact
 
 值默认按类型范围随机生成（`--tick <ms>` 周期刷新）；换点位/加从站 = 换 CSV 重启；断链演示：命令行输入 `d` 断开全部连接。
 
-### 14.2 产品侧设备注册参数
+### A.2 产品侧设备注册参数
 
 - 协议：Modbus / TCP；Endpoint：`127.0.0.1:502`
 - 10 台设备分别填 `UnitId = 1..10`（即 Modbus Slave 的从站号）
-- `DataFormat = ABCD`（标准大端/高字在前，默认）；读到 32/64 位乱码时换 `CDAB`（低字在前）
+- `DataFormat = ABCD`（默认，标准大端/高字在前）；读到 32/64 位乱码时换 `CDAB`（低字在前）
 
-### 14.3 点位加载（50 点/台 × 10 台，覆盖 9 种数据类型）
+### A.3 点位加载（50 点/台 × 10 台，覆盖 9 种数据类型）
 
-点位 CSV 由 `tools/factory_test_points.py` 生成，已提交到 `tools/factory-test/points-device-01.csv` ~ `points-device-10.csv`：
+点位 CSV 已提交在 `tools/factory-test/points-device-01.csv` ~ `points-device-10.csv`：
 
 - 保持寄存器 42 点：Float/Int32/UInt32/Int16/UInt16/Double/Int64/UInt64
 - 输入寄存器 4 点、线圈 2 点、离散输入 2 点（Bool）
-- 导入路径（桌面端，产品功能）：设备 → 点位管理 → `⬆ 导入 CSV`（批量导入为边缘现场能力，Web 端已移除导入 UI；桌面导入同 Web 共用 `PointBatchService` 解析器，格式一致）
+- 导入路径（桌面端，产品功能）：设备 → 点位管理 → `⬆ 导入 CSV`（桌面导入同 Web 共用 `PointBatchService` 解析器，格式一致）
 - 自动化/脚本路径：`POST /api/devices/{id}/points/import`（Webapi 保留该 API，供集成测试与批量脚本）
 
-重新生成：`python tools/factory_test_points.py`
+### A.4 备用方案
 
-### 14.4 备用自动化方案
-
-`tools/modbus_slaves.py`（Python/pymodbus）：需要脚本化故障注入（T2.4 精确关某几台、T4.1.x 重复断连）时用，
-每从站独立进程可用 `Taskkill /PID ...` 注入故障。缺点：每从站独立端口（默认 15020+，避开 :502 需管理员），
-与真实现场"一 IP 多从站"形态不同，因此仅作备用。
-
-> 另：Witte Modbus Slave GUI 手动法仍可用作无 .NET 8 环境的备选，详见 `docs/09-现场模拟测试搭建指南.md` 附录 A。
+- Witte Modbus Slave GUI COM 自动化：`tools/factory-test/mbslave-agent.ps1`（10 从站 × 4 Function 块，:502），`exp-10slaves.ps1`、`start-agent.ps1` 配套。
+- 数值种子/读回校验：`tools/factory-test/hsl-probe`（HslCommunication ModbusTcpNet，10 从站多类型 seed + read-back）。
+- Modbus RTU 软件闭环（非硬件，A 轨内部预检）：虚拟串口对（com0com/ELTIMA）跑 RTU 从站 ↔ 驱动，历史实测 37/37 通过。

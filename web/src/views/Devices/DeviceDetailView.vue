@@ -28,12 +28,19 @@
 </template>
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getDevice } from '../../api/devices'
 import type { Device } from '../../api/types'
 import StatusTag from '../../components/DeviceStatusTag.vue'
-const route = useRoute(); const device = ref<Device|null>(null)
-onMounted(async () => { try { device.value = await getDevice(route.params.id as string) } catch {} })
+const route = useRoute(); const router = useRouter(); const device = ref<Device|null>(null)
+onMounted(async () => {
+  try {
+    const d = await getDevice(route.params.id as string)
+    // 分区守卫：OPC UA 设备详情在 /opcua/:id 独立分区（通用详情页只服务 Modbus/S7）
+    if (d?.protocol.name === 'OPC UA') { router.replace(`/opcua/${d.id}`); return }
+    device.value = d
+  } catch {}
+})
 </script>
 <style scoped>
 .page-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }

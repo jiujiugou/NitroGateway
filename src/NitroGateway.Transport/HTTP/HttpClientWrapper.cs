@@ -12,7 +12,7 @@ namespace NitroGateway.Transport.HTTP;
 /// ADR-020 P2-2：仅幂等 HTTP 方法（GET/PUT/DELETE/HEAD/OPTIONS/TRACE）启用重试；
 /// 非幂等（POST 上传）不重试，避免超时后云端已处理导致重复批次。
 /// </summary>
-public sealed class HttpClientWrapper : IHttpClient
+public sealed class HttpClientWrapper : IHttpClient, IDisposable
 {
     private readonly HttpConnectionOptions _options;
     private readonly ILogger<HttpClientWrapper> _logger;
@@ -249,4 +249,7 @@ public sealed class HttpClientWrapper : IHttpClient
     /// <summary>幂等方法（RFC 7231）允许重试；POST 等非幂等方法不重试</summary>
     private static bool IsIdempotent(HttpMethod method) =>
         method.Method.ToUpperInvariant() is "GET" or "PUT" or "DELETE" or "HEAD" or "OPTIONS" or "TRACE";
+
+    /// <summary>释放内部 HttpClient 及其连接池（Singleton，宿主关闭时调用）。</summary>
+    public void Dispose() => _inner.Dispose();
 }

@@ -11,7 +11,7 @@ namespace NitroGateway.Desktop;
 /// WPF 应用入口（ADR-026）。负责：单实例 Mutex（D6）、全局异常兜底（D7）、
 /// 宿主启动（迁移 + 后台服务）与 MainWindow 创建；关闭走 MainWindow.Closing 的 drain。
 /// </summary>
-public partial class App : Application
+public partial class App : Application, IDisposable
 {
     /// <summary>命名 Mutex：现场只允许一个采集进程，防止双写同一 SQLite。</summary>
     private const string SingleInstanceMutexName = "NitroGateway.Desktop.SingleInstance";
@@ -70,8 +70,15 @@ public partial class App : Application
             finally { _host.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }
 
-        if (_ownsMutex) { _singleInstanceMutex?.ReleaseMutex(); _singleInstanceMutex?.Dispose(); }
+        Dispose();
         base.OnExit(e);
+    }
+
+    /// <summary>释放单实例 Mutex（CA1001）。</summary>
+    public void Dispose()
+    {
+        if (_ownsMutex) { _singleInstanceMutex?.ReleaseMutex(); _singleInstanceMutex?.Dispose(); }
+        GC.SuppressFinalize(this);
     }
 
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)

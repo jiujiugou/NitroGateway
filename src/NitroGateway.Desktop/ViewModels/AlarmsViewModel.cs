@@ -183,5 +183,5 @@ public sealed partial class AlarmItem : ObservableObject
         AlarmState.Resolved => "已恢复",
         _ => State.ToString()
     };
-    public string OccurredText => OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    public string OccurredText => OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.CurrentCulture);
 }

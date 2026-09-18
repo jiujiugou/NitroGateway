@@ -94,7 +94,7 @@ public sealed class AlarmHostedService : BackgroundService, IPointStoredSink
                 if (snapshot.Value is not IConvertible) continue;
 
                 double value;
-                try { value = Convert.ToDouble(snapshot.Value); }
+                try { value = Convert.ToDouble(snapshot.Value, System.Globalization.CultureInfo.InvariantCulture); }
                 catch { continue; }
 
                 var rules = deviceRules.Where(r => r.PointId == snapshot.DevicePointId).ToList();

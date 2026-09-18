@@ -142,7 +142,21 @@ public sealed class DeviceHealthMonitor : IDeviceHealthMonitor
         var e = new DeviceHealthChanged { DeviceId = deviceId, DeviceName = deviceName, OldStatus = old, NewStatus = @new };
         foreach (var listener in _listeners)
         {
-            _ = listener.OnHealthChangedAsync(e); // fire-and-forget，异常不传播
+            // fire-and-forget：显式观察 ValueTask（避免 CA2012），异常只记日志不传播
+            _ = ObserveListenerAsync(listener, e);
+        }
+    }
+
+    /// <summary>安全触发单个监听器：等待 ValueTask 完成，异常仅记日志、不向调用方传播。</summary>
+    private async Task ObserveListenerAsync(IDeviceHealthListener listener, DeviceHealthChanged e)
+    {
+        try
+        {
+            await listener.OnHealthChangedAsync(e);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "健康监听器异常: {Listener}", listener.GetType().Name);
         }
     }
 

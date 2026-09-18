@@ -50,7 +50,7 @@ namespace NitroGateway.Persistence.Sqlite;
 ///   <item><see cref="GetCountAsync"/> 特例：DB 故障按 0 返回（不抛出），仅取消抛 OCE。</item>
 /// </list>
 /// </summary>
-public sealed class SqliteForwardOutbox : IForwardBuffer
+public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
 {
     /// <summary>死信清理单批删除行数上限（每批独立事务，批间让出写锁窗口）</summary>
     private const int DefaultPurgeBatchSize = 10_000;
@@ -103,6 +103,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
         _maxRetries = maxRetries;
         _maxPending = Math.Max(1, maxPending);
     }
+
+    /// <summary>释放启动恢复闸门（Singleton，宿主关闭时调用）。</summary>
+    public void Dispose() => _recoveryGate.Dispose();
 
     /// <summary>
     /// 打开独立连接并应用库级 PRAGMA（WAL/busy_timeout）。
@@ -477,7 +480,7 @@ public sealed class SqliteForwardOutbox : IForwardBuffer
                     RecordCount = batch?.Records.Count ?? 0,
                     RetryCount = (int)r.retry_count,
                     LastError = r.last_error as string,
-                    EnqueuedAt = DateTime.Parse((string)r.enqueued_at)
+                    EnqueuedAt = DateTime.Parse((string)r.enqueued_at, System.Globalization.CultureInfo.InvariantCulture)
                 };
             }).ToList();
         }

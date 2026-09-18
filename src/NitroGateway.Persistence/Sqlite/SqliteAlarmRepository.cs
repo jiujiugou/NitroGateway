@@ -185,10 +185,10 @@ public sealed class SqliteAlarmRepository : IAlarmRepository
         Severity = ParseEnum<AlarmDomain.AlarmSeverity>(e.Severity),
         Message = e.Message,
         State = ParseEnum<AlarmDomain.AlarmState>(e.State),
-        FirstExceededAt = e.FirstExceededAt is null ? DateTime.MinValue : DateTime.Parse(e.FirstExceededAt),
-        OccurredAt = DateTime.Parse(e.OccurredAt),
-        AcknowledgedAt = e.AcknowledgedAt is null ? null : DateTime.Parse(e.AcknowledgedAt),
-        ResolvedAt = e.ResolvedAt is null ? null : DateTime.Parse(e.ResolvedAt)
+        FirstExceededAt = e.FirstExceededAt is null ? DateTime.MinValue : DateTime.Parse(e.FirstExceededAt, System.Globalization.CultureInfo.InvariantCulture),
+        OccurredAt = DateTime.Parse(e.OccurredAt, System.Globalization.CultureInfo.InvariantCulture),
+        AcknowledgedAt = e.AcknowledgedAt is null ? null : DateTime.Parse(e.AcknowledgedAt, System.Globalization.CultureInfo.InvariantCulture),
+        ResolvedAt = e.ResolvedAt is null ? null : DateTime.Parse(e.ResolvedAt, System.Globalization.CultureInfo.InvariantCulture)
     };
 
     /// <summary>枚举容错解析（ADR-018 P3-4）：未知字符串回退默认值，与 DomainMapper 语义一致</summary>

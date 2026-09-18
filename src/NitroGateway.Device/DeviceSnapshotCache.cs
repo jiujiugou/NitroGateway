@@ -10,7 +10,7 @@ namespace NitroGateway.DeviceManagement;
 /// <inheritdoc cref="IDeviceSnapshotCache"/>
 /// 缓存内容为设备+点位配置快照；调用方如需最新运行状态，应改查 <see cref="IDeviceHealthMonitor"/>。
 /// </summary>
-public sealed class DeviceSnapshotCache : IDeviceSnapshotCache
+public sealed class DeviceSnapshotCache : IDeviceSnapshotCache, IDisposable
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<DeviceSnapshotCache> _logger;
@@ -65,4 +65,7 @@ public sealed class DeviceSnapshotCache : IDeviceSnapshotCache
 
     private bool IsFresh()
         => !_invalidated && _snapshot is not null && DateTimeOffset.UtcNow - _loadedAt < _ttl;
+
+    /// <summary>释放刷新闸门（Singleton，宿主关闭时调用）。</summary>
+    public void Dispose() => _gate.Dispose();
 }

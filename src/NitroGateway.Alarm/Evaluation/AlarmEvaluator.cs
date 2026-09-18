@@ -174,8 +174,8 @@ public sealed class AlarmEvaluator
         if (!string.IsNullOrWhiteSpace(rule.MessageTemplate))
         {
             return rule.MessageTemplate
-                .Replace("{value}", value.ToString("F2"))
-                .Replace("{threshold}", rule.Threshold.ToString("F2"));
+                .Replace("{value}", value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture))
+                .Replace("{threshold}", rule.Threshold.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
         }
 
         return $"值 {value:F2} {rule.Operator} {rule.Threshold}";

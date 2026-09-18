@@ -227,5 +227,5 @@ public sealed class HistoryRow
     public required string Quality { get; init; }
     public string? Error { get; init; }
 
-    public string TimestampText => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff");
+    public string TimestampText => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.CurrentCulture);
 }

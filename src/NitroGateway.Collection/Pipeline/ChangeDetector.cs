@@ -150,7 +150,7 @@ public sealed class ChangeDetector
         {
             if (value is null)
                 return false;
-            result = Convert.ToDouble(value);
+            result = Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
             return true;
         }
         catch

@@ -31,9 +31,9 @@ internal sealed class OutboxConsumer : BackgroundService
                     _logger.LogDebug("Outbox 发送: Method={Method} Target={Target}",
                         msg.Method, msg.TargetType);
                     if (msg.TargetType == OutboxTarget.All)
-                        await _hub.Clients.All.SendAsync(msg.Method, msg.Payload);
+                        await _hub.Clients.All.SendAsync(msg.Method, msg.Payload, stoppingToken);
                     else
-                        await _hub.Clients.Group(msg.GroupId).SendAsync(msg.Method, msg.Payload);
+                        await _hub.Clients.Group(msg.GroupId).SendAsync(msg.Method, msg.Payload, stoppingToken);
                 }
                 catch (Exception ex)
                 {

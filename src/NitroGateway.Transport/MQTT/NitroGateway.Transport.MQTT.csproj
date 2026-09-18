@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="NitroGateway.IntegrationTests" />
+    <InternalsVisibleTo Include="NitroGateway.UnitTests" />
   </ItemGroup>
 
 </Project>

@@ -14,7 +14,7 @@ namespace NitroGateway.Collection;
 /// <para><b>状态策略：</b>是否真正采集由熔断器（<see cref="ICircuitBreaker"/>）决定，
 /// 健康判定由 HealthMonitor 负责；本类只串联流水线并上报结果。</para>
 /// </summary>
-internal sealed class DeviceCollector : IDeviceCollector
+internal sealed class DeviceCollector : IDeviceCollector, IDisposable
 {
     private readonly IDeviceManager _deviceManager;
     private readonly IDeviceReader _reader;
@@ -258,5 +258,8 @@ internal sealed class DeviceCollector : IDeviceCollector
     /// </summary>
     private bool IsInMaintenance(Device device)
         => (_healthMonitor.GetSnapshot(device.Id)?.Status ?? device.Status) == DeviceStatus.Maintenance;
+
+    /// <summary>释放并发闸门（Per-round scope 结束时由 DI 调用）。</summary>
+    public void Dispose() => _concurrencyGate.Dispose();
 
 }

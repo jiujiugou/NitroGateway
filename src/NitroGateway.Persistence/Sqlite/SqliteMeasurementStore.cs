@@ -68,7 +68,11 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
                     // ADR-002 P1-3：写入真实点位名（修复前写空串，列存在但数据丢失）
                     name = s.PointName ?? string.Empty,
                     raw = Serialize(s.RawValue),
-                    val = s.Value is IConvertible ? Convert.ToDouble(s.Value) : (object)DBNull.Value,
+                    // value 列只承载"能转 double"的工程值（Bool→1/0、数值、数字文本）。
+                    // 不可转的（非数字 String、DateTime、结构体等）落 NULL、真值留在 raw_value，
+                    // 绝不因单点格式抛异常拖垮整批 INSERT（Convert.ToDouble 对 "abc"/DateTime 会抛，
+                    // 一旦抛即回滚同批所有点位的历史落库——含纯数值点）。
+                    val = TryConvertToDouble(s.Value, out var dbl) ? dbl : (object)DBNull.Value,
                     // ADR-002 P1-3：写入真实数据类型（修复前写空串）
                     type = s.DataType.ToString(),
                     ts = s.Timestamp.ToUniversalTime().ToString("O"),
@@ -339,6 +343,26 @@ public sealed class SqliteMeasurementStore : IMeasurementStore
     /// </summary>
     private static DataType ParseDataType(string? value)
         => Enum.TryParse<DataType>(value, ignoreCase: true, out var type) ? type : default;
+
+    /// <summary>
+    /// 值 → double（value 列工程值）：Bool/数值/可解析数字文本转成功；
+    /// null 与不可转（非数字文本、DateTime、结构体等）返回 false → 调用方落 NULL。
+    /// 与 <c>ChangeDetector</c> 同构：宁可单点落 NULL，也不让格式问题中断整批时序写入。
+    /// </summary>
+    private static bool TryConvertToDouble(object? value, out double result)
+    {
+        result = 0;
+        if (value is null) return false;
+        try
+        {
+            result = Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// 原始值序列化：寄存器数组（ushort[]）与普通对象统一转 CamelCase JSON；null 存 NULL。

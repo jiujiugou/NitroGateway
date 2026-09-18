@@ -187,7 +187,7 @@ public sealed class PointBatchService
                 p.DataType.ToString(),
                 p.Access.ToString(),
                 p.Enabled.ToString(),
-                p.ScanIntervalMs.ToString(),
+                p.ScanIntervalMs.ToString(CultureInfo.InvariantCulture),
                 p.Deadband.ToString(CultureInfo.InvariantCulture),
                 p.ScaleFactor.ToString(CultureInfo.InvariantCulture),
                 p.ScaleOffset.ToString(CultureInfo.InvariantCulture),
@@ -311,7 +311,7 @@ public sealed class PointBatchService
         var idx = template.IndexOf(braced, StringComparison.Ordinal);
         if (idx >= 0)
         {
-            var replaced = value.ToString().PadLeft(padLen, '0');
+            var replaced = value.ToString(CultureInfo.InvariantCulture).PadLeft(padLen, '0');
             return template[..idx] + replaced + template[(idx + braced.Length)..];
         }
 
@@ -320,7 +320,7 @@ public sealed class PointBatchService
         idx = template.IndexOf(placeholder, StringComparison.Ordinal);
         if (idx < 0) return template;
 
-        var repl = value.ToString().PadLeft(padLen, '0');
+        var repl = value.ToString(CultureInfo.InvariantCulture).PadLeft(padLen, '0');
         return template[..idx] + repl + template[(idx + padLen)..];
     }
 
@@ -333,7 +333,7 @@ public sealed class PointBatchService
                 : throw new ArgumentException($"无效的 Modbus 起始地址: {raw}（需为非负整数，如 40001）");
 
         /// <summary>第 i 个点位的地址：起始值 + i*寄存器步长</summary>
-        public string Format(int index, int step) => (Value + index * step).ToString();
+        public string Format(int index, int step) => (Value + index * step).ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>S7 DB 区起始地址解析：DB{n}.DBD/DBW/DBB{offset}，按字节步长递增（ADR-024 P3-3）</summary>
@@ -370,7 +370,7 @@ public sealed class PointBatchService
             if (!compatible)
                 throw new ArgumentException($"S7 起始地址类型 {type} 与数据类型 {dataType} 不兼容（如 Int16 用 DBW、Float 用 DBD）");
 
-            return new S7Start(int.Parse(m.Groups[1].Value), type, int.Parse(m.Groups[3].Value));
+            return new S7Start(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), type, int.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture));
         }
 
         /// <summary>第 i 个点位的地址：DB{n}.DB{T}{offset + i*字节宽}，类型保持起始地址类型</summary>

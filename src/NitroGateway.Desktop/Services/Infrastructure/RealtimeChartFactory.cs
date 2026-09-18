@@ -41,7 +41,7 @@ public static class RealtimeChartFactory
                 var ticks = (long)value;
                 if (ticks < DateTime.MinValue.Ticks || ticks > DateTime.MaxValue.Ticks)
                     return string.Empty;
-                return new DateTime(ticks).ToString("HH:mm:ss");
+                return new DateTime(ticks).ToString("HH:mm:ss", System.Globalization.CultureInfo.CurrentCulture);
             },
             TextSize = 11,
             LabelsPaint = new SolidColorPaint(SKColor.Parse("#64748B")),

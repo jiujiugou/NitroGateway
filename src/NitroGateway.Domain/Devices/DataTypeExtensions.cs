@@ -10,15 +10,15 @@ public static class DataTypeExtensions
     /// </summary>
     public static int RegisterCount(this DataType type) => type switch
     {
-        DataType.Bool   => 1,
-        DataType.Byte   => 1,
-        DataType.Int16  => 1,
+        DataType.Bool => 1,
+        DataType.Byte => 1,
+        DataType.Int16 => 1,
         DataType.UInt16 => 1,
-        DataType.Int32  => 2,
+        DataType.Int32 => 2,
         DataType.UInt32 => 2,
-        DataType.Int64  => 4,
+        DataType.Int64 => 4,
         DataType.UInt64 => 4,
-        DataType.Float  => 2,
+        DataType.Float => 2,
         DataType.Double => 4,
         DataType.String => 2,  // 至少 2 个寄存器
         _ => 1
@@ -31,15 +31,15 @@ public static class DataTypeExtensions
     /// </summary>
     public static int ByteSize(this DataType type) => type switch
     {
-        DataType.Bool   => 1,
-        DataType.Byte   => 1,
-        DataType.Int16  => 2,
+        DataType.Bool => 1,
+        DataType.Byte => 1,
+        DataType.Int16 => 2,
         DataType.UInt16 => 2,
-        DataType.Int32  => 4,
+        DataType.Int32 => 4,
         DataType.UInt32 => 4,
-        DataType.Int64  => 8,
+        DataType.Int64 => 8,
         DataType.UInt64 => 8,
-        DataType.Float  => 4,
+        DataType.Float => 4,
         DataType.Double => 8,
         DataType.String => 10,
         _ => 4

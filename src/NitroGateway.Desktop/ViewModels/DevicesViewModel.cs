@@ -345,8 +345,8 @@ public sealed partial class DeviceItem : ObservableObject
         _ => "未知"
     };
 
-    public string LastCollectionText => LastCollectionAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—";
+    public string LastCollectionText => LastCollectionAt?.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.CurrentCulture) ?? "—";
 
     /// <summary>从站号显示文本（非 Modbus/未配置显示占位符）</summary>
-    public string UnitIdText => UnitId is null ? "—" : UnitId.Value.ToString();
+    public string UnitIdText => UnitId is null ? "—" : UnitId.Value.ToString(System.Globalization.CultureInfo.CurrentCulture);
 }

@@ -73,7 +73,7 @@ public static class MigrationRunner
             checkpoint.ExecuteNonQuery();
         }
 
-        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
         var backupPath = Path.Combine(backupDir, $"nitrogateway.{timestamp}.bak");
         File.Copy(dbPath, backupPath, overwrite: true);
         logger?.LogInformation("数据库已备份: {BackupPath}", backupPath);

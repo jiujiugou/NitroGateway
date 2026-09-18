@@ -155,7 +155,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(persistedMqtt.MqttHost))
         {
             MqttHost = persistedMqtt.MqttHost;
-            MqttPortText = (persistedMqtt.MqttPort is >= 1 and <= 65535 ? persistedMqtt.MqttPort : mqtt.Port).ToString();
+            MqttPortText = (persistedMqtt.MqttPort is >= 1 and <= 65535 ? persistedMqtt.MqttPort : mqtt.Port).ToString(System.Globalization.CultureInfo.InvariantCulture);
             MqttUseTls = persistedMqtt.MqttUseTls;
             MqttUsername = persistedMqtt.MqttUsername;
             MqttPassword = persistedMqtt.MqttPassword;
@@ -163,7 +163,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         else
         {
             MqttHost = mqtt.Host;
-            MqttPortText = mqtt.Port.ToString();
+            MqttPortText = mqtt.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
             MqttUseTls = mqtt.UseTls;
             MqttUsername = mqtt.Username ?? "";
             MqttPassword = mqtt.Password ?? "";
@@ -424,7 +424,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
                 };
 
             if (frame.BufferBacklog is int backlog)
-                BufferBacklogText = backlog.ToString("N0");
+                BufferBacklogText = backlog.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
         });
     }
 

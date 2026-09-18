@@ -104,7 +104,7 @@ public sealed class PointValuePipeline : IPointValuePipeline
         double engValue;
         try
         {
-            var d = Convert.ToDouble(rawValue);
+            var d = Convert.ToDouble(rawValue, System.Globalization.CultureInfo.InvariantCulture);
             engValue = d * point.ScaleFactor + point.ScaleOffset;
         }
         catch
