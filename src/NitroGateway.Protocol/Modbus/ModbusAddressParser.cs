@@ -23,7 +23,10 @@ public sealed class ModbusAddressParser : IAddressParser
             _ => throw new ArgumentException($"无法解析功能区前缀: {addr[0]}", nameof(rawAddress))
         };
 
-        if (!int.TryParse(offsetStr, out var offset))
+        // 只接受纯十进制数字（NumberStyles.None 拒绝正负号/空白），并固定 InvariantCulture 避免区域差异。
+        // 属性测试 ModbusAddressPropertyTests 发现：默认样式会把 "4+20804"、"4 1" 等非规范输入当作合法地址。
+        if (!int.TryParse(offsetStr, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var offset))
             throw new ArgumentException($"无法解析地址偏移: {offsetStr}", nameof(rawAddress));
 
         // ADR-003 P2-1：PLC 式地址号 1..65536，超限抛异常而非 (ushort) 静默回绕
@@ -51,7 +54,7 @@ public sealed class ModbusAddressParser : IAddressParser
             ModbusArea.DiscreteInput => '1',
             ModbusArea.InputRegister => '3',
             ModbusArea.HoldingRegister => '4',
-            _ => throw new ArgumentOutOfRangeException(nameof(ma.Area))
+            _ => throw new ArgumentOutOfRangeException(nameof(address), ma.Area, "不支持的 Modbus 区域")
         };
 
         return $"{prefix}{ma.Offset + 1}";

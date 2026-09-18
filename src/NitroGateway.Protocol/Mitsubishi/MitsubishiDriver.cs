@@ -107,5 +107,13 @@ public sealed class MitsubishiDriver : IProtocolDriver, IDisposable
         return OperationResult.Success();
     }
 
-    public void Dispose() { _client?.ConnectClose(); _client?.Dispose(); }
+    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    private int _disposed;
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _client?.ConnectClose();
+        _client?.Dispose();
+    }
 }

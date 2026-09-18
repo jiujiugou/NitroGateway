@@ -262,8 +262,12 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         return OperationResult.Success();
     }
 
+    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    private int _disposed;
+
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         try { _client?.ConnectClose(); } catch { }
         _client?.Dispose();
         _gate.Dispose();
@@ -326,18 +330,18 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
     /// <summary>按点位类型映射 Hsl 写方法</summary>
     private static Task<OperateResult> WriteTypedAsync(SiemensS7Net client, DataType type, string address, object value) => type switch
     {
-        DataType.Bool   => client.WriteAsync(address, Convert.ToBoolean(value)),
-        DataType.Byte   => client.WriteAsync(address, Convert.ToByte(value)),
-        DataType.Int16  => client.WriteAsync(address, Convert.ToInt16(value)),
-        DataType.UInt16 => client.WriteAsync(address, Convert.ToUInt16(value)),
-        DataType.Int32  => client.WriteAsync(address, Convert.ToInt32(value)),
-        DataType.UInt32 => client.WriteAsync(address, Convert.ToUInt32(value)),
-        DataType.Int64  => client.WriteAsync(address, Convert.ToInt64(value)),
-        DataType.UInt64 => client.WriteAsync(address, Convert.ToUInt64(value)),
-        DataType.Float  => client.WriteAsync(address, Convert.ToSingle(value)),
-        DataType.Double => client.WriteAsync(address, Convert.ToDouble(value)),
-        DataType.String => client.WriteAsync(address, Convert.ToString(value)),
-        _               => client.WriteAsync(address, Convert.ToSingle(value))
+        DataType.Bool   => client.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.Byte   => client.WriteAsync(address, Convert.ToByte(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.Int16  => client.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.UInt16 => client.WriteAsync(address, Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.Int32  => client.WriteAsync(address, Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.UInt32 => client.WriteAsync(address, Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.Int64  => client.WriteAsync(address, Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.UInt64 => client.WriteAsync(address, Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.Float  => client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.Double => client.WriteAsync(address, Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
+        DataType.String => client.WriteAsync(address, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)),
+        _               => client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture))
     };
 }
 

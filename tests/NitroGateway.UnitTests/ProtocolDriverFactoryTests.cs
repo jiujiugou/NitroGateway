@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
 using NitroGateway.Protocols;
-using NitroGateway.Protocols.OpcUa;
 using NitroGateway.Shared;
 using Xunit;
 
@@ -56,9 +55,9 @@ public class ProtocolDriverFactoryTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddNitroProtocol();
         var provider = services.BuildServiceProvider();
-        var factory = new ProtocolDriverFactory(provider);
-        OpcUaRegistration.Register(factory);
+        var factory = provider.GetRequiredService<IProtocolDriverFactory>();
 
         var driver = factory.Create(
             ProtocolIdentifier.OpcUa,
@@ -75,8 +74,7 @@ public class ProtocolDriverFactoryTests
         var services = new ServiceCollection();
         services.AddLogging();
         var provider = services.BuildServiceProvider();
-        var factory = new ProtocolDriverFactory(provider);
-        factory.Register("Fake", (_, _, _) => inner);
+        var factory = new ProtocolDriverFactory(provider, (_, _, _, _) => inner);
         return factory;
     }
 

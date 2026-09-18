@@ -26,11 +26,11 @@ public sealed partial class S7AddressParser
         {
             return new S7Address
             {
-                DbNumber = int.Parse(match.Groups[1].Value),
+                DbNumber = ParseInt(match.Groups[1].Value, address),
                 Area = "DB",
                 VarType = "DB" + match.Groups[2].Value.ToUpperInvariant(),  // DBD, DBW, DBB, DBX
-                ByteOffset = int.Parse(match.Groups[3].Value),
-                BitOffset = match.Groups[4].Success ? int.Parse(match.Groups[4].Value) : 0,
+                ByteOffset = ParseInt(match.Groups[3].Value, address),
+                BitOffset = match.Groups[4].Success ? ParseInt(match.Groups[4].Value, address) : 0,
                 HasBit = match.Groups[4].Success
             };
         }
@@ -40,8 +40,8 @@ public sealed partial class S7AddressParser
             DbNumber = 0,
             Area = match.Groups[5].Value.ToUpperInvariant(),               // M / I / Q
             VarType = match.Groups[6].Value.ToUpperInvariant(),            // D / W / B，位地址为空串
-            ByteOffset = int.Parse(match.Groups[7].Value),
-            BitOffset = match.Groups[8].Success ? int.Parse(match.Groups[8].Value) : 0,
+            ByteOffset = ParseInt(match.Groups[7].Value, address),
+            BitOffset = match.Groups[8].Success ? ParseInt(match.Groups[8].Value, address) : 0,
             HasBit = match.Groups[8].Success
         };
     }
@@ -91,6 +91,16 @@ public sealed partial class S7AddressParser
         var a = Parse(address);
         return a.VarType == "DBX" || a.HasBit;
     }
+
+    /// <summary>
+    /// 解析地址中的数值段：纯十进制、非空且不溢出，否则抛 ArgumentException
+    /// （不让 int.Parse 的 OverflowException 泄漏给调用方——属性测试发现）。
+    /// </summary>
+    private static int ParseInt(string value, string address)
+        => int.TryParse(value, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? v
+            : throw new ArgumentException($"无效的 S7 地址: {address}（数值超出范围）");
 
     private static bool IsCompatible(string type, DataType dataType) => type switch
     {

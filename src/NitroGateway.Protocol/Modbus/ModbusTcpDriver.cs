@@ -35,7 +35,14 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
 
     protected override SemaphoreSlim ReadGate => _readLock;
 
-    public override async Task<OperationResult> ConnectAsync(CancellationToken ct = default)
+    public override Task<OperationResult> ConnectAsync(CancellationToken ct = default)
+        => GuardedAsync(ConnectCoreAsync, ct);
+
+    /// <summary>
+    /// 闸门内建连：与读/写/Ping 共用 <see cref="ModbusDriverBase.ReadGate"/>，
+    /// 并与并发建连（写路径显式 Connect + 读路径自动建连）串行（ADR-074）；闸门内双检 <see cref="DriverState"/>。
+    /// </summary>
+    private async Task<OperationResult> ConnectCoreAsync(CancellationToken ct)
     {
         if (State == DriverState.Connected)
             return OperationResult.Success();
@@ -91,13 +98,22 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
     }
 
     public override Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
-    {
-        try { _client.ConnectClose(); } catch { }
-        State = DriverState.Disconnected;
-        return Task.FromResult(OperationResult.Success());
-    }
+        => GuardedAsync(_ =>
+        {
+            try { _client.ConnectClose(); } catch { }
+            State = DriverState.Disconnected;
+            return Task.FromResult(OperationResult.Success());
+        }, ct);
 
-    public override void Dispose() { _client.ConnectClose(); _client.Dispose(); }
+    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    private int _disposed;
+
+    public override void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _client.ConnectClose();
+        _client.Dispose();
+    }
 
     protected override async Task<object[]?> ReadBatchTypedAsync(string address, DataType type, int count)
     {
@@ -137,18 +153,18 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
         // ADR-003 P1-2：按 DataType 全量映射 HSL 写方法，不再回退 Convert.ToSingle
         var result = point.DataType switch
         {
-            DataType.Bool    => await _client.WriteAsync(address, Convert.ToBoolean(value)),
-            DataType.Byte    => await _client.WriteAsync(address, Convert.ToInt16(value)),  // 1 寄存器，按 short 写入
-            DataType.Int16   => await _client.WriteAsync(address, Convert.ToInt16(value)),
-            DataType.UInt16  => await _client.WriteAsync(address, Convert.ToUInt16(value)),
-            DataType.Int32   => await _client.WriteAsync(address, Convert.ToInt32(value)),
-            DataType.UInt32  => await _client.WriteAsync(address, Convert.ToUInt32(value)),
-            DataType.Int64   => await _client.WriteAsync(address, Convert.ToInt64(value)),
-            DataType.UInt64  => await _client.WriteAsync(address, Convert.ToUInt64(value)),
-            DataType.Float   => await _client.WriteAsync(address, Convert.ToSingle(value)),
-            DataType.Double  => await _client.WriteAsync(address, Convert.ToDouble(value)),
-            DataType.String  => await _client.WriteAsync(address, Convert.ToString(value)),
-            _                => await _client.WriteAsync(address, Convert.ToSingle(value))
+            DataType.Bool    => await _client.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Byte    => await _client.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),  // 1 寄存器，按 short 写入
+            DataType.Int16   => await _client.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt16  => await _client.WriteAsync(address, Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int32   => await _client.WriteAsync(address, Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt32  => await _client.WriteAsync(address, Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int64   => await _client.WriteAsync(address, Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt64  => await _client.WriteAsync(address, Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Float   => await _client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Double  => await _client.WriteAsync(address, Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.String  => await _client.WriteAsync(address, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)),
+            _                => await _client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture))
         };
 
         return result.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Protocol(result.Message);

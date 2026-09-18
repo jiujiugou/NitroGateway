@@ -131,7 +131,14 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
         }
     }
 
-    public override void Dispose() => DisconnectAsync().GetAwaiter().GetResult();
+    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    private int _disposed;
+
+    public override void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        DisconnectAsync().GetAwaiter().GetResult();
+    }
 
     /// <summary>共享串口客户端；未连接时抛出</summary>
     private ModbusRtu Rtu => _lease?.Rtu ?? throw new InvalidOperationException("串口未连接");
@@ -174,18 +181,18 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
         // ADR-003 P1-2：按 DataType 全量映射 HSL 写方法，不再回退 Convert.ToSingle
         var result = point.DataType switch
         {
-            DataType.Bool    => await Rtu.WriteAsync(address, Convert.ToBoolean(value)),
-            DataType.Byte    => await Rtu.WriteAsync(address, Convert.ToInt16(value)),  // 1 寄存器，按 short 写入
-            DataType.Int16   => await Rtu.WriteAsync(address, Convert.ToInt16(value)),
-            DataType.UInt16  => await Rtu.WriteAsync(address, Convert.ToUInt16(value)),
-            DataType.Int32   => await Rtu.WriteAsync(address, Convert.ToInt32(value)),
-            DataType.UInt32  => await Rtu.WriteAsync(address, Convert.ToUInt32(value)),
-            DataType.Int64   => await Rtu.WriteAsync(address, Convert.ToInt64(value)),
-            DataType.UInt64  => await Rtu.WriteAsync(address, Convert.ToUInt64(value)),
-            DataType.Float   => await Rtu.WriteAsync(address, Convert.ToSingle(value)),
-            DataType.Double  => await Rtu.WriteAsync(address, Convert.ToDouble(value)),
-            DataType.String  => await Rtu.WriteAsync(address, Convert.ToString(value)),
-            _                => await Rtu.WriteAsync(address, Convert.ToSingle(value))
+            DataType.Bool    => await Rtu.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Byte    => await Rtu.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),  // 1 寄存器，按 short 写入
+            DataType.Int16   => await Rtu.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt16  => await Rtu.WriteAsync(address, Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int32   => await Rtu.WriteAsync(address, Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt32  => await Rtu.WriteAsync(address, Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int64   => await Rtu.WriteAsync(address, Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt64  => await Rtu.WriteAsync(address, Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Float   => await Rtu.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Double  => await Rtu.WriteAsync(address, Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.String  => await Rtu.WriteAsync(address, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)),
+            _                => await Rtu.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture))
         };
 
         return result.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Protocol(result.Message);

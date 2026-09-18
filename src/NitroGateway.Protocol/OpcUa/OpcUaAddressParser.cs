@@ -12,7 +12,9 @@ public sealed class OpcUaAddressParser : IAddressParser
             throw new ArgumentException("地址不能为空", nameof(rawAddress));
 
         // ns=3;s=Temperature  or  ns=2;i=1001
-        var parts = rawAddress.Split(';');
+        // 只按第一个 ';' 切成两段：字符串标识符本身可能含 ';'（如 ns=3;s=a;b），
+        // 用 Split(';') 会把 id 切碎、破坏 Serialize↔Parse 往返（属性测试发现）。
+        var parts = rawAddress.Split(';', 2);
         if (parts.Length < 2)
             throw new ArgumentException($"无法解析 OPC UA 地址: {rawAddress}");
 
@@ -44,7 +46,15 @@ public sealed class OpcUaAddressParser : IAddressParser
         if (idPart.StartsWith("b="))
         {
             var base64 = idPart[2..];
-            return new OpcUaAddress { Raw = rawAddress, NamespaceIndex = ns, OpaqueId = Convert.FromBase64String(base64) };
+            try
+            {
+                return new OpcUaAddress { Raw = rawAddress, NamespaceIndex = ns, OpaqueId = Convert.FromBase64String(base64) };
+            }
+            catch (FormatException)
+            {
+                // 非法 base64 归为地址格式错误；不把 FormatException 实现细节泄漏给调用方（属性测试发现）。
+                throw new ArgumentException($"无法解析 OpaqueId(Base64): {idPart}", nameof(rawAddress));
+            }
         }
 
         throw new ArgumentException($"不支持的 OPC UA 地址格式: {rawAddress}");

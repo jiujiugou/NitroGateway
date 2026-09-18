@@ -4,7 +4,6 @@ using NitroGateway.Shared;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
-using Polly.Timeout;
 
 namespace NitroGateway.Protocol.Abstractions
 {
@@ -125,12 +124,9 @@ namespace NitroGateway.Protocol.Abstractions
             if (_inner is not ISubscriptionSource source)
                 return OperationalError.Protocol("协议不支持订阅采集");
 
-            if (_inner.State != DriverState.Connected)
-            {
-                var connect = await _inner.ConnectAsync(ct);
-                if (connect.IsFailure)
-                    return connect;
-            }
+            var connect = await EnsureConnectedAsync(ct);
+            if (connect.IsFailure)
+                return connect;
 
             return await source.EnsureSubscriptionAsync(points, publishingIntervalMs, ct);
         }
@@ -141,9 +137,14 @@ namespace NitroGateway.Protocol.Abstractions
                 ? source.StopSubscriptionAsync(ct)
                 : Task.FromResult<OperationResult>(OperationalError.Protocol("协议不支持订阅采集"));
 
-        /// <summary>透传到内层驱动</summary>
+        /// <summary>
+        /// 建连单飞：与读/订阅的自动建连共用 <see cref="_connectGate"/>，
+        /// 保证同一驱动实例任意入口（显式 Connect + 读写/订阅触发）同时只有一次 <c>ConnectAsync</c> 在途。
+        /// 此前为直接透传，导致写路径的显式建连与读路径的自动建连可并发进入内层
+        /// （Modbus TCP 的 ConnectAsync 自身无闸门，会并发访问同一客户端）。
+        /// </summary>
         public Task<OperationResult> ConnectAsync(CancellationToken ct = default)
-            => _inner.ConnectAsync(ct);
+            => EnsureConnectedAsync(ct);
 
         /// <summary>透传到内层驱动</summary>
         public Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
@@ -170,16 +171,13 @@ namespace NitroGateway.Protocol.Abstractions
             {
                 return await _pipeline.ExecuteAsync(async token =>
                 {
-                    if (_inner.State != DriverState.Connected)
-                    {
-                        var connect = await _inner.ConnectAsync(token);
-                        if (connect.IsFailure)
-                            throw new Exception(connect.Error!.Message);
-                    }
+                    var connect = await EnsureConnectedAsync(token);
+                    if (connect.IsFailure)
+                        throw new ProtocolAttemptException(connect.Error!.Message);
 
                     var result = await _inner.ReadBatchAsync(points, token);
                     if (result.IsFailure)
-                        throw new Exception(result.Error!.Message);
+                        throw new ProtocolAttemptException(result.Error!.Message);
 
                     return result;
                 }, ct);
@@ -218,7 +216,35 @@ namespace NitroGateway.Protocol.Abstractions
                 : Task.FromResult<OperationResult<IReadOnlyList<BrowseNode>>>(
                     OperationalError.Protocol("协议不支持节点浏览"));
 
-        /// <summary>释放内层驱动资源（TCP socket、底层客户端等）</summary>
-        public void Dispose() => _inner.Dispose();
+        /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+        private int _disposed;
+
+        /// <summary>释放内层驱动资源（TCP socket、底层客户端等）；幂等，重复调用安全</summary>
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            _inner.Dispose();
+        }
+
+        /// <summary>
+        /// 已连接直接返回，否则转调内层 <c>ConnectAsync</c>。
+        /// <para>串行化由<b>各具体驱动实例自身的闸门</b>负责（ADR-074）：同一实例的
+        /// Connect/Disconnect/Read/Write/Ping 都过同一把闸门，内层 <c>ConnectAsync</c> 在闸门内双检
+        /// <see cref="DriverState"/>，因此并发读/订阅只会真正建连一次。装饰器不再持有建连闸门，
+        /// 只做超时/重试/自动建连编排。</para>
+        /// </summary>
+        private Task<OperationResult> EnsureConnectedAsync(CancellationToken ct)
+            => _inner.State == DriverState.Connected
+                ? Task.FromResult(OperationResult.Success())
+                : _inner.ConnectAsync(ct);
+
+        /// <summary>
+        /// 读/建连失败的内部信号异常：仅用于触发 Polly 重试，不对外暴露
+        /// （对外一律由 <see cref="ReadBatchAsync"/> 归类为 OperationResult 失败）。
+        /// </summary>
+        private sealed class ProtocolAttemptException : Exception
+        {
+            public ProtocolAttemptException(string message) : base(message) { }
+        }
     }
 }

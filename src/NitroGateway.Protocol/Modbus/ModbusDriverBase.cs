@@ -49,6 +49,19 @@ public abstract class ModbusDriverBase : IProtocolDriver
     /// <summary>单点写，返回操作结果</summary>
     protected abstract Task<OperationResult> WriteSingleValueAsync(DevicePoint point, string address, object value);
 
+    /// <summary>
+    /// 在 <see cref="ReadGate"/> 保护下执行一段操作。
+    /// <para><b>并发所有权（ADR-074）：</b>同一驱动实例对底层客户端的所有访问——读/写/Ping，
+    /// 以及 TCP 驱动的建连/断开——都必须经<b>同一把</b> <see cref="ReadGate"/> 串行。
+    /// 规则在此一处定义：新增方法只要走 <c>GuardedAsync</c>（或自行取同一闸门）就不会漏加锁。</para>
+    /// </summary>
+    protected async Task<T> GuardedAsync<T>(Func<CancellationToken, Task<T>> action, CancellationToken ct)
+    {
+        await ReadGate.WaitAsync(ct);
+        try { return await action(ct); }
+        finally { ReadGate.Release(); }
+    }
+
     public abstract Task<OperationResult> ConnectAsync(CancellationToken ct = default);
     public abstract Task<OperationResult> DisconnectAsync(CancellationToken ct = default);
     public abstract void Dispose();
@@ -67,7 +80,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
     {
         JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt64(),
         JsonElement je when long.TryParse(je.GetString(), out var v) => v,
-        _ => Convert.ToInt64(raw)
+        _ => Convert.ToInt64(raw, System.Globalization.CultureInfo.InvariantCulture)
     };
 
     /// <summary>兼容 System.Text.Json 反序列化后的 JsonElement 字符串</summary>
@@ -415,6 +428,6 @@ public abstract class ModbusDriverBase : IProtocolDriver
         ModbusArea.InputRegister => $"x=4;{offset}",
         ModbusArea.Coil => $"x=1;{offset}",
         ModbusArea.DiscreteInput => $"x=2;{offset}",
-        _ => offset.ToString()    // HoldingRegister: 直接用数字
+        _ => offset.ToString(System.Globalization.CultureInfo.InvariantCulture)    // HoldingRegister: 直接用数字
     };
 }

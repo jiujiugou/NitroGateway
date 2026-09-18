@@ -71,7 +71,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
     /// <inheritdoc />
     public bool IsSubscriptionActive => _subscription is not null;
 
-    /// <summary>创建 OPC UA 驱动。由 <see cref="OpcUaRegistration"/> 注册到复合工厂（ILogger 非泛型，匹配工厂 CreateLogger(protocol.Name)）</summary>
+    /// <summary>创建 OPC UA 驱动。由组合根 <c>AddNitroProtocol</c> 的协议清单映射到复合工厂（ILogger 非泛型，匹配工厂 CreateLogger(protocol.Name)）</summary>
     public OpcUaDriver(DeviceConnection connection, ILogger logger)
     {
         _connection = connection;
@@ -271,6 +271,9 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 {
                     DisplayName = "NitroGateway.Collection",
                     PublishingInterval = interval,
+                    // SDK 1.5.378 SubscriptionOptions.PublishingEnabled 默认 false（实测），
+                    // 不显式置 true 则订阅建成后服务端永不推送数据（仅 KeepAlive），采集静默为零。
+                    PublishingEnabled = true,
                     KeepAliveCount = 10,
                     LifetimeCount = 30,
                     MaxNotificationsPerPublish = 0
@@ -642,9 +645,13 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
+    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    private int _disposed;
+
     /// <inheritdoc />
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         // ADR-072 D6：先停自愈重连 handler、解绑 KeepAlive，再关会话（幂等，单条各自吞异常）
         try { CancelReconnectHandler(); } catch { }
         try { UnbindKeepAlive(); } catch { }
@@ -930,7 +937,18 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
 
     private void OnMonitoredItemNotification(MonitoredItem item, MonitoredItemNotificationEventArgs args)
     {
-        if (item.Handle is not DevicePoint point || args.NotificationValue is not DataValue value)
+        if (item.Handle is not DevicePoint point)
+            return;
+        // SDK 1.5.378 MonitoredItemNotificationEventArgs.NotificationValue 实测为
+        // Opc.Ua.MonitoredItemNotification（老版本 SDK 为裸 DataValue），须统一解包取其 DataValue，
+        // 否则按 DataValue 判断将静默丢弃全部通知（实测：订阅建立、发布正常但 ValuesReceived 永不触发）。
+        var value = args.NotificationValue switch
+        {
+            DataValue dv => dv,
+            MonitoredItemNotification mon => mon.Value,
+            _ => null
+        };
+        if (value is null)
             return;
         if (!StatusCode.IsGood(value.StatusCode))
         {
@@ -1128,17 +1146,17 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         {
             return dataType switch
             {
-                DataType.Bool => new Variant(Convert.ToBoolean(value)),
-                DataType.Byte => new Variant(Convert.ToByte(value)),
-                DataType.Int16 => new Variant(Convert.ToInt16(value)),
-                DataType.UInt16 => new Variant(Convert.ToUInt16(value)),
-                DataType.Int32 => new Variant(Convert.ToInt32(value)),
-                DataType.UInt32 => new Variant(Convert.ToUInt32(value)),
-                DataType.Int64 => new Variant(Convert.ToInt64(value)),
-                DataType.UInt64 => new Variant(Convert.ToUInt64(value)),
-                DataType.Float => new Variant(Convert.ToSingle(value)),
-                DataType.Double => new Variant(Convert.ToDouble(value)),
-                DataType.String => new Variant(Convert.ToString(value) ?? string.Empty),
+                DataType.Bool => new Variant(Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.Byte => new Variant(Convert.ToByte(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.Int16 => new Variant(Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.UInt16 => new Variant(Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.Int32 => new Variant(Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.UInt32 => new Variant(Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.Int64 => new Variant(Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.UInt64 => new Variant(Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.Float => new Variant(Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.Double => new Variant(Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
+                DataType.String => new Variant(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty),
                 _ => ToVariant(value)
             };
         }
@@ -1165,7 +1183,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         ulong ul => new Variant(ul),
         float f => new Variant(f),
         double d => new Variant(d),
-        _ => new Variant(Convert.ToDouble(value))
+        _ => new Variant(Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture))
     };
 
     /// <summary>收集 Browse 结果中的引用（过滤 null 项）</summary>
