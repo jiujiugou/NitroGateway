@@ -256,7 +256,9 @@ public sealed class OpcUaDriverIntegrationTests
 
             await gotBatch.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Contains(received, v => v.Point.Id == intPoint.Id && v.Value!.Equals(42));
-            Assert.Contains(received, v => v.Point.Id == floatPoint.Id && (double)v.Value! == 3.14);
+            // DataType=Float 时 RawPointValue.Value 为 float 加宽后的 double
+            // （3.14f -> 3.140000104904175），须还原为 float 再比较，避免浮点精度误报。
+            Assert.Contains(received, v => v.Point.Id == floatPoint.Id && (float)(double)v.Value! == 3.14f);
         }
         finally
         {
@@ -403,7 +405,10 @@ public sealed class OpcUaDriverIntegrationTests
         {
             Endpoint = $"opc.tcp://127.0.0.1:{port}",
             ConnectTimeoutMs = 5000,
-            RequestTimeoutMs = 5000
+            RequestTimeoutMs = 5000,
+            // ADR-073：进程内 SimulationServer 仅提供无加密（None）端点；
+            // 驱动不允许隐式回退 None，须显式声明 SecurityPolicy=None 才能连上。
+            Parameters = new Dictionary<string, object> { ["SecurityPolicy"] = "None" }
         },
         NullLogger<OpcUaDriver>.Instance);
 

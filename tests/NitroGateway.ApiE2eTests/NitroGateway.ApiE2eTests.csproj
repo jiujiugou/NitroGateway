@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="*" />
+    <PackageReference Include="xunit" Version="*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="*" />
+    <!-- 与其它项目对齐：DI/Logging 10.0.11 链，避免 NU1605 降级 -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- L3 API E2E：WebApplicationFactory&lt;Program&gt; 真起 Webapi 组合根（DI/中间件/SQLite 迁移/种子） -->
+    <ProjectReference Include="..\..\src\NitroGateway.Webapi\NitroGateway.Webapi.csproj" />
+  </ItemGroup>
+
+</Project>

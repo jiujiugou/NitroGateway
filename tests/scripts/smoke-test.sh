@@ -1,12 +1,15 @@
 #!/bin/bash
-# NitroGateway 冒烟测试 — 启动→采集→查数据
-# 前置: Modbus模拟器开 :502, MQTT Broker开 :1883
+# NitroGateway 冒烟测试 — 启动→采集→查数据 (FACTORY-TEST T1 API 段)
+# 前置: Modbus模拟器开 :502, MQTT Broker开 :1883, 后端 :5100
+# 统一格式: 第二个参数 = JSON 结果文件（对齐 run-factory-tests.ps1 schema），省略则只打印
 set -e
 
 BASE=http://localhost:5100/api
+RESULT_FILE="${2:-}"
 PASS=0; FAIL=0
-pass() { echo "  ✅ $1"; PASS=$((PASS+1)); }
-fail() { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
+STEPS=()
+pass() { echo "  ✅ $1"; PASS=$((PASS+1)); STEPS+=("{\"name\":\"$1\",\"ok\":true,\"detail\":\"\"}"); }
+fail() { echo "  ❌ $1"; FAIL=$((FAIL+1)); STEPS+=("{\"name\":\"$1\",\"ok\":false,\"detail\":\"$2\"}"); }
 
 echo "══════════════ NitroGateway 冒烟测试 ═══════════════"
 echo ""
@@ -56,4 +59,18 @@ curl -sX DELETE $BASE/devices/$DID -H "Authorization: Bearer $TOKEN" > /dev/null
 echo ""
 echo "══════════════ 结果: $PASS 通过 / $FAIL 失败 ═══════════════"
 [ "$FAIL" -eq 0 ] && echo "✅ 冒烟测试全部通过" || echo "❌ 有 $FAIL 项失败"
+
+# 统一 JSON 输出（对齐 scripts/run-factory-tests.ps1 的 T1 schema）
+if [ -n "$RESULT_FILE" ]; then
+  JOINED=$(IFS=,; echo "${STEPS[*]}")
+  {
+    echo "{"
+    echo "  \"scenarioId\": \"T1\","
+    if [ "$FAIL" -eq 0 ]; then echo "  \"result\": \"pass\","; else echo "  \"result\": \"fail\","; fi
+    echo "  \"steps\": [ $JOINED ],"
+    echo "  \"message\": \"smoke-test.sh 共 $PASS 通过 / $FAIL 失败\""
+    echo "}"
+  } > "$RESULT_FILE"
+  echo "结果已写入: $RESULT_FILE"
+fi
 exit $FAIL

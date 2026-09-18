@@ -325,6 +325,124 @@ public class SqliteMeasurementStoreTests
         Assert.Equal(pointId, row.DevicePointId);
     }
 
+    /// <summary>读某点位的 value / raw_value 列（未命中返回 null,null）</summary>
+    private (double? Value, string? RawValue) ReadRow(SqliteConnection conn, Guid pointId)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT value, raw_value FROM measurements WHERE point_id = @pid";
+        cmd.Parameters.AddWithValue("@pid", pointId.ToString());
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read()) return (null, null);
+        var value = reader.IsDBNull(0) ? (double?)null : reader.GetDouble(0);
+        var raw = reader.IsDBNull(1) ? null : reader.GetString(1);
+        return (value, raw);
+    }
+
+    /// <summary>
+    /// 回归：非数字 String 点位不再把整批写入拖垮（Convert.ToDouble("abc") 曾抛 FormatException，
+    /// 使同批数值点历史落库整体失败）。修复后该点落 NULL value、真值进 raw_value，批内数值点照常落库。
+    /// </summary>
+    [Fact]
+    public async Task WriteAsync_StringWithNonNumericText_DoesNotKillBatch()
+    {
+        using var db = new TempMeasurementDb();
+        var store = new SqliteMeasurementStore(db.ConnectionString);
+        var deviceId = Guid.NewGuid();
+        var floatPoint = Guid.NewGuid();
+        var strPoint = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        var write = await store.WriteAsync([
+            NewSnapshot(deviceId, floatPoint, now),
+            new PointSnapshot
+            {
+                DeviceId = deviceId,
+                DevicePointId = strPoint,
+                PointName = "S1",
+                DataType = DataType.String,
+                Value = "abc",
+                RawValue = "abc",
+                Timestamp = now,
+                Quality = QualityCode.Good
+            }
+        ]);
+
+        Assert.True(write.IsSuccess, write.Error?.Message);
+        using var conn = new SqliteConnection(db.ConnectionString);
+        conn.Open();
+        var (floatVal, _) = ReadRow(conn, floatPoint);
+        Assert.Equal(36.6, floatVal);
+        var (strVal, strRaw) = ReadRow(conn, strPoint);
+        Assert.Null(strVal);                       // 不可转 → value 落 NULL
+        Assert.Equal("\"abc\"", strRaw);            // 真值保留在 raw_value（JSON）
+    }
+
+    /// <summary>DateTime 等网关不可表示的对象值也不中断整批；该点 value 落 NULL、数值点不受影响</summary>
+    [Fact]
+    public async Task WriteAsync_UnsupportedObjectValue_DoesNotKillBatch()
+    {
+        using var db = new TempMeasurementDb();
+        var store = new SqliteMeasurementStore(db.ConnectionString);
+        var deviceId = Guid.NewGuid();
+        var floatPoint = Guid.NewGuid();
+        var otherPoint = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        var write = await store.WriteAsync([
+            NewSnapshot(deviceId, floatPoint, now),
+            new PointSnapshot
+            {
+                DeviceId = deviceId,
+                DevicePointId = otherPoint,
+                PointName = "D1",
+                DataType = DataType.String,
+                // OPC UA DateTime 等真实类型透传：声明 String 但值是不可转 double 的对象
+                Value = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                RawValue = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                Timestamp = now,
+                Quality = QualityCode.Good
+            }
+        ]);
+
+        Assert.True(write.IsSuccess, write.Error?.Message);
+        using var conn = new SqliteConnection(db.ConnectionString);
+        conn.Open();
+        var (floatVal, _) = ReadRow(conn, floatPoint);
+        Assert.Equal(36.6, floatVal);
+        var (otherVal, _) = ReadRow(conn, otherPoint);
+        Assert.Null(otherVal);
+    }
+
+    /// <summary>Bool 点位仍以数值 1/0 落 value 列（历史曲线/状态依赖此行为，修复不可回归）</summary>
+    [Fact]
+    public async Task WriteAsync_BoolValue_StoredAsNumericOneOrZero()
+    {
+        using var db = new TempMeasurementDb();
+        var store = new SqliteMeasurementStore(db.ConnectionString);
+        var deviceId = Guid.NewGuid();
+        var pointId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await store.WriteAsync([
+            new PointSnapshot
+            {
+                DeviceId = deviceId,
+                DevicePointId = pointId,
+                PointName = "B1",
+                DataType = DataType.Bool,
+                Value = true,
+                RawValue = true,
+                Timestamp = now,
+                Quality = QualityCode.Good
+            }
+        ]);
+
+        using var conn = new SqliteConnection(db.ConnectionString);
+        conn.Open();
+        var (value, _) = ReadRow(conn, pointId);
+        Assert.Equal(1.0, value);
+    }
+
     private static void DropMeasurementsTable(string connectionString)
     {
         using var conn = new SqliteConnection(connectionString);
