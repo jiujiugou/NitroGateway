@@ -12,7 +12,6 @@
 | [docs/04-测试报告.md](docs/04-测试报告.md) | 测试：体系、782 单测 + 51 集成实测、核心覆盖、出厂门禁 |
 | [docs/05-部署运维.md](docs/05-部署运维.md) | 部署运维：compose / systemd+看门狗 / GHCR / 环境变量 / 排障 |
 | [docs/06-项目复盘.md](docs/06-项目复盘.md) | 复盘：演进主线、ADR 决策地图、做得好/教训/待办 |
-| [docs/08-测试策略.md](docs/08-测试策略.md) | 测试统一策略：分层地图、单一入口、门禁裁判、AI 工作流 |
 | [notes/ADR/README.md](notes/ADR/README.md) | ADR 决策档案导航（讲故事主线 + 必读 Top 12） |
 | [FACTORY-TEST.md](FACTORY-TEST.md) | 出厂门禁 T0~T7（P0+P1 全过才放行） |
 
