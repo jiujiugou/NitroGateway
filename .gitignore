@@ -492,3 +492,13 @@ backups/
 
 # 临时分析脚本（不提交）
 .scratch/
+
+# OPC UA 运行期生成的证书 / PKI（不提交）
+**/opcua/pki/
+
+# 抓包 / 性能分析产物（不提交）
+*.nettrace
+*[Ss]peedscope*.json
+
+# 疑似密钥导出（不提交；如有请轮换）
+docs/sk-or-*.txt
