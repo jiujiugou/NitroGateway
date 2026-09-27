@@ -11,11 +11,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="*" />
     <PackageReference Include="xunit" Version="*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="*" />
-    <!-- 与 Logging 同步对齐 10.0.11（Identity.Core 链要求 DI >= 10.0.11），避免 NU1605 降级 -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <!-- 与 Logging 同步对齐 10.0.12（Identity.Core 链要求 DI >= 10.0.12），避免 NU1605 降级 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <!-- 版本随 OPC Server 传递依赖对齐（Core 1.5.378.156 要求 Logging >= 10.0.8），与 OpcUa 驱动解析版本一致。
-         10.0.11：写功能（docs/14）使 Device → Security（Identity.Core 10.0.11 要求 Logging >= 10.0.11）进入本图，直接引用对齐避免 NU1605 降级。 -->
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.11" />
+         10.0.12：写功能（docs/14）使 Device → Security（Identity.Core 10.0.12 要求 Logging >= 10.0.12）进入本图，直接引用对齐避免 NU1605 降级。 -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.12" />
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="1.5.378.145" />
   </ItemGroup>
 

@@ -13,6 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
     <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <!-- 通用机制层：TTL 缓存（AlarmRuleCache） -->
+    <ProjectReference Include="..\NitroGateway.Primitives\NitroGateway.Primitives.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
   </ItemGroup>
 

@@ -1,9 +1,9 @@
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
+using NitroGateway.Primitives.Resilience;
 using NitroGateway.Shared;
 using Microsoft.Extensions.Logging;
 using Polly;
-using Polly.Retry;
 
 namespace NitroGateway.Protocol.Abstractions
 {
@@ -39,31 +39,18 @@ namespace NitroGateway.Protocol.Abstractions
             var firstDelay = retryDelay ?? DefaultRetryInterval;
             _maxRetryAttempts = attempts;
 
-            var builder = new ResiliencePipelineBuilder()
-                .AddTimeout(timeout);                    // 每次尝试独立超时
-
-            // Polly 要求 MaxRetryAttempts ≥ 1；为 0 时（测试用）直接跳过重试策略
-            if (attempts > 0)
-            {
-                builder.AddRetry(new RetryStrategyOptions
+            // 机制（Polly 管线构造）由通用工厂统一；此处只给策略参数（ADR-075 机制的延伸）。
+            _pipeline = ResiliencePipelineFactory.Build(
+                new ResiliencePolicy
                 {
-                    MaxRetryAttempts = attempts,
-                    Delay = firstDelay,                 // 首次重试延迟
-                    BackoffType = DelayBackoffType.Exponential, // 500ms → 1s → 2s
-                    OnRetry = args =>
-                    {
-                        _logger.LogDebug(
-                            "第 {Attempt}/{Max} 次重试（{DelayMs}ms 后）: {Error}",
-                            args.AttemptNumber + 1,
-                            attempts,
-                            args.RetryDelay.TotalMilliseconds,
-                            args.Outcome.Exception?.Message ?? "未知");
-                        return ValueTask.CompletedTask;
-                    }
-                });
-            }
-
-            _pipeline = builder.Build();
+                    MaxRetryAttempts = attempts,                    // Polly 要求 ≥1；为 0 时工厂自动跳过重试策略
+                    RetryDelay = firstDelay,                        // 首次重试延迟
+                    BackoffType = DelayBackoffType.Exponential,     // 500ms → 1s → 2s
+                    Timeout = timeout,                              // 先于重试加入（与原实现一致的顺序）
+                    RetryLogLevel = LogLevel.Debug,
+                    OperationName = "协议读取"
+                },
+                _logger);
         }
 
         /// <inheritdoc />
@@ -97,6 +84,9 @@ namespace NitroGateway.Protocol.Abstractions
             int publishingIntervalMs,
             CancellationToken ct = default)
         {
+            if (IsDisposed)
+                return OperationalError.Protocol("驱动已释放");
+
             if (_inner is not ISubscriptionSource source)
                 return OperationalError.Protocol("协议不支持订阅采集");
 
@@ -109,30 +99,41 @@ namespace NitroGateway.Protocol.Abstractions
 
         /// <inheritdoc />
         public Task<OperationResult> StopSubscriptionAsync(CancellationToken ct = default)
-            => _inner is ISubscriptionSource source
+        {
+            if (IsDisposed)
+                return Task.FromResult(OperationResult.Failure(OperationalError.Protocol("驱动已释放")));
+
+            return _inner is ISubscriptionSource source
                 ? source.StopSubscriptionAsync(ct)
                 : Task.FromResult<OperationResult>(OperationalError.Protocol("协议不支持订阅采集"));
+        }
 
         /// <summary>
-        /// 建连单飞：与读/订阅的自动建连共用 <see cref="_connectGate"/>，
-        /// 保证同一驱动实例任意入口（显式 Connect + 读写/订阅触发）同时只有一次 <c>ConnectAsync</c> 在途。
-        /// 此前为直接透传，导致写路径的显式建连与读路径的自动建连可并发进入内层
-        /// （Modbus TCP 的 ConnectAsync 自身无闸门，会并发访问同一客户端）。
+        /// 建连：已连接直接返回，否则转调内层 <c>ConnectAsync</c>。
+        /// <para>串行化由<b>各具体驱动实例自身的闸门</b>负责（ADR-074），装饰器只做超时/重试/自动建连编排。</para>
         /// </summary>
         public Task<OperationResult> ConnectAsync(CancellationToken ct = default)
-            => EnsureConnectedAsync(ct);
+            => IsDisposed
+                ? Task.FromResult(OperationResult.Failure(OperationalError.Protocol("驱动已释放")))
+                : EnsureConnectedAsync(ct);
 
         /// <summary>透传到内层驱动</summary>
         public Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
-            => _inner.DisconnectAsync(ct);
+            => IsDisposed
+                ? Task.FromResult(OperationResult.Failure(OperationalError.Protocol("驱动已释放")))
+                : _inner.DisconnectAsync(ct);
 
         /// <summary>透传到内层驱动</summary>
         public Task<OperationResult> PingAsync(CancellationToken ct = default)
-            => _inner.PingAsync(ct);
+            => IsDisposed
+                ? Task.FromResult(OperationResult.Failure(OperationalError.Protocol("驱动已释放")))
+                : _inner.PingAsync(ct);
 
         /// <summary>透传到内层驱动（不经过 Polly，由上层控制重试）</summary>
         public Task<OperationResult<RawPointValue>> ReadAsync(DevicePoint point, CancellationToken ct = default)
-            => _inner.ReadAsync(point, ct);
+            => IsDisposed
+                ? Task.FromResult(OperationResult<RawPointValue>.Failure(OperationalError.Protocol("驱动已释放")))
+                : _inner.ReadAsync(point, ct);
 
         /// <summary>
         /// 批量读取 — 核心方法，经过 Polly 管线。
@@ -143,6 +144,9 @@ namespace NitroGateway.Protocol.Abstractions
             IEnumerable<DevicePoint> points,
             CancellationToken ct = default)
         {
+            if (IsDisposed)
+                return OperationResult<IReadOnlyList<RawPointValue>>.Failure(OperationalError.Protocol("驱动已释放"));
+
             try
             {
                 return await _pipeline.ExecuteAsync(async token =>
@@ -174,11 +178,15 @@ namespace NitroGateway.Protocol.Abstractions
 
         /// <summary>透传到内层驱动（不经过 Polly，由上层控制重试）</summary>
         public Task<OperationResult> WriteAsync(DevicePoint point, object value, CancellationToken ct = default)
-            => _inner.WriteAsync(point, value, ct);
+            => IsDisposed
+                ? Task.FromResult(OperationResult.Failure(OperationalError.Protocol("驱动已释放")))
+                : _inner.WriteAsync(point, value, ct);
 
         /// <summary>透传到内层驱动（不经过 Polly，由上层控制重试）</summary>
         public Task<OperationResult> WriteBatchAsync(IEnumerable<KeyValuePair<DevicePoint, object>> entries, CancellationToken ct = default)
-            => _inner.WriteBatchAsync(entries, ct);
+            => IsDisposed
+                ? Task.FromResult(OperationResult.Failure(OperationalError.Protocol("驱动已释放")))
+                : _inner.WriteBatchAsync(entries, ct);
 
         /// <summary>
         /// 透传节点浏览（ADR-070 层次 1）：内层驱动支持时转发，否则返回明确失败。
@@ -187,15 +195,31 @@ namespace NitroGateway.Protocol.Abstractions
         /// </summary>
         public Task<OperationResult<IReadOnlyList<BrowseNode>>> BrowseAsync(
             string parentNodeId = "", CancellationToken ct = default)
-            => _inner is IBrowseableDriver browseable
+        {
+            if (IsDisposed)
+                return Task.FromResult(OperationResult<IReadOnlyList<BrowseNode>>.Failure(
+                    OperationalError.Protocol("驱动已释放")));
+
+            return _inner is IBrowseableDriver browseable
                 ? browseable.BrowseAsync(parentNodeId, ct)
                 : Task.FromResult<OperationResult<IReadOnlyList<BrowseNode>>>(
                     OperationalError.Protocol("协议不支持节点浏览"));
+        }
 
-        /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+        /// <summary>0=未释放，1=已释放；保证 <see cref="Dispose"/> 幂等。</summary>
         private int _disposed;
 
-        /// <summary>释放内层驱动资源（TCP socket、底层客户端等）；幂等，重复调用安全</summary>
+        /// <summary>装饰器是否已释放；释放后到达的调用一律快速失败、不触达内层。</summary>
+        private bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+
+        /// <summary>
+        /// 释放内层驱动资源（TCP socket、底层客户端等）；幂等。
+        /// <para><b>不排水（ADR-077）</b>：不等待在途调用——装饰器只做可靠性横切，
+        /// 不承担并发生命周期原语。释放后到达的调用由 <see cref="IsDisposed"/> 检查快速失败；
+        /// 释放瞬间已通过检查的在途调用可能失败，由调用方按可恢复错误处理（见并发模型 X1）。
+        /// 若在此同步等待在途续体，在带 SynchronizationContext 的宿主（桌面 WPF）会与
+        /// 在途调用的续体互等 → 死锁，故明确不做。</para>
+        /// </summary>
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;

@@ -10,10 +10,14 @@
     <ProjectReference Include="..\..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
     <ProjectReference Include="..\..\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
     <ProjectReference Include="..\..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
+    <!-- 通用机制层：韧性管线工厂（重试/退避/超时） -->
+    <ProjectReference Include="..\..\NitroGateway.Primitives\NitroGateway.Primitives.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="MQTTnet" Version="5.1.0.1559" />
+    <!-- 重连重试/退避策略外包给 Polly（指数退避 + 抖动 + 上限） -->
+    <PackageReference Include="Polly.Core" Version="8.7.0" />
   </ItemGroup>
 
   <ItemGroup>

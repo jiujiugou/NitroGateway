@@ -38,23 +38,31 @@ public sealed class OpcUaBrowseController : ControllerBase
         if (deviceResult.IsFailure)
             return NotFound(ApiResponse<List<BrowseNodeDto>>.Fail("NotFound", "设备不存在"));
 
-        var driver = _pool.GetOrCreate(deviceResult.Value!);
-        // 能力声明优先：非 OPC UA（Modbus/S7 等）不建连即拒绝，避免为浏览空连一次。
-        if (!driver.Capability.SupportsBrowse || driver is not IBrowseableDriver browseable)
-            return BadRequest(ApiResponse<List<BrowseNodeDto>>.Fail("Browse", "协议不支持节点浏览"));
-
-        if (driver.State != DriverState.Connected)
+        try
         {
-            var connect = await driver.ConnectAsync(ct);
-            if (connect.IsFailure)
-                return BadRequest(ApiResponse<List<BrowseNodeDto>>.Fail("Browse", $"设备连接失败：{connect.Error!.Message}"));
+            var driver = _pool.GetOrCreate(deviceResult.Value!);
+            // 能力声明优先：非 OPC UA（Modbus/S7 等）不建连即拒绝，避免为浏览空连一次。
+            if (!driver.Capability.SupportsBrowse || driver is not IBrowseableDriver browseable)
+                return BadRequest(ApiResponse<List<BrowseNodeDto>>.Fail("Browse", "协议不支持节点浏览"));
+
+            if (driver.State != DriverState.Connected)
+            {
+                var connect = await driver.ConnectAsync(ct);
+                if (connect.IsFailure)
+                    return BadRequest(ApiResponse<List<BrowseNodeDto>>.Fail("Browse", $"设备连接失败：{connect.Error!.Message}"));
+            }
+
+            var result = await browseable.BrowseAsync(parent ?? "", ct);
+            if (result.IsFailure)
+                return BadRequest(ApiResponse<List<BrowseNodeDto>>.Fail("Browse", result.Error!.Message));
+
+            return Ok(ApiResponse<List<BrowseNodeDto>>.Ok(result.Value!.Select(Map).ToList()));
         }
-
-        var result = await browseable.BrowseAsync(parent ?? "", ct);
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<List<BrowseNodeDto>>.Fail("Browse", result.Error!.Message));
-
-        return Ok(ApiResponse<List<BrowseNodeDto>>.Ok(result.Value!.Select(Map).ToList()));
+        catch (Exception ex)
+        {
+            // 驱动已释放/异常等转为 400，避免冒泡成 500
+            return BadRequest(ApiResponse<List<BrowseNodeDto>>.Fail("Browse", $"浏览异常：{ex.Message}"));
+        }
     }
 
     private static BrowseNodeDto Map(BrowseNode n) => new()

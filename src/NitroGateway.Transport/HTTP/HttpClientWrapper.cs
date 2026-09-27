@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using NitroGateway.Primitives.Resilience;
 using NitroGateway.Shared;
 using Polly;
 
@@ -58,26 +59,24 @@ public sealed class HttpClientWrapper : IHttpClient, IDisposable
             _inner.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.BearerToken);
 
-        _resilience = new ResiliencePipelineBuilder<HttpResponseMessage>()
-            .AddRetry(new Polly.Retry.RetryStrategyOptions<HttpResponseMessage>
+        // 机制（Polly 管线构造）由通用工厂统一；此处只给策略参数。
+        _resilience = ResiliencePipelineFactory.Build<HttpResponseMessage>(
+            new ResiliencePolicy
             {
                 MaxRetryAttempts = options.MaxRetries,
+                RetryDelay = TimeSpan.FromMilliseconds(options.RetryBackoffBaseMs),
                 BackoffType = DelayBackoffType.Exponential,
-                Delay = TimeSpan.FromMilliseconds(options.RetryBackoffBaseMs),
-                ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
-                    .Handle<HttpRequestException>()
-                    .Handle<TaskCanceledException>()
-                    .HandleResult(r => (int)r.StatusCode >= 500),
-                OnRetry = args =>
-                {
-                    _logger.LogWarning("HTTP 重试 {Attempt}/{Max}，等待 {Delay}ms",
-                        args.AttemptNumber, options.MaxRetries, args.RetryDelay.TotalMilliseconds);
-                    return default;
-                }
-            })
-            .Build();
+                RetryLogLevel = LogLevel.Warning,
+                OperationName = "HTTP 请求"
+            },
+            shouldHandle: new PredicateBuilder<HttpResponseMessage>()
+                .Handle<HttpRequestException>()
+                .Handle<TaskCanceledException>()
+                .HandleResult(r => (int)r.StatusCode >= 500),
+            logger: _logger);
 
-        _noRetry = new ResiliencePipelineBuilder<HttpResponseMessage>().Build();
+        _noRetry = ResiliencePipelineFactory.Build<HttpResponseMessage>(
+            new ResiliencePolicy { MaxRetryAttempts = 0 });
     }
 
     /// <inheritdoc />

@@ -94,21 +94,30 @@ public sealed class WriteService : IWriteService
         }
 
         // ── 5. 驱动写：取长连接驱动（未连接先建连），写原始值（工程值反向缩放）──
-        var driver = _pool.GetOrCreate(device);
-        if (driver.State != DriverState.Connected)
-        {
-            var connect = await driver.ConnectAsync(ct);
-            if (connect.IsFailure)
-                return OperationalError.Communication($"设备连接失败：{connect.Error!.Message}");
-        }
-
         var writeValue = ToRawValue(point, typedValue);
-        var result = await driver.WriteAsync(point, writeValue, ct);
-        if (result.IsFailure)
+        try
         {
-            _logger.LogWarning("写值失败: Device={DeviceId} Point={PointId} Value={Value} Error={Error}",
-                request.DeviceId, request.PointId, writeValue, result.Error!.Message);
-            return result.Error!;
+            var driver = _pool.GetOrCreate(device);
+            if (driver.State != DriverState.Connected)
+            {
+                var connect = await driver.ConnectAsync(ct);
+                if (connect.IsFailure)
+                    return OperationalError.Communication($"设备连接失败：{connect.Error!.Message}");
+            }
+
+            var result = await driver.WriteAsync(point, writeValue, ct);
+            if (result.IsFailure)
+            {
+                _logger.LogWarning("写值失败: Device={DeviceId} Point={PointId} Value={Value} Error={Error}",
+                    request.DeviceId, request.PointId, writeValue, result.Error!.Message);
+                return result.Error!;
+            }
+        }
+        catch (Exception ex)
+        {
+            // 驱动已释放/异常等一律转为可恢复错误，避免冒泡成 500
+            _logger.LogError(ex, "写值异常: Device={DeviceId} Point={PointId}", request.DeviceId, request.PointId);
+            return OperationalError.Communication($"写值异常：{ex.Message}");
         }
 
         _logger.LogInformation("写值成功: Device={DeviceId} Point={PointId} Value={Value}",

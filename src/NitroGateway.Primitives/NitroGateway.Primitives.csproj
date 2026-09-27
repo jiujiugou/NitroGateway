@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 通用机制层：承载跨领域复用的机制（韧性管线等）。
+         只依赖共享内核与第三方库，不依赖任何领域模块。 -->
+    <PackageReference Include="Polly.Core" Version="8.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NitroGateway.UnitTests" />
+  </ItemGroup>
+
+</Project>

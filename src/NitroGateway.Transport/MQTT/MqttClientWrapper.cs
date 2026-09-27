@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using NitroGateway.Primitives.Resilience;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Telemetry;
 using NitroGateway.Telemetry.Tracing;
+using Polly;
 using MqttNet = MQTTnet;
 
 namespace NitroGateway.Transport.MQTT;
@@ -39,7 +41,9 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
     private readonly string _clientId;
 
-    private int _reconnectCount;
+    // ADR-006 P1-3：重连的重试/退避策略外包给 Polly（指数退避 + 抖动 + 上限），
+    // 不再自写 attempt 循环与退避算法（原 int 溢出 bug 由 Polly 的 MaxDelay 结构性消除）。
+    private readonly ResiliencePipeline _reconnectPipeline;
     private CancellationTokenSource? _reconnectCts;
 
     /// <inheritdoc />
@@ -83,6 +87,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             _toggle.EnabledChanged += OnEnabledChanged;
         // 避免每次 ConnectAsync 生成新 ID 造成 CleanStart 会话漂移。
         _clientId = options.ClientId ?? $"NitroGateway-{Environment.MachineName}-{Guid.NewGuid():N}";
+        _reconnectPipeline = BuildReconnectPipeline(_options, _logger);
         _channel = Channel.CreateBounded<MqttMessage>(new BoundedChannelOptions(10_000)
         {
             FullMode = BoundedChannelFullMode.Wait
@@ -106,58 +111,10 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
         SetState(MqttConnectionState.Connecting);
 
+        OperationResult result;
         try
         {
-            var builder = new MqttNet.MqttClientOptionsBuilder()
-                .WithClientId(_clientId)
-                .WithCleanStart()
-                .WithKeepAlivePeriod(TimeSpan.FromSeconds(_options.KeepAliveSeconds));
-
-            if (_options.UseTls)
-                builder.WithTlsOptions(o => o.WithSslProtocols(System.Security.Authentication.SslProtocols.Tls12));
-
-            if (!string.IsNullOrEmpty(_options.Username))
-                builder.WithCredentials(_options.Username, _options.Password);
-
-            builder.WithTcpServer(_options.Host, _options.Port);
-
-            var result = await _inner.ConnectAsync(builder.Build(), ct);
-
-            if (result.ResultCode == MqttNet.MqttClientConnectResultCode.Success)
-            {
-                // 避免 UI 短暂显示「已连接」与「已关闭」不一致。
-                if (_toggle is not null && !_toggle.IsEnabled)
-                {
-                    _logger.LogInformation("MQTT 连接成功但转发开关已关闭，立即断开");
-                    SetState(MqttConnectionState.Disabled);
-                    try
-                    {
-                        var disconnectOptions = new MqttNet.MqttClientDisconnectOptions
-                        {
-                            Reason = MqttNet.MqttClientDisconnectOptionsReason.NormalDisconnection
-                        };
-                        await _inner.DisconnectAsync(disconnectOptions, ct);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "MQTT 关闭开关断开连接异常");
-                    }
-                    return OperationalError.General("MQTT 已关闭（转发开关关闭）");
-                }
-
-                SetState(MqttConnectionState.Connected);
-                _reconnectCount = 0;
-                // ADR-006 P1-2：CleanStart 会话重连后订阅已丢，这里重放记录过的订阅
-                await ReplaySubscriptionsAsync(ct);
-                return OperationResult.Success();
-            }
-
-            // ADR-006 P1-3：连接被拒绝也纳入重连流程（不依赖 DisconnectedAsync 事件时序）
-            return HandleConnectFailure($"MQTT 连接失败: {result.ResultCode} - {result.ReasonString}");
+            result = await ConnectCoreAsync(ct);
         }
         catch (OperationCanceledException)
         {
@@ -169,8 +126,75 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            return HandleConnectFailure($"MQTT 连接异常: {ex.Message}");
+            result = OperationalError.General($"MQTT 连接异常: {ex.Message}");
         }
+
+        if (result.IsSuccess)
+        {
+            SetState(MqttConnectionState.Connected);
+            // ADR-006 P1-2：CleanStart 会话重连后订阅已丢，这里重放记录过的订阅
+            await ReplaySubscriptionsAsync(ct);
+            return OperationResult.Success();
+        }
+
+        // 连接过程中转发开关被关闭：不触发重连循环，保持 Disabled。
+        if (State == MqttConnectionState.Disabled)
+            return result;
+
+        // ADR-006 P1-3：连接被拒绝也纳入重连流程（不依赖 DisconnectedAsync 事件时序）
+        return HandleConnectFailure(result.Error?.Message ?? "MQTT 连接失败");
+    }
+
+    /// <summary>
+    /// 单次连接尝试（不含自动重连触发）：构造选项、调用 MQTTnet、处理"连上后发现开关已关"。
+    /// 供 <see cref="ConnectAsync"/> 与 Polly 重连管线共用——这样重连管线不会经
+    /// <see cref="HandleConnectFailure"/> 再次触发重连（避免自递归）。
+    /// </summary>
+    private async Task<OperationResult> ConnectCoreAsync(CancellationToken ct)
+    {
+        var builder = new MqttNet.MqttClientOptionsBuilder()
+            .WithClientId(_clientId)
+            .WithCleanStart()
+            .WithKeepAlivePeriod(TimeSpan.FromSeconds(_options.KeepAliveSeconds));
+
+        if (_options.UseTls)
+            builder.WithTlsOptions(o => o.WithSslProtocols(System.Security.Authentication.SslProtocols.Tls12));
+
+        if (!string.IsNullOrEmpty(_options.Username))
+            builder.WithCredentials(_options.Username, _options.Password);
+
+        builder.WithTcpServer(_options.Host, _options.Port);
+
+        var result = await _inner.ConnectAsync(builder.Build(), ct);
+
+        if (result.ResultCode != MqttNet.MqttClientConnectResultCode.Success)
+            return OperationalError.General($"MQTT 连接失败: {result.ResultCode} - {result.ReasonString}");
+
+        // 避免 UI 短暂显示「已连接」与「已关闭」不一致。
+        if (_toggle is not null && !_toggle.IsEnabled)
+        {
+            _logger.LogInformation("MQTT 连接成功但转发开关已关闭，立即断开");
+            SetState(MqttConnectionState.Disabled);
+            try
+            {
+                var disconnectOptions = new MqttNet.MqttClientDisconnectOptions
+                {
+                    Reason = MqttNet.MqttClientDisconnectOptionsReason.NormalDisconnection
+                };
+                await _inner.DisconnectAsync(disconnectOptions, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "MQTT 关闭开关断开连接异常");
+            }
+            return OperationalError.General("MQTT 已关闭（转发开关关闭）");
+        }
+
+        return OperationResult.Success();
     }
 
     /// <inheritdoc />
@@ -466,76 +490,93 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     }
 
     /// <summary>
-    /// 指数退避自动重连。超过最大次数后状态变为 Faulted，
-    /// 由 MqttHostedService 监督循环周期复位（ADR-006 P1-3）。
+    /// 重连管线：重试/退避策略由 Polly 提供（指数退避 + 抖动 + 上限），
+    /// 不再自写 attempt 循环与退避算法。第 N 次重连延迟 = Base × 2^(N-1)，封顶 MaxInterval。
+    /// <para><b>尝试次数语义：</b>总尝试次数 = <see cref="MqttConnectionOptions.MaxReconnectAttempts"/>
+    /// （初始 1 次 + 重试 Max-1 次），与原 ADR-006 P1-3 语义一致。</para>
+    /// <para><paramref name="onRetryDelay"/> 仅测试用，用于观测每次重试的实际延迟以验证封顶。</para>
     /// </summary>
-    /// <summary>
-    /// 第 attempt 次重连的退避延迟（毫秒）。提取为纯函数以便属性测试。
-    /// <para>指数封顶 + long 运算：原式 <c>base * 2^(attempt-1)</c> 在 attempt≈23 时 int 溢出为负，
-    /// 负延迟传入 <c>Task.Delay</c> 会抛 ArgumentOutOfRangeException、重连永久停摆——属性测试发现。
-    /// 返回恒落在 [0, maxMs]。</para>
-    /// </summary>
-    internal static int ComputeBackoffDelayMs(int baseMs, int attempt, int maxMs)
+    internal static ResiliencePipeline BuildReconnectPipeline(
+        MqttConnectionOptions options,
+        ILogger? logger = null,
+        Action<TimeSpan>? onRetryDelay = null)
+        // 机制（Polly 管线构造）由通用工厂统一；此处只给策略参数。
+        => ResiliencePipelineFactory.Build(
+            new ResiliencePolicy
+            {
+                // 总尝试次数 = MaxReconnectAttempts（初始 1 + 重试 Max-1）
+                MaxRetryAttempts = Math.Max(0, options.MaxReconnectAttempts - 1),
+                RetryDelay = TimeSpan.FromMilliseconds(options.ReconnectBackoffBaseMs),
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = true,
+                MaxDelay = TimeSpan.FromMilliseconds(options.ReconnectMaxIntervalMs),
+                RetryLogLevel = LogLevel.Information,
+                OperationName = "MQTT 重连"
+            },
+            logger,
+            onRetryDelay);
+
+    /// <summary>重连的每次尝试：连不上则抛 <see cref="MqttConnectAttemptException"/> 交给 Polly 决策是否重试。</summary>
+    private async ValueTask ExecuteReconnectAttemptAsync(CancellationToken ct)
     {
-        var exponent = Math.Clamp(attempt - 1, 0, 30);
-        var raw = (long)baseMs * (1L << exponent);
-        return (int)Math.Min(raw, maxMs);
+        var result = await ConnectCoreAsync(ct);
+        if (result.IsFailure)
+            throw new MqttConnectAttemptException(result.Error?.Message ?? "MQTT 连接失败");
+
+        // 成功：置 Connected 并重放订阅（ADR-006 P1-2）
+        SetState(MqttConnectionState.Connected);
+        await ReplaySubscriptionsAsync(ct);
     }
 
+    /// <summary>
+    /// 自动重连（单实例，由 <see cref="StartReconnectLoop"/> 保证）。
+    /// 重试/退避交给 <see cref="_reconnectPipeline"/>；耗尽后置 Faulted，
+    /// 由 MqttHostedService 监督循环周期复位（ADR-006 P1-3）。
+    /// </summary>
     private async Task TryReconnectAsync()
     {
         try
         {
+            CancelReconnect();
+            _reconnectCts = new CancellationTokenSource();
+            var token = _reconnectCts.Token;
+
+            SetState(MqttConnectionState.Reconnecting);
+
             try
             {
-                CancelReconnect();
-                _reconnectCts = new CancellationTokenSource();
-                var token = _reconnectCts.Token;
-
-                SetState(MqttConnectionState.Reconnecting);
-
-                while (_reconnectCount < _options.MaxReconnectAttempts && !token.IsCancellationRequested)
-                {
-                    _reconnectCount++;
-
-                    var delayMs = ComputeBackoffDelayMs(
-                        _options.ReconnectBackoffBaseMs, _reconnectCount, _options.ReconnectMaxIntervalMs);
-
-                    _logger.LogInformation("MQTT 重连 {Attempt}/{Max}，等待 {Delay}ms",
-                        _reconnectCount, _options.MaxReconnectAttempts, delayMs);
-
-                    try { await Task.Delay(delayMs, token); }
-                    catch (OperationCanceledException) { return; }
-
-                    try
-                    {
-                        var result = await ConnectAsync(token);
-                        if (result.IsSuccess) return;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        return;
-                    }
-                }
-
-                _logger.LogError("MQTT 重连失败，已达最大重试次数 {Max}", _options.MaxReconnectAttempts);
-                SetState(MqttConnectionState.Faulted);
+                // Polly 默认不对 OperationCanceledException 重试；取消（关停/开关关闭）经 token 传播后
+                // 直接抛出，状态由取消方设置，这里无需再改状态。
+                await _reconnectPipeline.ExecuteAsync(ExecuteReconnectAttemptAsync, token);
             }
-            finally
+            catch (OperationCanceledException)
             {
-                // ADR-006 P3-2：成功/失败/取消退出循环都释放 CTS，避免残留到下次断开才清理
-                _reconnectCts?.Dispose();
-                _reconnectCts = null;
-                lock (_reconnectLock) _reconnectLoopActive = false;
+                // 已取消：状态由 CancelReconnect 的调用方（Disconnect/Disable/Dispose）设置
+            }
+            catch (MqttConnectAttemptException ex)
+            {
+                _logger.LogError("MQTT 重连失败，已达最大重试次数 {Max}: {Error}",
+                    _options.MaxReconnectAttempts, ex.Message);
+                SetState(MqttConnectionState.Faulted);
             }
         }
         catch (Exception ex)
         {
-            // 且状态卡在 Reconnecting 永不自愈；置 Faulted 交由 MqttHostedService 监督循环周期复位。
+            // 兜底：避免状态卡在 Reconnecting 永不自愈；置 Faulted 交由监督循环周期复位。
             _logger.LogError(ex, "MQTT 重连循环异常，置 Faulted 由监督循环兜底");
             SetState(MqttConnectionState.Faulted);
         }
+        finally
+        {
+            // ADR-006 P3-2：成功/失败/取消退出循环都释放 CTS，避免残留到下次断开才清理
+            _reconnectCts?.Dispose();
+            _reconnectCts = null;
+            lock (_reconnectLock) _reconnectLoopActive = false;
+        }
     }
+
+    /// <summary>重连单次尝试失败信号：抛出以驱动 Polly 重试；耗尽后由 <see cref="TryReconnectAsync"/> 置 Faulted。</summary>
+    private sealed class MqttConnectAttemptException(string message) : Exception(message);
 
     /// <summary>启动重连循环（单实例，已运行则跳过），供 ConnectAsync 失败与断开事件共用</summary>
     private void StartReconnectLoop()

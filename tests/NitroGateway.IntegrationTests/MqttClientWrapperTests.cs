@@ -186,6 +186,22 @@ public class MqttClientWrapperTests
     }
 
     [Fact]
+    public async Task Reconnect_ExhaustsExactlyMaxAttempts_ThenFaulted()
+    {
+        // 重试/退避外包给 Polly 后，尝试次数语义不变：首次显式连接 1 次 + 重连 MaxReconnectAttempts 次。
+        var inner = new FakeMqttInnerClient { ConnectResultCode = MQTTnet.MqttClientConnectResultCode.ServerUnavailable };
+        await using var wrapper = new MqttClientWrapper(
+            FastReconnectOptions(maxAttempts: 3), NullLogger<MqttClientWrapper>.Instance, inner, []);
+
+        Assert.True((await wrapper.ConnectAsync()).IsFailure);
+        await WaitUntilAsync(() => wrapper.State == MqttConnectionState.Faulted, TimeSpan.FromSeconds(5));
+        await Task.Delay(150);   // 留出余波窗口，确认不再有多余尝试
+
+        Assert.Equal(1 + 3, inner.ConnectCalls);
+        Assert.Equal(MqttConnectionState.Faulted, wrapper.State);
+    }
+
+    [Fact]
     public async Task DisposeAsync_SetsDisconnected()
     {
         // ADR-006 P3-4：关停期间健康检查不应短暂仍报 Healthy

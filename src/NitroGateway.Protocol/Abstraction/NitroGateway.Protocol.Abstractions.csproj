@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <!-- 通用机制层：韧性管线工厂（重试/退避/超时） -->
+    <ProjectReference Include="..\..\NitroGateway.Primitives\NitroGateway.Primitives.csproj" />
   </ItemGroup>
 
 </Project>

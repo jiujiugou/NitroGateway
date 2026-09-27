@@ -8,6 +8,10 @@ namespace NitroGateway.Domain.Protocols;
 /// 每种工业协议（Modbus、OPC UA、S7 等）提供一个实现，负责连接的建立/断开与点位的读写。
 /// 调用方无需关心底层协议细节，通过本接口即可操作任意协议的设备。
 /// 所有操作返回 <see cref="OperationResult"/>，不抛异常。
+/// <para><b>释放契约：</b><see cref="IDisposable.Dispose"/> 不保证等待在途操作
+/// （驱动池装饰器不排水，见 ADR-077）；释放后的任何调用必须返回失败
+/// <see cref="OperationResult"/>，不得抛异常。调用方须把「释放与在途调用并发」导致的
+/// 失败当作可恢复错误处理。</para>
 /// </summary>
 public interface IProtocolDriver : IDisposable
 {
