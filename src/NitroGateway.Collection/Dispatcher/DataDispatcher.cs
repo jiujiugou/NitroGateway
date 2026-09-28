@@ -98,7 +98,7 @@ public sealed class DataDispatcher : IDataDispatcher
             // 避免缓冲表以 batchId 为主键时 same Id 冲突；各通道引擎按通道隔离出队互不争抢。
             foreach (var channel in _forwardChannels)
             {
-                // 语义：无缓冲堆积、不触发死信；恢复后从关闭时刻起续传，不补发关闭期数据。
+                // 语义：无缓冲堆积、不触发丢弃；恢复后从关闭时刻起续传，不补发关闭期数据。
                 // 未注册开关（独立测试/旧宿主）视为恒启用。
                 if (channel == IForwardBuffer.MqttChannel && _forwardMqttToggle is { IsEnabled: false })
                     continue;

@@ -3,7 +3,7 @@
 ## 定位
 
 数据转发。从 Buffer 取批量数据 → 序列化 → 通过 MQTT 发到云端 → 确认后删除。
-转发失败自动重试（重试计数），重试超限移入死信队列。五步流水线，v1-v5 骨架不变，只换各步实现。
+转发失败自动重试（重试计数），重试超限直接丢弃。五步流水线，v1-v5 骨架不变，只换各步实现。
 
 ---
 
@@ -20,9 +20,9 @@ IForwardBuffer   IMessageSerializer    IMqttClient    IForwardBuffer          Bu
      │                  │                   │               │                      │
      │                  │           ← Success ── Commit ──→  │  删除（转发成功）     │
      │                  │           ← Fail    ── MarkFailed ─→│  retry_count+1      │
-     │                  │                   │               │  ≥5 → DeadLetter     │
+     │                  │                   │               │  ≥5 → 丢弃            │
      │                  │                   │               │                      │
-     │             下轮 Scheduler 触发，失败批次重试（≤5 次后进死信）                    │
+     │             下轮 Scheduler 触发，失败批次重试（≤5 次后丢弃）                     │
 ```
 
 ---
@@ -58,7 +58,7 @@ public interface IMessageSerializer
 | Topic | `nitrogateway/{deviceId}/measurements` | 多级 Topic / 按点级别 |
 | QoS | QoS 1（至少一次） | 按消息类型选 QoS |
 | Commit | PublishAsync 成功即 Commit | 云端 ACK 确认后才 Commit |
-| Retry | Buffer 两阶段 + 重试计数（≤5 次）+ 死信隔离 | 自适应退避 + 应用层 ACK |
+| Retry | Buffer 两阶段 + 重试计数（≤5 次后丢弃） | 自适应退避 + 应用层 ACK |
 | Channel | 只 MQTT | MQTT + HTTP 双通道 |
 
 ---
@@ -98,7 +98,7 @@ public sealed class Forwarder : IForwarder
             }
             else
             {
-                // 5. MarkFailed：retry_count+1，超限自动进死信，不再被 Dequeue 取出
+                // 5. MarkFailed：retry_count+1，超限直接丢弃，不再被 Dequeue 取出
                 await _buffer.MarkFailedAsync(batch.Id, result.Error!.Message, ct);
             }
         }
@@ -126,7 +126,7 @@ services.AddNitroForwarder(intervalMs: 5000);
 
 ## 演进
 
-| v1 | JSON + MQTT QoS1 + 两阶段重试（重试计数 ≤5 → 死信） | 当前 |
+| v1 | JSON + MQTT QoS1 + 两阶段重试（重试计数 ≤5 → 丢弃） | 当前 |
 | v2 | Protobuf + 多 Topic | 数据量大时 |
 | v3 | 双通道（MQTT + HTTP） | 网络环境复杂 |
 | v4 | 应用层 ACK + 自适应退避 | 需要确认消费 |

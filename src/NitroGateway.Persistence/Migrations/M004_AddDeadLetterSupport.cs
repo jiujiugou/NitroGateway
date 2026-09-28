@@ -3,8 +3,8 @@ using FluentMigrator;
 namespace NitroGateway.Persistence.Migrations;
 
 /// <summary>
-/// forward_buffer 增加死信队列支持：retry_count（累计失败重试次数，达到上限进 DeadLetter）
-/// 和 last_error（最近一次失败原因，用于死信展示与排查）。
+/// forward_buffer 增加 retry_count（累计失败重试次数，达上限即丢弃）
+/// 和 last_error（最近一次失败原因，用于排查）。
 /// </summary>
 [Migration(4)]
 public sealed class M004_AddDeadLetterSupport : Migration

@@ -4,7 +4,7 @@ namespace NitroGateway.Persistence.Migrations;
 
 /// <summary>
 /// 创建 forward_buffer 转发缓冲表。
-/// payload 为 BatchMeasurements 的 CamelCase JSON；status 生命周期 Pending → InFlight →（删除/DeadLetter）；
+/// payload 为 BatchMeasurements 的 CamelCase JSON；status 生命周期 Pending → InFlight →（删除；重试超限即丢弃）；
 /// 索引 (status, enqueued_at) 支撑按状态+FIFO 顺序出队。
 /// </summary>
 [Migration(2)]
