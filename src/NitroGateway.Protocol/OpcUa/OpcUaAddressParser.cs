@@ -5,7 +5,11 @@ namespace NitroGateway.Protocols.OpcUa;
 /// <summary>OPC UA 地址解析器</summary>
 public sealed class OpcUaAddressParser : IAddressParser
 {
-    /// <inheritdoc />
+    /// <summary>
+    /// 解析地址字符串为 <see cref="OpcUaAddress"/>：支持四种标识符
+    /// （<c>ns=N;s=字符串</c> / <c>ns=N;i=数字</c> / <c>ns=N;g=GUID</c> / <c>ns=N;b=base64</c>）。
+    /// 只按第一个 <c>;</c> 切分，避免字符串标识符内含 <c>;</c> 被切碎。格式非法抛 <see cref="ArgumentException"/>。
+    /// </summary>
     public PointAddress Parse(string rawAddress)
     {
         if (string.IsNullOrWhiteSpace(rawAddress))
@@ -60,7 +64,7 @@ public sealed class OpcUaAddressParser : IAddressParser
         throw new ArgumentException($"不支持的 OPC UA 地址格式: {rawAddress}");
     }
 
-    /// <inheritdoc />
+    /// <summary>把 <see cref="OpcUaAddress"/> 序列化为 <c>"ns=N;..."</c> 字符串（与 <see cref="Parse"/> 往返一致）；非 OPC UA 地址抛 <see cref="ArgumentException"/>。</summary>
     public string Serialize(PointAddress address)
     {
         if (address is not OpcUaAddress ua)
@@ -78,6 +82,6 @@ public sealed class OpcUaAddressParser : IAddressParser
         return $"ns={ua.NamespaceIndex};{idStr}";
     }
 
-    /// <inheritdoc />
-    public int GetDistance(PointAddress a, PointAddress b) => -1; // OPC UA 没有"连续地址"概念
+    /// <summary>恒返回 -1：OPC UA 没有"连续地址"概念，不支持按区间合并读取（批量读按 NodeId 列表）。</summary>
+    public int GetDistance(PointAddress a, PointAddress b) => -1;
 }

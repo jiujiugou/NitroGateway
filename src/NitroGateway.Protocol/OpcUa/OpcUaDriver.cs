@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Domain.Protocols;
@@ -16,19 +14,43 @@ using Opc.Ua.Configuration;
 
 namespace NitroGateway.Protocols.OpcUa;
 
+/// <summary>
+/// OPC UA 协议驱动，基于 OPC Foundation SDK。实现三个能力接口：
+/// <see cref="IProtocolDriver"/>（连接生命周期与点位读写）、
+/// <see cref="IBrowseableDriver"/>（单层节点浏览，ADR-070）、
+/// <see cref="ISubscriptionSource"/>（服务端订阅推送，ADR-071）。
+/// <para><b>并发纪律：</b>OPC UA <c>Session</c> 非线程安全，所有会话操作
+/// （连接/读写/浏览/订阅/断开/重连回调）一律经 <see cref="_gate"/> 串行化；
+/// KeepAlive/重连回调运行在 SDK 线程上，只用有界等待取得闸门，不在回调内长时间持锁（ADR-072 D6）。</para>
+/// <para><b>生命周期：</b>长连接驱动由 <c>ProtocolDriverPool</c> 按设备复用；<see cref="ConnectAsync"/> 幂等；
+/// "已连接后的断线"由 KeepAlive 触发的会话自愈接管（ADR-072），初始建连与断开后的重连仍由
+/// <c>ReliableProtocolDriver</c>（Polly）负责，二者按 <see cref="DriverState"/> 边界分工、不抢道。</para>
+/// <para><b>错误语义：</b>所有操作返回 <see cref="OperationResult"/> 不抛异常（显式取消除外）；
+/// 配置错误 → Validation、服务级拒绝 → Communication、不可达/超时 → Timeout、未连接 → Unavailable。</para>
+/// <para><b>数据路径：</b>订阅通知与轮询读取都只产出 <see cref="RawPointValue"/>，缩放/死区/分发由
+/// Collection 的管道统一处理（唯一数据路径，ADR-071）；驱动不自行落库或分发。</para>
+/// </summary>
 public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscriptionSource, IDisposable
 {
-    /// <summary>应用证书 SubjectName；首次连接自动生成到 opcua/pki/own 目录存储</summary>
-    private const string AppSubjectName = "CN=NitroGateway, DC=localhost";
-
+    /// <summary>设备连接参数（端点、超时、协议参数，含 OPC UA 安全档位与凭据）。</summary>
     private readonly DeviceConnection _connection;
+
+    /// <summary>日志记录器（非泛型，匹配组合根工厂 <c>CreateLogger(protocol.Name)</c>）。</summary>
     private readonly ILogger _logger;
+
+    /// <summary>地址解析器："ns=N;..." ↔ <see cref="OpcUaAddress"/>（读写/订阅/浏览共用）。</summary>
     private readonly OpcUaAddressParser _addressParser = new();
+
+    /// <summary>会话互斥闸门。Session 非线程安全，Connect/Read/Write/Browse/订阅/Disconnect 全部经此串行（ADR-019）。</summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     /// <summary>当前会话；null 表示未连接。会话非线程安全，全部通信经 <see cref="_gate"/> 串行化</summary>
     private Session? _session;
+
+    /// <summary>当前活动订阅；null 表示无订阅（<see cref="IsSubscriptionActive"/> 据此判定）。</summary>
     private Subscription? _subscription;
+
+    /// <summary>当前订阅签名（点位集合 + 发布间隔）；未变则复用现有订阅，避免每轮重建抖动（ADR-071 D7）。</summary>
     private string? _subscriptionSignature;
 
     /// <summary>会话自愈（ADR-072）：当前活动的重连 handler；null 表示无进行中自愈。</summary>
@@ -38,16 +60,16 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
     /// <summary>自愈防重入位（0/1，经 Interlocked 访问）：1 表示已有活动重连（ADR-072 D3）。</summary>
     private int _reconnectActive;
 
-    /// <inheritdoc />
+    /// <summary>当前连接状态。自愈重连窗口内保持 <see cref="DriverState.Connected"/>（ADR-072 D5）。</summary>
     public DriverState State { get; private set; } = DriverState.Disconnected;
 
-    /// <inheritdoc />
+    /// <summary>驱动能力声明：批读/批写/订阅/浏览均支持，批量无上限（见 <see cref="OpcUaDriverCapability"/>）。</summary>
     public DriverCapability Capability => OpcUaDriverCapability.Instance;
 
-    /// <inheritdoc />
+    /// <summary>订阅收到质量合格（Good）的原始值时触发；由 <see cref="ISubscriptionSource"/> 定义，采集协调器消费。</summary>
     public event Func<IReadOnlyList<RawPointValue>, Task>? ValuesReceived;
 
-    /// <inheritdoc />
+    /// <summary>当前是否有生效的服务端订阅（<see cref="_subscription"/> 非空）。</summary>
     public bool IsSubscriptionActive => _subscription is not null;
 
     /// <summary>创建 OPC UA 驱动。由组合根 <c>AddNitroProtocol</c> 的协议清单映射到复合工厂（ILogger 非泛型，匹配工厂 CreateLogger(protocol.Name)）</summary>
@@ -57,7 +79,11 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         _logger = logger;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 建立 OPC UA 会话。幂等：已连接直接返回成功。
+    /// 流程：安全参数校验 → 构建 ApplicationConfiguration → 应用证书 → 端点发现与选择 → 建会话 →
+    /// 绑定 KeepAlive；任一步失败置 <see cref="DriverState.Faulted"/> 并按错误分类返回。
+    /// </summary>
     public async Task<OperationResult> ConnectAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -91,12 +117,14 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 var requestTimeout = Math.Max(1000, _connection.RequestTimeoutMs);
 
                 // 1) 程序化构建 ApplicationConfiguration（不依赖 XML 配置文件，SDK 1.5 支持直接构造）
-                var config = BuildConfiguration(requestTimeout);
+                // ADR-073 D6：加密连接严格校验——服务端证书按 opcua/pki/trusted 白名单，未信任证书由 SDK
+                // 判 BadCertificateUntrusted 并写入 opcua/pki/rejected，前端可经证书管理 API “信任→重试”。
+                // 例外（无加密）：显式 None 时服务器证书与通道无关，但 SDK 仍按端点证书校验 ApplicationUri，
+                // 且 BadCertificateUriInvalid 不可抑制（不在 SDK 可抑制列表，已实测）→ 用放行校验器跳过
+                // None 连接的证书校验，避免无加密连接被一张它不使用的证书误拒；加密端点校验不变。
+                var config = OpcUaClientConfigurationFactory.BuildConfiguration(
+                    requestTimeout, skipServerCertificateValidation: requirement.NoneExplicit);
                 await config.Validate(ApplicationType.Client);
-                // ADR-073 D6：不挂任何 CertificateValidation 订阅，避免 SDK 事件语义覆盖信任库校验；
-                // AutoAcceptUntrustedCertificates=false（见 BuildConfiguration）。服务端证书按
-                // opcua/pki/trusted 白名单校验，未信任证书由 SDK 判 BadCertificateUntrusted 并写入
-                // opcua/pki/rejected，前端可经证书管理 API “信任→重试”。
 
                 // 2) 应用证书（ADR-073 D7）：失败不再静默降级 None，显式返回 SecurityConfigurationError
                 try
@@ -132,6 +160,13 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                     return OperationalError.Validation(selectionError ?? "OPC UA 无可用的匹配端点");
                 }
 
+                // 无加密（None）端点：服务器证书与通道无关，但 Prosys 等服务器会给 None 端点也广播
+                // 服务器证书，SDK 在 Session.Create 阶段仍对该证书做 ApplicationUri 校验（且不经
+                // config.CertificateValidator 实例，放行校验器拦不住）。此处直接清空证书，避免无加密
+                // 连接被一张它根本不用的证书误拒；加密端点保留证书照常严格校验。
+                if (selected.SecurityMode == MessageSecurityMode.None)
+                    selected.ServerCertificate = null;
+
                 // 4) 建会话（身份按 ADR-073 D4；updateBeforeConnect=false 不重复发现）
                 var configuredEndpoint = new ConfiguredEndpoint(selected.Server, EndpointConfiguration.Create(config));
                 configuredEndpoint.Update(selected);
@@ -142,7 +177,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                     checkDomain: false,
                     "NitroGateway",
                     (uint)Math.Max(5000, requestTimeout),
-                    BuildUserIdentity(requirement),
+                    OpcUaClientConfigurationFactory.BuildUserIdentity(requirement),
                     null,
                     ct);
 
@@ -182,7 +217,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 断开会话并清理：先停自愈重连、解绑 KeepAlive、删除订阅，再关闭并释放会话，置 Disconnected
+    /// （顺序不可反，ADR-072 D6）。幂等。
+    /// </summary>
     public async Task<OperationResult> DisconnectAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -210,7 +248,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 确保指定点位的服务端订阅生效（ADR-071）。签名（点位集合 + 发布间隔）未变则复用现有订阅；
+    /// 变化时先删后建。仅 Good 通知进入采集管道；调用方在返回失败时须保留轮询兜底。
+    /// </summary>
     public async Task<OperationResult> EnsureSubscriptionAsync(
         IReadOnlyList<DevicePoint> points,
         int publishingIntervalMs,
@@ -263,7 +304,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                     var item = new MonitoredItem(telemetry, new MonitoredItemOptions
                     {
                         DisplayName = point.Name,
-                        StartNodeId = ToNodeId(address),
+                        StartNodeId = OpcUaNodeIdCodec.ToNodeId(address),
                         AttributeId = Attributes.Value,
                         SamplingInterval = point.ScanIntervalMs > 0 ? point.ScanIntervalMs : interval,
                         QueueSize = 1,
@@ -298,7 +339,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>停止并删除当前订阅（幂等）；无订阅时直接成功。</summary>
     public async Task<OperationResult> StopSubscriptionAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -321,7 +362,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>读 <c>ServerStatus</c> 节点做最小代价连通性验证；未连接返回 Unavailable。</summary>
     public async Task<OperationResult> PingAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -353,7 +394,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>读取单个点位，委托 <see cref="ReadBatchAsync"/> 取首个成功结果；空结果返回 Protocol 错误。</summary>
     public async Task<OperationResult<RawPointValue>> ReadAsync(DevicePoint point, CancellationToken ct = default)
     {
         var result = await ReadBatchAsync([point], ct);
@@ -364,7 +405,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
             : OperationalError.Protocol($"读取失败: {point.Name}");
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 批量读取点位。地址非法的点位跳过（记 Warning），其余合并为一次会话读；Bad 点位跳过；
+    /// 全部失败时复位 Faulted（自愈窗口内除外）。空点位列表改为链路探测。
+    /// </summary>
     public async Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadBatchAsync(
         IEnumerable<DevicePoint> points, CancellationToken ct = default)
     {
@@ -388,7 +432,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 try
                 {
                     var uaAddr = (OpcUaAddress)_addressParser.Parse(p.Address);
-                    nodesToRead.Add(new ReadValueId { NodeId = ToNodeId(uaAddr), AttributeId = Attributes.Value });
+                    nodesToRead.Add(new ReadValueId { NodeId = OpcUaNodeIdCodec.ToNodeId(uaAddr), AttributeId = Attributes.Value });
                     validPoints.Add(p);
                 }
                 catch (Exception ex)
@@ -415,7 +459,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 results.Add(new RawPointValue
                 {
                     Point = validPoints[i],
-                    Value = VariantToValue(dv.WrappedValue),
+                    Value = OpcUaValueCodec.VariantToValue(dv.WrappedValue),
                     // 源时间戳缺失时用本地采集时间兜底
                     Timestamp = dv.SourceTimestamp == DateTime.MinValue ? DateTime.UtcNow : dv.SourceTimestamp
                 });
@@ -444,7 +488,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 单点写入。按 <see cref="DevicePoint.DataType"/> 显式构造 Variant
+    /// （如 Float→Single，避免按 .NET 类型映射发成 Double 触发服务端 BadTypeMismatch）。
+    /// </summary>
     public async Task<OperationResult> WriteAsync(DevicePoint point, object value, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -460,10 +507,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 {
                     new()
                     {
-                        NodeId = ToNodeId(uaAddr),
+                        NodeId = OpcUaNodeIdCodec.ToNodeId(uaAddr),
                         AttributeId = Attributes.Value,
                         // 若直接按 .NET 类型映射，Float 点会发成 Double → 服务端 BadTypeMismatch（实测）。
-                        Value = new DataValue(ToVariant(point.DataType, value))
+                        Value = new DataValue(OpcUaValueCodec.ToVariant(point.DataType, value))
                     }
                 };
                 var response = await _session.WriteAsync(null, nodesToWrite, ct);
@@ -483,7 +530,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>批量写入，当前为逐点调用 <see cref="WriteAsync"/>（未合并为单次批量写请求），任一失败即返回。</summary>
     public async Task<OperationResult> WriteBatchAsync(
         IEnumerable<KeyValuePair<DevicePoint, object>> entries, CancellationToken ct = default)
     {
@@ -495,7 +542,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         return OperationResult.Success();
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 单层节点浏览（ADR-070）。parent 缺省 = Objects 目录；<c>BrowseNext</c> 分页展开；
+    /// 变量节点补读 DataType/AccessLevel → TypeName/Access。失败/超时不置 Faulted（只读配置工具）。
+    /// </summary>
     public async Task<OperationResult<IReadOnlyList<BrowseNode>>> BrowseAsync(
         string parentNodeId = "", CancellationToken ct = default)
     {
@@ -512,7 +562,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
             {
                 parentNode = string.IsNullOrWhiteSpace(parentNodeId)
                     ? ObjectIds.ObjectsFolder
-                    : ToNodeId((OpcUaAddress)_addressParser.Parse(parentNodeId));
+                    : OpcUaNodeIdCodec.ToNodeId((OpcUaAddress)_addressParser.Parse(parentNodeId));
             }
             catch (Exception ex)
             {
@@ -579,9 +629,9 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                     var typeDv = attrResults.Results[2 * i];
                     var accessDv = attrResults.Results[2 * i + 1];
                     if (StatusCode.IsGood(typeDv.StatusCode) && typeDv.Value is NodeId typeId)
-                        typeNames[i] = DataTypeName(typeId);
+                        typeNames[i] = OpcUaBrowseCodec.DataTypeName(typeId);
                     if (StatusCode.IsGood(accessDv.StatusCode) && accessDv.Value is byte access)
-                        accesses[i] = AccessToString(access);
+                        accesses[i] = OpcUaBrowseCodec.AccessToString(access);
                 }
             }
 
@@ -594,7 +644,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
                 var isVariable = r.NodeClass == NodeClass.Variable;
                 results.Add(new BrowseNode
                 {
-                    NodeId = SerializeNodeId(r.NodeId),
+                    NodeId = OpcUaNodeIdCodec.SerializeNodeId(r.NodeId),
                     Name = string.IsNullOrEmpty(r.DisplayName.Text) ? r.BrowseName.Name : r.DisplayName.Text,
                     TypeName = isVariable ? (varIndex < typeNames.Length ? (typeNames[varIndex] ?? "Unknown") : "Unknown") : "",
                     IsVariable = isVariable,
@@ -622,7 +672,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
     /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
     private int _disposed;
 
-    /// <inheritdoc />
+    /// <summary>幂等释放：停自愈重连、解绑 KeepAlive、删订阅、关会话，最后释放闸门（ADR-072 D6）。</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
@@ -635,6 +685,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         _gate.Dispose();
     }
 
+    /// <summary>
+    /// 解绑通知委托、删除并释放当前订阅，清空引用与签名。幂等：无订阅直接返回；删除异常吞掉。
+    /// 须在 <c>_gate</c> 内调用（订阅生命周期与读写共用闸门，ADR-071 D6）。
+    /// </summary>
     private async Task DeleteSubscriptionAsync(CancellationToken ct)
     {
         var subscription = _subscription;
@@ -909,6 +963,11 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
     internal void SetReconnectActiveForTesting(bool active) =>
         Interlocked.Exchange(ref _reconnectActive, active ? 1 : 0);
 
+    /// <summary>
+    /// 订阅数据变更通知回调（运行在 SDK 发布线程）。统一解包 <c>DataValue</c>，仅 Good 状态转
+    /// <see cref="RawPointValue"/>（Bad/Uncertain 跳过，不产伪值，ADR-071 D4），再 fire-and-forget
+    /// 交付采集管道；单个点位处理不阻塞发布线程。
+    /// </summary>
     private void OnMonitoredItemNotification(MonitoredItem item, MonitoredItemNotificationEventArgs args)
     {
         if (item.Handle is not DevicePoint point)
@@ -934,12 +993,13 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         var raw = new RawPointValue
         {
             Point = point,
-            Value = VariantToValue(value.WrappedValue),
+            Value = OpcUaValueCodec.VariantToValue(value.WrappedValue),
             Timestamp = value.SourceTimestamp == DateTime.MinValue ? DateTime.UtcNow : value.SourceTimestamp
         };
         _ = PublishValuesAsync([raw]);
     }
 
+    /// <summary>逐个 await 所有 <see cref="ValuesReceived"/> 订阅者；单个 handler 异常不影响其余（隔离到日志）。</summary>
     private async Task PublishValuesAsync(IReadOnlyList<RawPointValue> values)
     {
         var handlers = ValuesReceived;
@@ -952,6 +1012,10 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
+    /// <summary>
+    /// 订阅签名：发布间隔 + 各点位（按 Id 排序）的 Id/Address/ScanIntervalMs。
+    /// 签名一致表示"点位集合与采样参数未变"，可复用现有订阅（ADR-071 D7）；变化则先删后建。
+    /// </summary>
     private static string BuildSubscriptionSignature(IReadOnlyList<DevicePoint> points, int publishingIntervalMs) =>
         $"{publishingIntervalMs}|{string.Join(';', points.OrderBy(p => p.Id).Select(p => $"{p.Id}:{p.Address}:{p.ScanIntervalMs}"))}";
 
@@ -991,66 +1055,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         return (selection.Endpoint, null);
     }
 
-    /// <summary>ADR-073 D4：按解析出的凭据构建用户身份；无凭据 → 匿名。</summary>
-    private static UserIdentity BuildUserIdentity(OpcUaSecurityRequirement requirement) =>
-        requirement.HasCredentials
-            ? new UserIdentity(requirement.UserName!, Encoding.UTF8.GetBytes(requirement.Password!))
-            : new UserIdentity();
-
-    /// <summary>
-    /// 构建客户端 ApplicationConfiguration。
-    /// PKI 目录相对路径（opcua/pki/...）相对进程工作目录；信任状态以 pki 目录为唯一权威
-    /// （ADR-073 D6/D8）：服务端证书只信任 opcua/pki/trusted 白名单内的项，未信任证书被拒绝
-    /// （BadCertificateUntrusted）并落入 opcua/pki/rejected，由证书管理 API 移入 trusted 后重试。
-    /// </summary>
-    private ApplicationConfiguration BuildConfiguration(int requestTimeout)
-    {
-        var hostName = Dns.GetHostName();
-        return new ApplicationConfiguration
-        {
-            ApplicationName = "NitroGateway",
-            ApplicationUri = Utils.Format("urn:{0}:NitroGateway", hostName),
-            ProductUri = "https://github.com/",
-            ApplicationType = ApplicationType.Client,
-            SecurityConfiguration = new SecurityConfiguration
-            {
-                ApplicationCertificate = new CertificateIdentifier
-                {
-                    StoreType = CertificateStoreType.Directory,
-                    StorePath = "opcua/pki/own",
-                    SubjectName = AppSubjectName
-                },
-                TrustedPeerCertificates = new CertificateTrustList
-                {
-                    StoreType = CertificateStoreType.Directory,
-                    StorePath = "opcua/pki/trusted"
-                },
-                TrustedIssuerCertificates = new CertificateTrustList
-                {
-                    StoreType = CertificateStoreType.Directory,
-                    StorePath = "opcua/pki/issuers"
-                },
-                RejectedCertificateStore = new CertificateStoreIdentifier
-                {
-                    StoreType = CertificateStoreType.Directory,
-                    StorePath = "opcua/pki/rejected"
-                },
-                AutoAcceptUntrustedCertificates = false,
-                AddAppCertToTrustedStore = true,
-                MinimumCertificateKeySize = 2048
-            },
-            TransportQuotas = new TransportQuotas
-            {
-                OperationTimeout = requestTimeout
-            },
-            ClientConfiguration = new ClientConfiguration
-            {
-                DefaultSessionTimeout = Math.Max(5000, requestTimeout)
-            },
-            CertificateValidator = new CertificateValidator()
-        };
-    }
-
     /// <summary>
     /// 空点位设备链路探测：读 ServerStatus 节点。
     /// 返回空列表表示链路正常（无点位数据），失败复位 Faulted 并返回 Timeout。
@@ -1080,80 +1084,6 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <summary>OpcUaAddress → OPC UA NodeId（四型标识符映射）</summary>
-    private static NodeId ToNodeId(OpcUaAddress addr) => addr switch
-    {
-        { StringId: { } s } => new NodeId(s, addr.NamespaceIndex),
-        { NumericId: { } n } => new NodeId(n, addr.NamespaceIndex),
-        { GuidId: { } g } => new NodeId(g, addr.NamespaceIndex),
-        { OpaqueId: { } o } => new NodeId(o, addr.NamespaceIndex),
-        _ => NodeId.Null
-    };
-
-    /// <summary>Variant → 领域值（int/float→double/bool/string 等）。null 回退 0.0（与 Modbus 失败读语义一致）</summary>
-    private static object VariantToValue(Variant v) => v.Value switch
-    {
-        null => 0.0,
-        sbyte sb => (short)sb,
-        short s => s,
-        int i => i,
-        long l => l,
-        ushort us => us,
-        uint ui => ui,
-        ulong ul => ul,
-        float f => (double)f,
-        double d => d,
-        bool b => b,
-        string str => str,
-        _ => v.Value
-    };
-
-    private static Variant ToVariant(DataType dataType, object value)
-    {
-        try
-        {
-            return dataType switch
-            {
-                DataType.Bool => new Variant(Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.Byte => new Variant(Convert.ToByte(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.Int16 => new Variant(Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.UInt16 => new Variant(Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.Int32 => new Variant(Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.UInt32 => new Variant(Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.Int64 => new Variant(Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.UInt64 => new Variant(Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.Float => new Variant(Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.Double => new Variant(Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
-                DataType.String => new Variant(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty),
-                _ => ToVariant(value)
-            };
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"写入值 '{value}' 无法转换为点位类型 {dataType}: {ex.Message}", ex);
-        }
-    }
-
-    /// <summary>作为 <see cref="ToVariant(DataType, object)"/> 的兜底：按 .NET 实际类型映射（未声明的类型）。
-    /// bool/string/数值直接映射，其余经 Convert.ToDouble 兜底。</summary>
-    private static Variant ToVariant(object value) => value switch
-    {
-        bool b => new Variant(b),
-        string s => new Variant(s),
-        byte by => new Variant(by),
-        sbyte sb => new Variant(sb),
-        short s => new Variant(s),
-        ushort us => new Variant(us),
-        int i => new Variant(i),
-        uint ui => new Variant(ui),
-        long l => new Variant(l),
-        ulong ul => new Variant(ul),
-        float f => new Variant(f),
-        double d => new Variant(d),
-        _ => new Variant(Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture))
-    };
-
     /// <summary>收集 Browse 结果中的引用（过滤 null 项）</summary>
     private static void CollectReferences(BrowseResult result, List<ReferenceDescription> references)
     {
@@ -1162,48 +1092,5 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         {
             if (r is not null) references.Add(r);
         }
-    }
-
-    /// <summary>ExpandedNodeId → "ns=N;..." 格式（与 OpcUaAddressParser.Serialize 一致，可直接回填点位地址）</summary>
-    private static string SerializeNodeId(ExpandedNodeId id)
-    {
-        if (id is null) throw new ArgumentException("浏览结果缺少 NodeId");
-        var ns = id.NamespaceIndex;
-        var identifier = id.Identifier;
-        return identifier switch
-        {
-            string s => $"ns={ns};s={s}",
-            uint u => $"ns={ns};i={u}",
-            Guid g => $"ns={ns};g={g}",
-            byte[] b => $"ns={ns};b={Convert.ToBase64String(b)}",
-            _ => throw new ArgumentException($"不支持的 NodeId 标识符: {identifier}")
-        };
-    }
-
-    /// <summary>DataType 属性 NodeId → 前端 DataType 枚举名（仅映射领域支持的 11 种，其余 Unknown）</summary>
-    private static string DataTypeName(NodeId typeId)
-    {
-        if (typeId is null || typeId.IdType != IdType.Numeric || typeId.NamespaceIndex != 0)
-            return "Unknown";
-        if (typeId == DataTypeIds.Boolean) return "Bool";
-        if (typeId == DataTypeIds.Byte) return "Byte";
-        if (typeId == DataTypeIds.Int16) return "Int16";
-        if (typeId == DataTypeIds.UInt16) return "UInt16";
-        if (typeId == DataTypeIds.Int32) return "Int32";
-        if (typeId == DataTypeIds.UInt32) return "UInt32";
-        if (typeId == DataTypeIds.Int64) return "Int64";
-        if (typeId == DataTypeIds.UInt64) return "UInt64";
-        if (typeId == DataTypeIds.Float) return "Float";
-        if (typeId == DataTypeIds.Double) return "Double";
-        if (typeId == DataTypeIds.String) return "String";
-        return "Unknown";
-    }
-
-    /// <summary>AccessLevel 属性 byte → "Read"/"ReadWrite"/"Write"/"None"</summary>
-    private static string AccessToString(byte access)
-    {
-        var read = (AccessLevels.CurrentRead & access) != 0;
-        var write = (AccessLevels.CurrentWrite & access) != 0;
-        return read && write ? "ReadWrite" : read ? "Read" : write ? "Write" : "None";
     }
 }
