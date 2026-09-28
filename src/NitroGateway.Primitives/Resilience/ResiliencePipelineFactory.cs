@@ -24,11 +24,15 @@ public static class ResiliencePipelineFactory
     {
         var builder = new ResiliencePipelineBuilder();
 
+        // 顺序即嵌套：先加在外层。总预算在外 → 重试居中 → 每次尝试在内。
         if (policy.Timeout is { } timeout)
-            builder.AddTimeout(timeout);            // 先于重试加入（与各领域迁移前顺序一致）
+            builder.AddTimeout(timeout);            // 外层：整条管线总预算（含重试与退避）
 
         if (policy.MaxRetryAttempts > 0)
-            builder.AddRetry(CreateRetryOptions(policy, logger, onRetryDelay));
+            builder.AddRetry(CreateRetryOptions(policy, logger, onRetryDelay)); // 中层：重试
+
+        if (policy.AttemptTimeout is { } attemptTimeout)
+            builder.AddTimeout(attemptTimeout);     // 内层：每次尝试超时（退避不计入）
 
         return builder.Build();
     }
@@ -45,11 +49,15 @@ public static class ResiliencePipelineFactory
     {
         var builder = new ResiliencePipelineBuilder<TResult>();
 
+        // 顺序即嵌套：总预算在外 → 重试居中 → 每次尝试在内。
         if (policy.Timeout is { } timeout)
-            builder.AddTimeout(timeout);
+            builder.AddTimeout(timeout);            // 外层：整条管线总预算
 
         if (policy.MaxRetryAttempts > 0)
-            builder.AddRetry(CreateRetryOptions(policy, shouldHandle, logger));
+            builder.AddRetry(CreateRetryOptions(policy, shouldHandle, logger)); // 中层：重试
+
+        if (policy.AttemptTimeout is { } attemptTimeout)
+            builder.AddTimeout(attemptTimeout);     // 内层：每次尝试超时（退避不计入）
 
         return builder.Build();
     }

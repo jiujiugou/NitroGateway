@@ -106,6 +106,53 @@ public class ReliableProtocolDriverTests
         Assert.Equal(3, inner.ReadCalls);   // 初始 1 + 重试 2
     }
 
+    // ── 重试真实性回归（复现）：RetryCount 应被尊重，不应被"整条管线总超时"截断 ──
+    // 契约（与 ResiliencePipelineFactoryTests 类注释"超时按每次尝试生效"一致）：
+    //   RetryCount=3 → 4 次尝试；每次尝试受各自超时约束。
+    // 现状（EXPECTED FAIL）：ResiliencePipelineFactory 把 Timeout 置于 Retry 外层（`:27-33`），
+    //   形成"总预算"，退避累计超过总超时后，后续尝试被截断 → 实际尝试数 < 配置值。
+    // 修复前这两个用例应为红；修复后应变绿，作为契约锁定。
+
+    /// <summary>快速失败场景：退避累计 0.2+0.4+0.8s，总超时 1s 会在第 4 次尝试前掐断 → 修复前仅 3 次。</summary>
+    [Fact]
+    public async Task ReadBatchAsync_FastFail_ShouldHonorConfiguredRetryCount_NotBeCutByTotalTimeout()
+    {
+        var inner = new FakeInner { FailuresRemaining = int.MaxValue };
+        var driver = new ReliableProtocolDriver(
+            inner,
+            NullLogger<ReliableProtocolDriver>.Instance,
+            requestTimeout: TimeSpan.FromSeconds(1),
+            maxRetryAttempts: 3,
+            retryDelay: TimeSpan.FromMilliseconds(200));
+
+        var r = await driver.ReadBatchAsync([]);
+
+        Assert.True(r.IsFailure, "内层始终失败，应返回失败");
+        Assert.Equal(4, inner.ReadCalls);   // 初始 1 + 重试 3（配置意图）
+    }
+
+    /// <summary>单次尝试挂住场景：应每次尝试独立超时后重试，而非首次超时即整体失败 → 修复前仅 1 次。</summary>
+    [Fact]
+    public async Task ReadBatchAsync_HangingAttempt_ShouldTimeoutPerAttemptAndRetry_NotFailAfterFirst()
+    {
+        var inner = new FakeInner { ReadDelay = TimeSpan.FromSeconds(5), HonorCancellation = true };
+        var driver = new ReliableProtocolDriver(
+            inner,
+            NullLogger<ReliableProtocolDriver>.Instance,
+            // 总预算取 2s（而非紧贴 0.5s），给并行测试负载留出调度余量，避免第 4 次尝试被总寿命抖动截断。
+            requestTimeout: TimeSpan.FromSeconds(2),
+            maxRetryAttempts: 3,
+            retryDelay: TimeSpan.FromMilliseconds(100));
+
+        var r = await driver.ReadBatchAsync([]);
+
+        Assert.True(r.IsFailure, "每次尝试都超时，应返回失败");
+        // 每次尝试独立超时后必须发生重试（旧实现首次超时即整体失败，恒为 1 次）。
+        // 不硬断言恰好 4 次：外层总寿命是硬上限，满载调度抖动下末次重试可能被总寿命截断，
+        // 这属设计允许行为；"重试满 3 次"的确定性契约由快速失败用例锁定。
+        Assert.InRange(inner.ReadCalls, 2, 4);
+    }
+
     // ── ADR-070 层次1：节点浏览经装饰器转发（复用长连接，不经 Polly）──
 
     /// <summary>内层不支持浏览（如 Modbus/S7）→ 装饰器返回明确失败，不抛异常</summary>

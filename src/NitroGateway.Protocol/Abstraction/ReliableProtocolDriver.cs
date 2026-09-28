@@ -12,6 +12,12 @@ namespace NitroGateway.Protocol.Abstractions
         private const int DefaultMaxRetryAttempts = 3;
         private static readonly TimeSpan DefaultRetryInterval = TimeSpan.FromMilliseconds(500);
 
+        /// <summary>
+        /// 内部预算系数：实际用于"尝试+退避"的部分占总预算的比例，其余留给外层总超时作余量，
+        /// 避免最后一次尝试或退避恰好被总寿命截断。
+        /// </summary>
+        private const double InternalBudgetFraction = 0.8;
+
         private readonly IProtocolDriver _inner;
         private readonly ResiliencePipeline _pipeline;
         private readonly ILogger<ReliableProtocolDriver> _logger;
@@ -32,21 +38,43 @@ namespace NitroGateway.Protocol.Abstractions
         {
             _inner = inner;
             _logger = logger;
-            // 原 3s 乐观超时先于设备超时（RequestTimeoutMs，默认 5s）触发，被超时的读继续持有闸门，
-            // 产生与设备实际行为不符的"超时"日志并拖长重试窗口。
-            var timeout = requestTimeout ?? TimeSpan.FromSeconds(5);
-            var attempts = maxRetryAttempts ?? DefaultMaxRetryAttempts;
+            // 总预算（含重试与退避）：一轮读必须在此时间内结束，默认 5s（对应 RequestTimeoutMs）。
+            // 旧实现把它当作"总寿命"却配指数退避 1s，退避和 7s 直接超预算，未重试完即被截断。
+            var totalBudget = requestTimeout ?? TimeSpan.FromSeconds(5);
+            var attempts = Math.Max(0, maxRetryAttempts ?? DefaultMaxRetryAttempts);
             var firstDelay = retryDelay ?? DefaultRetryInterval;
             _maxRetryAttempts = attempts;
+
+            // 每次尝试超时与退避预算均从总预算内派生，保证 (尝试+退避) 之和不超过总预算，
+            // 从而让 RetryCount 真正生效。仅配置了重试时派生；无重试则单次尝试吃满总预算。
+            TimeSpan? attemptTimeout = null;
+            if (attempts > 0)
+            {
+                // 只用总预算的 80%，给外层总超时留余量。
+                var usableTicks = Math.Max(1, (long)(totalBudget.Ticks * InternalBudgetFraction));
+                // 退避预算占内部预算 1/5，其余均分给 (重试+1) 次尝试。
+                var backoffBudgetTicks = usableTicks / 5;
+                var attemptTicks = Math.Max(1, (usableTicks - backoffBudgetTicks) / (attempts + 1));
+                attemptTimeout = TimeSpan.FromTicks(attemptTicks);
+
+                // 指数退避 (D,2D,4D…) 之和 = D·(2^attempts−1)，令其不超过退避预算，
+                // 且不高于设备配置的 RetryIntervalMs（配置过大时按预算收敛）。
+                var expSum = Math.Pow(2, attempts) - 1;
+                var fitDelayMs = backoffBudgetTicks * 1000.0 / TimeSpan.TicksPerMillisecond / expSum;
+                var effectiveDelayMs = Math.Max(1, Math.Min(firstDelay.TotalMilliseconds, fitDelayMs));
+                firstDelay = TimeSpan.FromMilliseconds(effectiveDelayMs);
+            }
 
             // 机制（Polly 管线构造）由通用工厂统一；此处只给策略参数（ADR-075 机制的延伸）。
             _pipeline = ResiliencePipelineFactory.Build(
                 new ResiliencePolicy
                 {
-                    MaxRetryAttempts = attempts,                    // Polly 要求 ≥1；为 0 时工厂自动跳过重试策略
-                    RetryDelay = firstDelay,                        // 首次重试延迟
-                    BackoffType = DelayBackoffType.Exponential,     // 500ms → 1s → 2s
-                    Timeout = timeout,                              // 先于重试加入（与原实现一致的顺序）
+                    MaxRetryAttempts = attempts,                    // 重试次数；为 0 时工厂自动跳过重试策略
+                    RetryDelay = firstDelay,                        // 首次重试延迟（已按总预算收敛）
+                    BackoffType = DelayBackoffType.Exponential,     // 指数退避
+                    Timeout = totalBudget,                          // 外层：整条管线总预算（硬上限）
+                    AttemptTimeout = attemptTimeout,                // 内层：每次尝试超时（退避不计入）
+                    MaxDelay = attemptTimeout,                      // 单次退避不超过一次尝试时长
                     RetryLogLevel = LogLevel.Debug,
                     OperationName = "协议读取"
                 },
