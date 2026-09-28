@@ -75,7 +75,8 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
                 // 句柄失效（设备拔出/串口异常）时释放旧租约并重新打开；
                 // 串口管理器负责端口共享，同端口多从站仍共用同一句柄
                 var gate = _lease?.Gate;
-                if (gate is not null) await gate.WaitAsync(ct);
+                if (gate is not null)
+                    await gate.WaitAsync(ct);
                 try
                 {
                     _lease?.Dispose();
@@ -146,31 +147,31 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
         var c = (ushort)count;
         return type switch
         {
-            DataType.Float   => (await ReadCheckedAsync(Rtu.ReadFloatAsync(address, c), "读取 Float")).Cast<object>().ToArray(),
-            DataType.Int16   => (await ReadCheckedAsync(Rtu.ReadInt16Async(address, c), "读取 Int16")).Cast<object>().ToArray(),
-            DataType.Int32   => (await ReadCheckedAsync(Rtu.ReadInt32Async(address, c), "读取 Int32")).Cast<object>().ToArray(),
-            DataType.UInt16  => (await ReadCheckedAsync(Rtu.ReadInt16Async(address, c), "读取 UInt16")).Select(v => (object)(ushort)v).ToArray(),
-            DataType.UInt32  => (await ReadCheckedAsync(Rtu.ReadInt32Async(address, c), "读取 UInt32")).Select(v => (object)(uint)v).ToArray(),
-            DataType.Int64   => (await ReadCheckedAsync(Rtu.ReadInt64Async(address, c), "读取 Int64")).Cast<object>().ToArray(),
-            DataType.UInt64  => (await ReadCheckedAsync(Rtu.ReadInt64Async(address, c), "读取 UInt64")).Select(v => (object)(ulong)v).ToArray(),
-            DataType.Double  => (await ReadCheckedAsync(Rtu.ReadDoubleAsync(address, c), "读取 Double")).Cast<object>().ToArray(),
+            DataType.Float => (await ReadCheckedAsync(Rtu.ReadFloatAsync(address, c), "读取 Float")).Cast<object>().ToArray(),
+            DataType.Int16 => (await ReadCheckedAsync(Rtu.ReadInt16Async(address, c), "读取 Int16")).Cast<object>().ToArray(),
+            DataType.Int32 => (await ReadCheckedAsync(Rtu.ReadInt32Async(address, c), "读取 Int32")).Cast<object>().ToArray(),
+            DataType.UInt16 => (await ReadCheckedAsync(Rtu.ReadInt16Async(address, c), "读取 UInt16")).Select(v => (object)(ushort)v).ToArray(),
+            DataType.UInt32 => (await ReadCheckedAsync(Rtu.ReadInt32Async(address, c), "读取 UInt32")).Select(v => (object)(uint)v).ToArray(),
+            DataType.Int64 => (await ReadCheckedAsync(Rtu.ReadInt64Async(address, c), "读取 Int64")).Cast<object>().ToArray(),
+            DataType.UInt64 => (await ReadCheckedAsync(Rtu.ReadInt64Async(address, c), "读取 UInt64")).Select(v => (object)(ulong)v).ToArray(),
+            DataType.Double => (await ReadCheckedAsync(Rtu.ReadDoubleAsync(address, c), "读取 Double")).Cast<object>().ToArray(),
             _ => null    // Bool/String 等不支持批量读的类型，回退逐点
         };
     }
 
     protected override async Task<object> ReadSingleTypedAsync(DataType type, string address) => type switch
     {
-        DataType.Float   => (await ReadCheckedAsync(Rtu.ReadFloatAsync(address, 1), "读取 Float"))[0],
-        DataType.Double  => (await ReadCheckedAsync(Rtu.ReadDoubleAsync(address, 1), "读取 Double"))[0],
-        DataType.Int16   => (await ReadCheckedAsync(Rtu.ReadInt16Async(address, 1), "读取 Int16"))[0],
-        DataType.UInt16  => (ushort)(await ReadCheckedAsync(Rtu.ReadInt16Async(address, 1), "读取 UInt16"))[0],
-        DataType.Int32   => (await ReadCheckedAsync(Rtu.ReadInt32Async(address, 1), "读取 Int32"))[0],
-        DataType.UInt32  => (uint)(await ReadCheckedAsync(Rtu.ReadInt32Async(address, 1), "读取 UInt32"))[0],
-        DataType.Bool    => (await ReadCheckedAsync(Rtu.ReadBoolAsync(address, 1), "读取 Bool"))[0],
-        DataType.Byte    => (byte)(await ReadCheckedAsync(Rtu.ReadInt16Async(address, 1), "读取 Byte"))[0],
-        DataType.Int64   => (await ReadCheckedAsync(Rtu.ReadInt64Async(address, 1), "读取 Int64"))[0],
-        DataType.UInt64  => (ulong)(await ReadCheckedAsync(Rtu.ReadInt64Async(address, 1), "读取 UInt64"))[0],
-        DataType.String  => await ReadCheckedAsync(Rtu.ReadStringAsync(address, DefaultStringLength), "读取 String"),
+        DataType.Float => (await ReadCheckedAsync(Rtu.ReadFloatAsync(address, 1), "读取 Float"))[0],
+        DataType.Double => (await ReadCheckedAsync(Rtu.ReadDoubleAsync(address, 1), "读取 Double"))[0],
+        DataType.Int16 => (await ReadCheckedAsync(Rtu.ReadInt16Async(address, 1), "读取 Int16"))[0],
+        DataType.UInt16 => (ushort)(await ReadCheckedAsync(Rtu.ReadInt16Async(address, 1), "读取 UInt16"))[0],
+        DataType.Int32 => (await ReadCheckedAsync(Rtu.ReadInt32Async(address, 1), "读取 Int32"))[0],
+        DataType.UInt32 => (uint)(await ReadCheckedAsync(Rtu.ReadInt32Async(address, 1), "读取 UInt32"))[0],
+        DataType.Bool => (await ReadCheckedAsync(Rtu.ReadBoolAsync(address, 1), "读取 Bool"))[0],
+        DataType.Byte => (byte)(await ReadCheckedAsync(Rtu.ReadInt16Async(address, 1), "读取 Byte"))[0],
+        DataType.Int64 => (await ReadCheckedAsync(Rtu.ReadInt64Async(address, 1), "读取 Int64"))[0],
+        DataType.UInt64 => (ulong)(await ReadCheckedAsync(Rtu.ReadInt64Async(address, 1), "读取 UInt64"))[0],
+        DataType.String => await ReadCheckedAsync(Rtu.ReadStringAsync(address, DefaultStringLength), "读取 String"),
         _ => (await ReadCheckedAsync(Rtu.ReadFloatAsync(address, 1), "读取 Float"))[0]
     };
 
@@ -178,18 +179,18 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
     {
         var result = point.DataType switch
         {
-            DataType.Bool    => await Rtu.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Byte    => await Rtu.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),  // 1 寄存器，按 short 写入
-            DataType.Int16   => await Rtu.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.UInt16  => await Rtu.WriteAsync(address, Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Int32   => await Rtu.WriteAsync(address, Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.UInt32  => await Rtu.WriteAsync(address, Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Int64   => await Rtu.WriteAsync(address, Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.UInt64  => await Rtu.WriteAsync(address, Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Float   => await Rtu.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Double  => await Rtu.WriteAsync(address, Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.String  => await Rtu.WriteAsync(address, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)),
-            _                => await Rtu.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture))
+            DataType.Bool => await Rtu.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Byte => await Rtu.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),  // 1 寄存器，按 short 写入
+            DataType.Int16 => await Rtu.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt16 => await Rtu.WriteAsync(address, Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int32 => await Rtu.WriteAsync(address, Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt32 => await Rtu.WriteAsync(address, Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int64 => await Rtu.WriteAsync(address, Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt64 => await Rtu.WriteAsync(address, Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Float => await Rtu.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Double => await Rtu.WriteAsync(address, Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.String => await Rtu.WriteAsync(address, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)),
+            _ => await Rtu.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture))
         };
 
         return result.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Protocol(result.Message);

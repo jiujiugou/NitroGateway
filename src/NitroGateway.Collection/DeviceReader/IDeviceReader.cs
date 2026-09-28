@@ -11,6 +11,15 @@ namespace NitroGateway.Collection;
 /// </summary>
 public interface IDeviceReader
 {
+    /// <summary>
+    /// 纯查询：返回该设备本轮"到期"的启用点位（距上次采集已达各自采样间隔），用于提前跳过未到期设备。
+    /// 不产生副作用（不更新"上次采集时间"，该更新只在 <see cref="ReadDeviceAsync"/> 实际读取时发生）。
+    /// </summary>
+    /// <param name="device">目标设备（含点位列表）</param>
+    /// <returns>
+    /// 无启用点位返回 <c>null</c>；有启用点位但均未到期返回空列表；否则返回到期点位集合。
+    /// 点位采样间隔 <c>ScanIntervalMs &lt;= 0</c> 时继承全局采集间隔（负数已在配置/UI 层拦截）。
+    /// </returns>
     IReadOnlyList<DevicePoint>? GetDuePoints(DomainDevice device);
 
     /// <summary>
