@@ -502,3 +502,7 @@ backups/
 
 # 疑似密钥导出（不提交；如有请轮换）
 docs/sk-or-*.txt
+
+# OPC UA 地址空间导出产物（tools/opcua-dump.ps1 生成，不提交）
+opcua-tree*.json
+opcua-tree*-vars.csv
