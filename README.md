@@ -143,7 +143,7 @@ ForwarderEngine (5s 周期)
       ▼
 Forwarder ─── Dequeue(≤1000) → Serialize(JSON) → MQTT Publish(QoS1) → Commit
       │
-      └── 失败 → MarkFailed → retry_count+1 → ≥5 → DeadLetter
+      └── 失败 → MarkFailed → retry_count+1 → ≥5 → 丢弃（旧死信特性已移除）
 
 命令回写（云 → 网关 → PLC）
       │
@@ -175,11 +175,10 @@ Closed ──连续5次失败──→ Open ──冷却30s──→ HalfOpen �
 - 积压告警：>1000 批记录 Warning（首超立即、之后每 60s，回落后重置）。
 - 历史 AIMD 自适应（失败减半 / 成功 +10）已简化移除，代码不再存在 ForwardingThrottle。
 
-### 死信队列
+### 重试与丢弃
 
 - `forward_outbox` 表: Pending → InFlight → Commit(删除) 或 MarkFailed(retry+1)
-- retry_count ≥ 5 → DeadLetter, 不再被 Dequeue 取出
-- Admin API: 查看/重放/丢弃死信
+- retry_count ≥ 5 → 直接删除丢弃（旧死信特性已移除，不再产生死信；启动时清理历史死信行）
 
 ## 设备健康管理
 
@@ -251,7 +250,6 @@ Web API → DeviceManager → DB 保存 → StatusChanged 事件
 | GET | `/api/measurements/history` | 时序数据查询 |
 | GET/POST/PUT/DELETE | `/api/alarmrules` | 告警规则 CRUD |
 | GET | `/api/alarms` | 告警（活跃/确认） |
-| GET/POST/DELETE | `/api/deadletters` | 死信管理（查看/重放/丢弃） |
 | GET/POST | `/api/forwarder` | MQTT 转发总开关 |
 | GET | `/api/status/system` | 系统状态面板 |
 | GET | `/api/status/devices/health` | 设备健康快照 |
@@ -279,7 +277,7 @@ dotnet test  # 782 单元测试 + 51 集成测试（2026-08-30 实测全绿）
 - PointValuePipeline: 缩放/死区/类型转换/点位级降频
 - ThresholdEvaluator: 7 种操作符 + Between
 - CircuitBreaker: 三态状态机全路径
-- Forwarder: 两阶段提交/死信阈值/固定上限出队
+- Forwarder: 两阶段提交/重试超限丢弃/固定上限出队
 - Command: 命令解析校验/幂等/写值失败回执
 - AlarmEvaluator: Duration 计时 + 去重 + 多规则
 - WriteGuard: 三级门控全路径

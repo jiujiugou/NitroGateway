@@ -28,7 +28,7 @@
 
 **测试前置条件（保证基线干净）**
 - 干净 SQLite：备份/删除 `src/NitroGateway.Webapi/nitrogateway.db*` 后重启，记录初始文件大小
-- 清历史死信（`GET /api/deadletters`），记录初始死信数
+- 确认无死信残留（死信特性已移除，启动会清理历史死信行）
 - 记录基线：启动内存、backlog、SQLite 大小、`collection_total`
 
 ### 1.2 被测硬件（B 轨）
@@ -47,7 +47,7 @@
 | 采集耗时 | `nitro_collection_duration_ms` | 均值稳定、无持续上升 |
 | 转发积压 | `nitro_buffer_backlog` | 常态 0~5 波动；断连时上涨、恢复后归零；上限 100000 |
 | 熔断器 | `nitro_circuit_breaker_state` | 0=Closed 正常；故障设备 1=Open |
-| 死信 | `GET /api/deadletters` | 常态不增长；重放可成功 |
+| 转发丢弃 | `nitro_forward_total{status="dropped"}` | 常态为 0；仅重试超限时增长 |
 | 内存 | `dotnet_total_memory_bytes` / dotnet-counters GC Heap | 8h 后 ≤ 初始 2 倍 |
 | 磁盘 | SQLite 文件 + `logs/` 目录 | 8h 增量 ≤50MB；日志仅保留 7 天 |
 | 落库失败 | `nitro_store_write_failures_total` | 全程不增长 |
@@ -98,7 +98,7 @@
 | T3.2 | 健康检查 | 每小时 `GET /healthz` | 全程 200 |
 | T3.3 | 内存稳定 | dotnet-counters GC Heap Size | 结束时 ≤ 初始 2 倍，曲线无持续上升（无泄漏） |
 | T3.4 | 转发积压 | `nitro_buffer_backlog` | MQTT 在线期间 ≤5，不持续增长 |
-| T3.5 | 死信 | `GET /api/deadletters` | 不产生新死信 |
+| T3.5 | 转发丢弃 | `nitro_forward_total{status="dropped"}` | 不产生新丢弃 |
 | T3.6 | SQLite 增长 | 文件大小 | 8h 增量 ≤50MB（10 点位 1s），总量 <200MB |
 | T3.7 | 日志轮转 | `logs/` 目录 | 仅保留最近 7 天，不占满磁盘 |
 | T3.8 | 数据连续性 | 抽查 measurements 时间戳 | 无大段空洞（断连期除外）；`nitro_store_write_failures_total` 不增长 |
@@ -121,8 +121,8 @@
 | # | 场景 | 操作 | 通过标准 |
 |---|---|---|---|
 | T4.2.1 | 短断 | `docker stop mqtt` 10s 后恢复 | 数据积压不丢，恢复后自动补发清空 |
-| T4.2.2 | 反复抖动 | `docker restart mqtt` ×5（间隔 5s） | 每次自动重连成功，不产生死信 |
-| T4.2.3 | 长断 15min | 关闭 broker 15 分钟 | 超重试上限的批次进死信；`POST /api/deadletters/{id}/retry` 重放成功 |
+| T4.2.2 | 反复抖动 | `docker restart mqtt` ×5（间隔 5s） | 每次自动重连成功，不产生丢弃 |
+| T4.2.3 | 长断 15min | 关闭 broker 15 分钟 | 超重试上限的批次被丢弃（不再产生死信）；恢复后可正常续传 |
 
 ### 7.3 进程/数据异常
 
@@ -161,7 +161,6 @@
 | 历史数据 | 时间范围查询 | 返回正确 |
 | 系统状态 | MQTT/熔断器/设备健康 | 与 `/metrics` 一致 |
 | 告警管理 | 配规则后 | 列表/确认正常 |
-| 死信管理 | 列表/重放/丢弃 | 操作成功 |
 | Swagger | `/swagger` | 可访问 |
 
 ## 10. T7 中心形态端到端（A 轨 · 现场→中心，P1，40 分钟）
@@ -244,9 +243,9 @@ A 轨已用模拟器验证的**逻辑**不再重复；H 系列只验**真实线�
 | # | 场景 | 操作 | 通过标准 | 级别 |
 |---|---|---|---|---|
 | H4.1 | 断 PLC 网线/串口 | 拔线→恢复 | 对应设备 CB=Open、其余不受影响；恢复 ≤35s Online；缓冲补发不丢 | P1 |
-| H4.2 | 断现场交换机 | 关交换机→恢复 | MQTT/采集自动恢复、backlog 归零、无死信新增 | P1 |
+| H4.2 | 断现场交换机 | 关交换机→恢复 | MQTT/采集自动恢复、backlog 归零、无丢弃新增 | P1 |
 | H4.3 | PLC 断电重启 | 现场设备掉电→上电 | 网关 ≤35s 自动回 Online，无人工 | P1 |
-| H4.4 | 全链路停电冷启动 | 网关 + PLC + 交换机全断电→上电 | 各角色按序自拉起；数据无永久丢失（仅按超限策略入死信）；SQLite 完好 | P1 |
+| H4.4 | 全链路停电冷启动 | 网关 + PLC + 交换机全断电→上电 | 各角色按序自拉起；数据无永久丢失（仅按超限策略丢弃）；SQLite 完好 | P1 |
 
 ## 13. 最终判定表（验收汇总）
 
