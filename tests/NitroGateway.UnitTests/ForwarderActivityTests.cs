@@ -12,6 +12,11 @@ using ForwarderImpl = NitroGateway.Forwarder.Forwarder;
 
 namespace NitroGateway.UnitTests;
 
+/// <summary>
+/// 转发链路的 Activity 断言。使用进程级 ActivityListener，故与其它 ActivityListener 测试同集合串行执行
+/// （见 <see cref="ActivityListenerCollection"/>）。
+/// </summary>
+[Collection(ActivityListenerCollection.Name)]
 public class ForwarderActivityTests
 {
     private sealed class FakeBuffer : IForwardBuffer

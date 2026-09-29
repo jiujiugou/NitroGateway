@@ -16,94 +16,20 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- 页头 -->
+        <!-- 页头：标题/副标题随协议分区（Modbus/S7 或 OPC UA）切换 -->
         <StackPanel Grid.Row="0" Margin="26,22,26,14">
-            <TextBlock Text="设备管理" Style="{StaticResource PageTitleStyle}" />
-            <TextBlock Text="现场设备与采集点位配置" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+            <TextBlock Text="{Binding Scope.Title}" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="{Binding Scope.Subtitle}" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
         </StackPanel>
 
         <Grid Grid.Row="1" Margin="26,0,26,22">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Margin="0,0,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,10,0">
-                    <StackPanel Orientation="Horizontal">
-                        <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource PrimaryLightBrush}"
-                                VerticalAlignment="Center">
-                            <TextBlock Text="{StaticResource IconDevicesTotal}" FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                       Foreground="{StaticResource PrimaryBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="设备总数" FontSize="12" Foreground="{StaticResource TextSecondary}" />
-                            <TextBlock Text="{Binding TotalCount}" FontSize="22" FontWeight="Bold"
-                                       Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,10,0">
-                    <StackPanel Orientation="Horizontal">
-                        <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource StatusOnlineBg}"
-                                VerticalAlignment="Center">
-                            <TextBlock Text="{StaticResource IconOnline}" FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                       Foreground="{StaticResource StatusOnlineBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="在线" FontSize="12" Foreground="{StaticResource TextSecondary}" />
-                            <TextBlock Text="{Binding OnlineCount}" FontSize="22" FontWeight="Bold"
-                                       Foreground="{StaticResource StatusOnlineBrush}" Margin="0,2,0,0" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,10,0">
-                    <StackPanel Orientation="Horizontal">
-                        <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource StatusOfflineBg}"
-                                VerticalAlignment="Center">
-                            <TextBlock Text="{StaticResource IconOffline}" FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                       Foreground="{StaticResource StatusOfflineBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="离线" FontSize="12" Foreground="{StaticResource TextSecondary}" />
-                            <TextBlock Text="{Binding OfflineCount}" FontSize="22" FontWeight="Bold"
-                                       Foreground="{StaticResource StatusOfflineBrush}" Margin="0,2,0,0" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Column="3" Style="{StaticResource CardBorderStyle}" Padding="16,12">
-                    <StackPanel Orientation="Horizontal">
-                        <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource StatusMaintenanceBg}"
-                                VerticalAlignment="Center">
-                            <TextBlock Text="{StaticResource IconPoints}" FontFamily="Segoe MDL2 Assets" FontSize="18"
-                                       Foreground="{StaticResource StatusMaintenanceBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="点位数" FontSize="12" Foreground="{StaticResource TextSecondary}" />
-                            <TextBlock Text="{Binding TotalPoints}" FontSize="22" FontWeight="Bold"
-                                       Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-            </Grid>
-
             <!-- 工具栏（卡片）：状态文本 + 操作按钮 -->
-            <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="14,10" Margin="0,0,0,12">
+            <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="14,10" Margin="0,0,0,12">
                 <DockPanel>
                     <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center"
                                Foreground="{StaticResource TextSecondary}" />
@@ -123,7 +49,7 @@
                 </DockPanel>
             </Border>
 
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="1">
                 <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedDevice}"
                           AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
                           RowHeight="48">
@@ -190,7 +116,10 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="从站" Binding="{Binding UnitIdText}" Width="60" />
+                        <!-- 列显隐由 code-behind 按 Scope 切换：通用=从站；OPC UA=连接端点 + 安全档位 -->
+                        <DataGridTextColumn x:Name="UnitIdColumn" ElementStyle="{StaticResource DataGridCellTextStyle}" Header="从站" Binding="{Binding UnitIdText}" Width="60" />
+                        <DataGridTextColumn x:Name="EndpointColumn" ElementStyle="{StaticResource DataGridCellTextStyle}" Header="连接端点" Binding="{Binding Endpoint}" Width="210" Visibility="Collapsed" />
+                        <DataGridTextColumn x:Name="SecurityColumn" ElementStyle="{StaticResource DataGridCellTextStyle}" Header="安全档位" Binding="{Binding SecuritySummary}" Width="150" Visibility="Collapsed" />
                         <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="上次采集" Binding="{Binding LastCollectionText}" Width="96" />
                         <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="点位数" Binding="{Binding PointsCount}" Width="56" />
                         <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="错误" Binding="{Binding LastError}" Width="*" />

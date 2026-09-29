@@ -334,6 +334,55 @@ Name,Address,DataType,Access,Enabled,ScanIntervalMs,Deadband,ScaleFactor,ScaleOf
         Assert.DoesNotContain("已导出", vm.StatusText);
     }
 
+    // ── ADR-070 层次1：OPC UA 点位表单走地址空间浏览树 ──
+
+    [Fact]
+    public async Task AddPoint_opcua_protocol_uses_browse_editor()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService { EditPointFillName = "MyLevel" };
+        var vm = CreateVm(manager, dialogs, protocolName: "OPC UA");
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, dialogs.EditOpcUaPointCalls);
+        Assert.Equal(0, dialogs.EditPointCalls);
+        Assert.Equal(_deviceId, Assert.Single(dialogs.EditOpcUaPointDeviceIds));
+        Assert.Equal("OPC UA", dialogs.LastOpcUaPointEditor!.ProtocolName);
+        Assert.Equal("MyLevel", Assert.Single(manager.Added).Point.Name);
+    }
+
+    [Fact]
+    public async Task AddPoint_modbus_protocol_uses_plain_editor()
+    {
+        var manager = new StubPointManager();
+        var dialogs = new StubDeviceDialogService { EditPointFillName = "P1" };
+        var vm = CreateVm(manager, dialogs);
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, dialogs.EditPointCalls);
+        Assert.Equal(0, dialogs.EditOpcUaPointCalls);
+    }
+
+    [Fact]
+    public async Task EditPoint_opcua_protocol_uses_browse_editor()
+    {
+        var point = TestDevices.Point("MyLevel");
+        var manager = new StubPointManager();
+        manager.Seed(_deviceId, point);
+        var dialogs = new StubDeviceDialogService { EditPointFillName = "MyLevel2" };
+        var vm = CreateVm(manager, dialogs, protocolName: "OPC UA");
+        await vm.RefreshCommand.ExecuteAsync(null);
+        vm.SelectedPoint = vm.Items[0];
+
+        await vm.EditCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, dialogs.EditOpcUaPointCalls);
+        Assert.Equal(0, dialogs.EditPointCalls);
+        Assert.Equal("MyLevel2", Assert.Single(manager.Updated).Point.Name);
+    }
+
     public void Dispose() => _provider?.Dispose();
 
     private PointsViewModel CreateVm(

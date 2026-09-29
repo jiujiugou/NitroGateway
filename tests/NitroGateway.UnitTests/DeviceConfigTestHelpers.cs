@@ -117,6 +117,7 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
 {
     public bool EditDeviceResult = true;
     public bool EditPointResult = true;
+    public bool EditOpcUaPointResult = true;
     public bool EditPointBatchResult = true;
     public bool EditWriteResult = true;
     public bool ConfirmResult = true;
@@ -128,14 +129,25 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
     public string? EditPointBatchFillProtocol;
     public int EditDeviceCalls;
     public int EditPointCalls;
+    public int EditOpcUaPointCalls;
     public int EditPointBatchCalls;
     public int EditWriteCalls;
     public int ConfirmCalls;
     public List<(Guid DeviceId, string DeviceName, string ProtocolName)> ShowPointsCalls { get; } = [];
 
+    /// <summary>EditOpcUaPoint 收到的设备 Id（验证 OPC UA 点位表单拿到正确设备）。</summary>
+    public List<Guid> EditOpcUaPointDeviceIds { get; } = [];
+
+    /// <summary>最后一次传给 EditDevice 的表单（验证协议分区锁定等）。</summary>
+    public DeviceEditor? LastDeviceEditor { get; private set; }
+
+    /// <summary>最后一次传给 EditOpcUaPoint 的点位表单。</summary>
+    public PointEditor? LastOpcUaPointEditor { get; private set; }
+
     public bool EditDevice(DeviceEditor editor)
     {
         EditDeviceCalls++;
+        LastDeviceEditor = editor;
         if (EditDeviceFillName is not null)
             editor.Name = EditDeviceFillName;
         return EditDeviceResult;
@@ -147,6 +159,16 @@ internal sealed class StubDeviceDialogService : IDeviceDialogService
         if (EditPointFillName is not null)
             editor.Name = EditPointFillName;
         return EditPointResult;
+    }
+
+    public bool EditOpcUaPoint(Guid deviceId, PointEditor editor)
+    {
+        EditOpcUaPointCalls++;
+        EditOpcUaPointDeviceIds.Add(deviceId);
+        LastOpcUaPointEditor = editor;
+        if (EditPointFillName is not null)
+            editor.Name = EditPointFillName;
+        return EditOpcUaPointResult;
     }
 
     public bool EditPointBatch(PointBatchEditor editor)

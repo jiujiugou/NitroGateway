@@ -8,6 +8,8 @@
     <sys:String x:Key="IconOnline">&#xE73E;</sys:String>
     <sys:String x:Key="IconOffline">&#xE711;</sys:String>
     <sys:String x:Key="IconPoints">&#xE71B;</sys:String>
+    <sys:String x:Key="IconAlarm">&#xE7BA;</sys:String>
+    <sys:String x:Key="IconBacklog">&#xE9D2;</sys:String>
 
 
     <!-- ===================== 设计令牌 ===================== -->

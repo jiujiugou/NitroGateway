@@ -53,6 +53,9 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
 
     public bool IsIdle => !IsLoading;
 
+    /// <summary>本页协议分区（Modbus/S7 或 OPC UA）：决定列表过滤与列显隐。</summary>
+    public DeviceListScope Scope { get; }
+
     public DevicesViewModel(
         IDeviceSnapshotCache cache,
         IDeviceHealthMonitor health,
@@ -62,8 +65,10 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         IServiceScopeFactory scopeFactory,
         IDeviceDialogService dialogs,
         IConfigSyncOutboxStore outbox,
-        IUiTimer? timer = null)
+        IUiTimer? timer = null,
+        DeviceListScope? scope = null)
     {
+        Scope = scope ?? DeviceListScope.Generic;
         _cache = cache;
         _health = health;
         _ui = ui;
@@ -87,7 +92,13 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task AddDeviceAsync()
     {
-        var editor = new DeviceEditor { Id = Guid.NewGuid() };
+        var editor = new DeviceEditor { Id = Guid.NewGuid(), IsNew = true };
+        if (Scope.OpcUaOnly)
+        {
+            // OPC UA 分区新增：协议锁定为 OPC UA（OnProtocolNameChanged 会带出 opc.tcp 默认端点）
+            editor.LockProtocol = true;
+            editor.ProtocolName = "OPC UA";
+        }
         if (!_dialogs.EditDevice(editor))
             return;
 
@@ -125,6 +136,7 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         }
 
         var editor = DeviceEditor.FromDevice(loaded.Value!);
+        editor.LockProtocol = Scope.OpcUaOnly;
         if (!_dialogs.EditDevice(editor))
             return;
 
@@ -195,7 +207,10 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var devices = devicesResult.Value!;
+            // 协议分区：只展示属于本页范围的设备（web 同语义，两分区共用一张设备表）
+            var devices = devicesResult.Value!
+                .Where(d => Scope.Matches(NormalizeProtocolName(d.Protocol.Name)))
+                .ToArray();
             var snapshots = _health.GetAllSnapshots().ToDictionary(s => s.DeviceId);
 
             _ui.Post(() =>
@@ -278,10 +293,29 @@ public sealed partial class DevicesViewModel : ObservableObject, IDisposable
         item.LastCollectionAt = snapshot?.LastCollectionAt;
         item.LastError = snapshot?.LastError;
         item.PointsCount = device.Points.Count;
+        item.Endpoint = device.Connection.Endpoint;
+        item.SecuritySummary = BuildSecuritySummary(device.Connection.Parameters);
         item.UnitId = device.Connection.Parameters.TryGetValue("UnitId", out var rawUnitId)
             && int.TryParse(rawUnitId?.ToString(), out var unitId)
                 ? unitId
                 : null;
+    }
+
+    /// <summary>OPC UA 安全档位摘要（未声明显示「自动」，与 web OpcUaDeviceList.vue securitySummary 同口径）。</summary>
+    private static string BuildSecuritySummary(IReadOnlyDictionary<string, object> parameters)
+    {
+        var policy = ReadParameterText(parameters, "SecurityPolicy") ?? "自动";
+        var mode = ReadParameterText(parameters, "SecurityMode") ?? "自动";
+        return $"{policy} / {mode}";
+    }
+
+    /// <summary>读取连接参数文本：兼容内存 string 与反序列化的 JsonElement；空/缺失返回 null。</summary>
+    private static string? ReadParameterText(IReadOnlyDictionary<string, object> parameters, string key)
+    {
+        if (!parameters.TryGetValue(key, out var raw) || raw is null)
+            return null;
+        var text = raw.ToString();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     public void Dispose()
@@ -319,6 +353,12 @@ public sealed partial class DeviceItem : ObservableObject
 
     [ObservableProperty] private string? _lastError;
     [ObservableProperty] private int _pointsCount;
+
+    /// <summary>连接端点（OPC UA 分区列表展示用）。</summary>
+    [ObservableProperty] private string _endpoint = "";
+
+    /// <summary>安全档位摘要（策略 / 模式；未声明显示「自动」）。</summary>
+    [ObservableProperty] private string _securitySummary = "自动 / 自动";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UnitIdText))]

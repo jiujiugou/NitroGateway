@@ -11,6 +11,7 @@ using Xunit;
 
 namespace NitroGateway.UnitTests.Telemetry;
 
+[Collection(ActivityListenerCollection.Name)]
 public class TelemetryServiceCollectionExtensionsTests
 {
     private static IConfiguration Config(params (string key, string? value)[] items)

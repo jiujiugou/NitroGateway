@@ -11,10 +11,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly EventBridge _bridge;
     private readonly UiDispatcher _ui;
     private readonly RealtimeViewModel _realtime;
+    private readonly IReadOnlyList<DevicesViewModel> _deviceLists;
+    private readonly NavNode _defaultNav;
 
-    public ObservableCollection<NavItem> NavItems { get; } = [];
+    /// <summary>侧栏导航树：一级「协议」目录统辖两个二级设备分区，其余为顶级页面项。</summary>
+    public ObservableCollection<NavNode> NavTree { get; } = [];
 
-    [ObservableProperty] private NavItem? _selectedNav;
+    [ObservableProperty] private NavNode? _selectedNav;
     [ObservableProperty] private ObservableObject? _currentViewModel;
 
     [ObservableProperty] private string _mqttStateText = "未连接";
@@ -23,7 +26,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _statusText = "";
 
     public MainViewModel(
-        DevicesViewModel devices,
+        DashboardViewModel dashboard,
+        IDevicesViewModelFactory deviceLists,
         RealtimeViewModel realtime,
         AlarmsViewModel alarms,
         AlarmRulesViewModel alarmRules,
@@ -36,27 +40,83 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _ui = ui;
         _realtime = realtime;
 
-        NavItems.Add(new NavItem("设备", "\uE772", devices));
-        NavItems.Add(new NavItem("实时数据", "\uE9D9", realtime));
-        NavItems.Add(new NavItem("告警", "\uE7BA", alarms));
-        NavItems.Add(new NavItem("告警规则", "\uE8FD", alarmRules));
-        NavItems.Add(new NavItem("历史查询", "\uE81C", history));
-        NavItems.Add(new NavItem("设置", "\uE713", settings));
+        // 协议分区（对齐 web App.vue 的「设备管理」分组）：Modbus/S7 与 OPC UA 各自独立列表，
+        // 复用同一套 DevicesView，由 DeviceListScope 决定过滤与列显隐。
+        var genericDevices = deviceLists.Create(DeviceListScope.Generic);
+        var opcUaDevices = deviceLists.Create(DeviceListScope.OpcUa);
+        _deviceLists = [genericDevices, opcUaDevices];
+
+        // 导航（对齐 web）：仪表盘 → 一级「协议」目录（统辖两个二级分区）→ 其余顶级页面
+        _defaultNav = NavNode.Page("仪表盘", "\uE80F", dashboard);
+        NavTree.Add(_defaultNav);
+        NavTree.Add(NavNode.Group("协议", "\uE968")
+            .With(
+                NavNode.Page(DeviceListScope.Generic.Title, "\uE772", genericDevices),
+                NavNode.Page(DeviceListScope.OpcUa.Title, "\uE774", opcUaDevices)));
+        NavTree.Add(NavNode.Page("实时数据", "\uE9D9", realtime));
+        NavTree.Add(NavNode.Page("告警", "\uE7BA", alarms));
+        NavTree.Add(NavNode.Page("告警规则", "\uE8FD", alarmRules));
+        NavTree.Add(NavNode.Page("历史查询", "\uE81C", history));
+        NavTree.Add(NavNode.Page("设置", "\uE713", settings));
+
+        foreach (var node in AllNodes())
+            node.SelectionRequested = OnNavSelectionRequested;
 
         _bridge.FrameReady += OnFrame;
-        devices.DeviceCountChanged += OnDeviceCountChanged;
-        DeviceCountText = devices.Items.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        foreach (var devices in _deviceLists)
+            devices.DeviceCountChanged += OnDeviceCountChanged;
+        DeviceCountText = TotalDeviceCount();
 
-        SelectedNav = NavItems[0];
+        OnNavSelectionRequested(_defaultNav);
     }
 
-    partial void OnSelectedNavChanged(NavItem? value)
+    /// <summary>
+    /// 导航项被点击（View层入口）：一级「协议」目录只切换展开态、不改内容；页面项切换内容并单高亮。
+    /// </summary>
+    public void SelectNav(NavNode? node)
     {
-        if (value is not null)
+        if (node is not null)
+            OnNavSelectionRequested(node);
+    }
+
+    /// <summary>
+    /// 导航选中：一级目录只切换展开态且不参与高亮；页面项高亮自身并切换内容区。
+    /// 由 <see cref="NavNode.IsSelected"/> 状态驱动（View 层经 DataTrigger 消费，避免受 TreeView 选中语义影响）。
+    /// </summary>
+    private void OnNavSelectionRequested(NavNode node)
+    {
+        if (node.IsGroup)
         {
-            CurrentViewModel = value.ViewModel;
-            _realtime.IsActive = ReferenceEquals(value.ViewModel, _realtime);
+            node.IsSelected = false;               // 目录不可选中
+            node.IsExpanded = !node.IsExpanded;    // 点击标题仅展开/收起
+            return;
         }
+
+        foreach (var leaf in LeafNodes())
+            leaf.IsSelected = ReferenceEquals(leaf, node);
+
+        SelectedNav = node;
+    }
+
+    private IEnumerable<NavNode> AllNodes()
+    {
+        foreach (var node in NavTree)
+        {
+            yield return node;
+            foreach (var child in node.Children)
+                yield return child;
+        }
+    }
+
+    private IEnumerable<NavNode> LeafNodes() => AllNodes().Where(n => !n.IsGroup);
+
+    partial void OnSelectedNavChanged(NavNode? value)
+    {
+        if (value?.ViewModel is not { } viewModel)
+            return;
+
+        CurrentViewModel = viewModel;
+        _realtime.IsActive = ReferenceEquals(viewModel, _realtime);
     }
 
     public void SetRealtimeVisible(bool visible)
@@ -90,16 +150,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         });
     }
 
-    /// <summary>DevicesViewModel 刷新后同步设备数（事件已在 UI 线程触发）。</summary>
-    private void OnDeviceCountChanged(object? sender, int count) => DeviceCountText = count.ToString(System.Globalization.CultureInfo.CurrentCulture);
+    /// <summary>设备列表刷新后同步设备数（两个协议分区求和；事件已在 UI 线程触发）。</summary>
+    private void OnDeviceCountChanged(object? sender, int count) => DeviceCountText = TotalDeviceCount();
+
+    private string TotalDeviceCount() =>
+        _deviceLists.Sum(v => v.Items.Count).ToString(System.Globalization.CultureInfo.CurrentCulture);
 
     public void Dispose()
     {
         _bridge.FrameReady -= OnFrame;
-        if (NavItems.FirstOrDefault(n => n.ViewModel is DevicesViewModel)?.ViewModel is DevicesViewModel devices)
+        foreach (var devices in _deviceLists)
             devices.DeviceCountChanged -= OnDeviceCountChanged;
         // 窗口关闭时随 MainViewModel 一并释放
-        foreach (var nav in NavItems)
-            (nav.ViewModel as IDisposable)?.Dispose();
+        foreach (var node in AllNodes())
+            (node.ViewModel as IDisposable)?.Dispose();
     }
 }

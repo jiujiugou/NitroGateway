@@ -29,6 +29,9 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     /// <summary>设备协议（Modbus / S7 / OPC UA），透传给点位表单与批量生成（地址提示、递增规则，docs/13）。</summary>
     public string ProtocolName { get; }
 
+    /// <summary>是否 OPC UA 分区：点位表单走地址空间点选（左树右表单）。</summary>
+    private bool IsOpcUaProtocol => string.Equals(ProtocolName, "OPC UA", StringComparison.OrdinalIgnoreCase);
+
     [ObservableProperty] private PointItem? _selectedPoint;
     [ObservableProperty] private string _statusText = "";
 
@@ -87,7 +90,11 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
     private async Task AddAsync()
     {
         var editor = new PointEditor { Id = Guid.NewGuid(), ProtocolName = ProtocolName };
-        if (!_dialogs.EditPoint(editor))
+        // ADR-070 层次 1：OPC UA 点位走地址空间浏览树表单（左树右表单），其余协议走普通表单
+        var accepted = IsOpcUaProtocol
+            ? _dialogs.EditOpcUaPoint(_deviceId, editor)
+            : _dialogs.EditPoint(editor);
+        if (!accepted)
             return;
 
         using var scope = _scopeFactory.CreateScope();
@@ -113,7 +120,10 @@ public sealed partial class PointsViewModel : ObservableObject, IDisposable
 
         var editor = PointEditor.FromPoint(SelectedPoint.Point);
         editor.ProtocolName = ProtocolName; // 编辑回填不保留协议，按设备协议给地址提示
-        if (!_dialogs.EditPoint(editor))
+        var accepted = IsOpcUaProtocol
+            ? _dialogs.EditOpcUaPoint(_deviceId, editor)
+            : _dialogs.EditPoint(editor);
+        if (!accepted)
             return;
 
         using var scope = _scopeFactory.CreateScope();

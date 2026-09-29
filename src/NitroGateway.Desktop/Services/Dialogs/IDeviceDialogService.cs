@@ -10,6 +10,12 @@ public interface IDeviceDialogService
     /// <summary>编辑点位表单。返回 true 表示用户点保存且 editor 已更新；false 表示取消</summary>
     bool EditPoint(PointEditor editor);
 
+    /// <summary>
+    /// 编辑 OPC UA 点位（左=服务器地址空间浏览树，右=点位表单，ADR-070 层次 1）。
+    /// 返回 true 表示用户点保存且 editor 已更新；false 表示取消。
+    /// </summary>
+    bool EditOpcUaPoint(Guid deviceId, PointEditor editor);
+
     /// <summary>批量生成点位表单（docs/13）。返回 true 表示用户点生成且 editor 已更新；false 表示取消</summary>
     bool EditPointBatch(PointBatchEditor editor);
 

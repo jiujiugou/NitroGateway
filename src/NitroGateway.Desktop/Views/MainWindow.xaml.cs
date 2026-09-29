@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Desktop.Hosting;
@@ -33,6 +35,24 @@ public partial class MainWindow : Window
 
     private void OnWindowStateChanged(object? sender, EventArgs e)
         => _viewModel.SetRealtimeVisible(WindowState != WindowState.Minimized);
+
+    /// <summary>
+    /// 导航项点击：交给 ViewModel 决定（一级「协议」目录只展开/收起，不切换内容）。
+    /// 选中高亮由 <c>NavNode.IsSelected</c> 经 DataTrigger 驱动，故此处不依赖 TreeView 自身的选中语义。
+    /// </summary>
+    private void OnNavNodeSelected(object sender, RoutedEventArgs e)
+    {
+        if (sender is not TreeViewItem { DataContext: NavNode node } item)
+            return;
+
+        _viewModel.SelectNav(node);
+
+        if (node.IsGroup)
+        {
+            // 目录不可选中：撤销容器选中，使再次点击仍触发 Selected（从而可反复展开/收起）
+            item.Dispatcher.BeginInvoke(new Action(() => item.IsSelected = false), DispatcherPriority.Input);
+        }
+    }
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
     {

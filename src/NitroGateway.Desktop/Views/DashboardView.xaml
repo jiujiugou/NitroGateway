@@ -1,0 +1,177 @@
+<UserControl x:Class="NitroGateway.Desktop.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 合并共享样式（Themes/Styles.xaml）：无 Application 实例（单元测试冒烟）时也能解析 StaticResource -->
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/NitroGateway.Desktop;component/Themes/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 页头 -->
+        <StackPanel Grid.Row="0" Margin="26,22,26,14">
+            <TextBlock Text="仪表盘" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock Text="设备健康总览与关键指标（10 秒自动刷新）" Style="{StaticResource PageSubtitleStyle}" Margin="0,3,0,0" />
+        </StackPanel>
+
+        <!-- KPI 卡（6 个，对齐 web DashboardView） -->
+        <UniformGrid Grid.Row="1" Columns="3" Margin="26,0,26,14">
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,10,10">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource PrimaryLightBrush}" VerticalAlignment="Center">
+                        <TextBlock Text="{StaticResource IconDevicesTotal}" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                   Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="设备总数" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                        <TextBlock Text="{Binding TotalCount}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,10,10">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource StatusOnlineBg}" VerticalAlignment="Center">
+                        <TextBlock Text="{StaticResource IconOnline}" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                   Foreground="{StaticResource StatusOnlineBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="在线设备" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                        <TextBlock Text="{Binding OnlineCount}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource StatusOnlineBrush}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,0,10">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource StatusOfflineBg}" VerticalAlignment="Center">
+                        <TextBlock Text="{StaticResource IconOffline}" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                   Foreground="{StaticResource StatusOfflineBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="离线 / 故障" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                        <TextBlock Text="{Binding OfflineCount}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource StatusOfflineBrush}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,10,0">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource StatusMaintenanceBg}" VerticalAlignment="Center">
+                        <TextBlock Text="{StaticResource IconPoints}" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                   Foreground="{StaticResource StatusMaintenanceBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="总点位数" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                        <TextBlock Text="{Binding TotalPoints}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,10,0">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource StatusErrorBg}" VerticalAlignment="Center">
+                        <TextBlock Text="{StaticResource IconAlarm}" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                   Foreground="{StaticResource StatusErrorBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="今日告警" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                        <TextBlock Text="{Binding TodayAlarmCount}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource StatusErrorBrush}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16,12">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="42" Height="42" CornerRadius="9" Background="{StaticResource FillLight}" VerticalAlignment="Center">
+                        <TextBlock Text="{StaticResource IconBacklog}" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                   Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="缓冲积压（批）" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                        <TextBlock Text="{Binding BufferBacklog}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <!-- 设备概览（跨协议一屏） -->
+        <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Margin="26,0,26,22">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" Margin="16,12,16,10">
+                    <TextBlock Text="设备概览" FontWeight="SemiBold" FontSize="13.5"
+                               Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="0,0,10,0"
+                                   Foreground="{StaticResource TextSecondary}" FontSize="12" />
+                        <Button Content="刷新" Command="{Binding RefreshCommand}" Padding="12,3" />
+                    </StackPanel>
+                </DockPanel>
+
+                <DataGrid Grid.Row="1" ItemsSource="{Binding Devices}"
+                          AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                          BorderThickness="0,1,0,0" RowHeight="40">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="名称" Binding="{Binding Name}" Width="*" />
+                        <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="协议" Binding="{Binding Protocol}" Width="130" />
+                        <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="连接端点" Binding="{Binding Endpoint}" Width="240" />
+                        <DataGridTemplateColumn Header="状态" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border x:Name="Badge" CornerRadius="11" Padding="9,3"
+                                            Background="{StaticResource StatusUnknownBg}"
+                                            VerticalAlignment="Center" HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse x:Name="Dot" Width="6" Height="6"
+                                                     Fill="{StaticResource StatusUnknownBrush}"
+                                                     VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <TextBlock x:Name="Txt" Text="{Binding StatusText}" FontSize="12"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource StatusUnknownBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Status}" Value="Online">
+                                            <Setter TargetName="Badge" Property="Background" Value="{StaticResource StatusOnlineBg}" />
+                                            <Setter TargetName="Dot" Property="Fill" Value="{StaticResource StatusOnlineBrush}" />
+                                            <Setter TargetName="Txt" Property="Foreground" Value="{StaticResource StatusOnlineBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Status}" Value="Offline">
+                                            <Setter TargetName="Badge" Property="Background" Value="{StaticResource StatusOfflineBg}" />
+                                            <Setter TargetName="Dot" Property="Fill" Value="{StaticResource StatusOfflineBrush}" />
+                                            <Setter TargetName="Txt" Property="Foreground" Value="{StaticResource StatusOfflineBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Status}" Value="Error">
+                                            <Setter TargetName="Badge" Property="Background" Value="{StaticResource StatusErrorBg}" />
+                                            <Setter TargetName="Dot" Property="Fill" Value="{StaticResource StatusErrorBrush}" />
+                                            <Setter TargetName="Txt" Property="Foreground" Value="{StaticResource StatusErrorBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Status}" Value="Maintenance">
+                                            <Setter TargetName="Badge" Property="Background" Value="{StaticResource StatusMaintenanceBg}" />
+                                            <Setter TargetName="Dot" Property="Fill" Value="{StaticResource StatusMaintenanceBrush}" />
+                                            <Setter TargetName="Txt" Property="Foreground" Value="{StaticResource StatusMaintenanceBrush}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn ElementStyle="{StaticResource DataGridCellTextStyle}" Header="点位数" Binding="{Binding PointsCount}" Width="70" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

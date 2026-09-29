@@ -11,6 +11,7 @@
         FontFamily="Segoe UI, Microsoft YaHei UI"
         FontSize="13.5">
     <Window.Resources>
+        <DataTemplate DataType="{x:Type vm:DashboardViewModel}"><views:DashboardView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:DevicesViewModel}"><views:DevicesView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:RealtimeViewModel}"><views:RealtimeView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:AlarmsViewModel}"><views:AlarmsView /></DataTemplate>
@@ -18,26 +19,40 @@
         <DataTemplate DataType="{x:Type vm:HistoryViewModel}"><views:HistoryView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}"><views:SettingsView /></DataTemplate>
 
-        <!-- 左侧导航项（深色侧栏）：悬停浅灰底、选中主色圆角胶囊 + 白色文字 -->
-        <Style x:Key="NavItemStyle" TargetType="ListBoxItem">
+        <!-- 侧栏导航（深色两级树）：一级「协议」目录点击仅展开/收起且不高亮；
+             二级/顶级页面项悬停浅灰底、选中主色圆角胶囊 + 白色文字 -->
+        <Style x:Key="NavNodeStyle" TargetType="TreeViewItem">
             <Setter Property="Foreground" Value="{StaticResource NavForeground}" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            <!-- 单向：选中态以 ViewModel 为唯一真源，避免 TreeView 容器初始化/切换把 VM 状态回写冲掉 -->
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=OneWay}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <EventSetter Event="Selected" Handler="OnNavNodeSelected" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="7" Padding="13,11">
-                            <ContentPresenter />
-                        </Border>
+                    <ControlTemplate TargetType="TreeViewItem">
+                        <StackPanel>
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="7" Padding="13,11">
+                                <ContentPresenter ContentSource="Header" />
+                            </Border>
+                            <ItemsPresenter x:Name="ItemsHost" Margin="12,0,0,0" />
+                        </StackPanel>
                         <ControlTemplate.Triggers>
+                            <!-- 目录收起时隐藏子项（自定制模板必须自带，默认模板靠的就是这条） -->
+                            <Trigger Property="IsExpanded" Value="False">
+                                <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed" />
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{StaticResource NavHoverBrush}" />
                                 <Setter Property="Foreground" Value="White" />
                             </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
+                            <!-- 高亮跟随 VM 的 IsSelected（不依赖 TreeViewItem.IsSelected，避免选中态丢失） -->
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{StaticResource NavSelectedBrush}" />
                                 <Setter Property="Foreground" Value="White" />
-                            </Trigger>
+                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -81,22 +96,29 @@
                         <TextBlock Text="本地采集 · 单机运行" Foreground="{StaticResource NavMutedBrush}" FontSize="11.5" />
                     </StackPanel>
 
-                    <ListBox ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNav}"
-                             Background="Transparent" BorderThickness="0" Padding="10,0"
-                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
-                             ItemContainerStyle="{StaticResource NavItemStyle}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="17"
-                                               VerticalAlignment="Center" Margin="0,0,12,0"
-                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
-                                    <TextBlock Text="{Binding Title}" FontSize="14"
-                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                    <!-- 两级导航树：一级目录（协议）+ 二级页面项；选中态由 NavNode.IsSelected 双向绑定驱动 -->
+                    <TreeView ItemsSource="{Binding NavTree}"
+                              Background="Transparent" BorderThickness="0" Padding="10,0"
+                              ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                              ItemContainerStyle="{StaticResource NavNodeStyle}">
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="▾" FontSize="11" VerticalAlignment="Center"
+                                               Foreground="{StaticResource NavMutedBrush}"
+                                               Visibility="{Binding IsGroup, Converter={StaticResource BoolToVis}}" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- 显式绑定容器前景色：与悬停/选中（白色）联动，不依赖属性继承 -->
+                                        <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="17"
+                                                   VerticalAlignment="Center" Margin="0,0,12,0"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" />
+                                        <TextBlock Text="{Binding Title}" FontSize="14" VerticalAlignment="Center"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
                 </DockPanel>
             </Border>
 

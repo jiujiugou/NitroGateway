@@ -1,6 +1,7 @@
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Services.Connectivity;
 using NitroGateway.Domain.Devices;
+using System.Text.Json;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
@@ -466,5 +467,241 @@ public sealed class DeviceEditorTests
         Assert.False(editor.IsTestingConnection);
         Assert.True(editor.IsTestEnabled);
         Assert.Contains("连接成功", editor.TestResultText);
+    }
+
+    // ── OPC UA 安全（ADR-073 层4，对齐 web OpcUaDeviceForm.vue）──
+
+    [Fact]
+    public void ToDevice_opcUa_writes_security_parameters()
+    {
+        var editor = new DeviceEditor
+        {
+            Name = "UA-1",
+            ProtocolName = "OPC UA",
+            Endpoint = "opc.tcp://127.0.0.1:4840",
+            SecurityPolicy = "Basic256Sha256",
+            SecurityMode = "SignAndEncrypt",
+            UserName = "operator",
+            Password = "s3cret"
+        };
+
+        var device = editor.ToDevice();
+
+        Assert.Equal("OPC UA", device.Protocol.Name);
+        Assert.Null(device.Protocol.Dialect); // OPC UA 无方言
+        Assert.Equal("Basic256Sha256", device.Connection.Parameters["SecurityPolicy"]);
+        Assert.Equal("SignAndEncrypt", device.Connection.Parameters["SecurityMode"]);
+        Assert.Equal("operator", device.Connection.Parameters["UserName"]);
+        Assert.Equal("s3cret", device.Connection.Parameters["Password"]);
+        Assert.False(device.Connection.Parameters.ContainsKey("UnitId"));
+        Assert.False(device.Connection.Parameters.ContainsKey("Rack"));
+    }
+
+    [Fact]
+    public void ToDevice_opcUa_omits_undeclared_security_keys()
+    {
+        var editor = new DeviceEditor
+        {
+            Name = "UA-anon",
+            ProtocolName = "OPC UA",
+            Endpoint = "opc.tcp://127.0.0.1:4840"
+        };
+
+        var device = editor.ToDevice();
+
+        Assert.Empty(device.Connection.Parameters);
+    }
+
+    [Fact]
+    public void ToDevice_opcUa_blank_password_preserves_existing_credential()
+    {
+        var editor = new DeviceEditor
+        {
+            Name = "UA-1",
+            ProtocolName = "OPC UA",
+            UserName = "operator",
+            Password = "",                     // 编辑态留空 = 不修改
+            ExistingPassword = "old-secret"
+        };
+
+        var device = editor.ToDevice();
+
+        Assert.Equal("old-secret", device.Connection.Parameters["Password"]);
+    }
+
+    [Fact]
+    public void FromDevice_opcUa_loads_security_and_never_prefills_password()
+    {
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = "UA-1",
+            Protocol = new ProtocolIdentifier { Name = "OPC UA" },
+            Connection = new DeviceConnection
+            {
+                Endpoint = "opc.tcp://127.0.0.1:4840",
+                Parameters = new Dictionary<string, object>
+                {
+                    ["SecurityPolicy"] = "None",
+                    ["SecurityMode"] = "None",
+                    ["UserName"] = "operator",
+                    ["Password"] = "old-secret"
+                }
+            }
+        };
+
+        var editor = DeviceEditor.FromDevice(device);
+
+        Assert.Equal("None", editor.SecurityPolicy);
+        Assert.Equal("None", editor.SecurityMode);
+        Assert.Equal("operator", editor.UserName);
+        Assert.Equal("", editor.Password);          // 密文不回填
+        Assert.True(editor.HasPassword);            // 但标记「已设置」
+        Assert.Equal("old-secret", editor.ExistingPassword);
+    }
+
+    [Fact]
+    public void Validate_opcUa_user_without_password_is_invalid()
+    {
+        var editor = new DeviceEditor
+        {
+            Name = "UA-1",
+            ProtocolName = "OPC UA",
+            Endpoint = "opc.tcp://127.0.0.1:4840",
+            UserName = "operator"
+        };
+
+        Assert.False(editor.Validate());
+        Assert.Contains("密码", string.Join(";", editor.GetErrors(nameof(DeviceEditor.Password)).Cast<string>()));
+    }
+
+    [Fact]
+    public void Validate_opcUa_password_without_user_is_invalid()
+    {
+        var editor = new DeviceEditor
+        {
+            Name = "UA-1",
+            ProtocolName = "OPC UA",
+            Endpoint = "opc.tcp://127.0.0.1:4840",
+            ExistingPassword = "old-secret"
+        };
+
+        Assert.False(editor.Validate());
+        Assert.Contains("用户名", string.Join(";", editor.GetErrors(nameof(DeviceEditor.UserName)).Cast<string>()));
+    }
+
+    [Fact]
+    public void Validate_opcUa_anonymous_is_valid()
+    {
+        var editor = new DeviceEditor
+        {
+            Name = "UA-1",
+            ProtocolName = "OPC UA",
+            Endpoint = "opc.tcp://127.0.0.1:4840"
+        };
+
+        Assert.True(editor.Validate());
+    }
+
+    [Fact]
+    public void ProtocolItems_generic_scope_excludes_opcua()
+    {
+        var editor = new DeviceEditor();
+
+        Assert.Equal(["Modbus", "S7"], editor.ProtocolItems);
+        Assert.True(editor.IsProtocolEditable);
+    }
+
+    [Fact]
+    public void ProtocolItems_locked_scope_shows_only_opcua_and_disables_editing()
+    {
+        var editor = new DeviceEditor { LockProtocol = true, ProtocolName = "OPC UA" };
+
+        Assert.Equal(["OPC UA"], editor.ProtocolItems);
+        Assert.False(editor.IsProtocolEditable);
+    }
+
+    [Fact]
+    public void FromDevice_opcUa_reads_security_from_json_element_parameters()
+    {
+        // 仓储反序列化（DomainMapper.DeserializeParams）产出的参数值是 JsonElement 而非 string；
+        // 现有 OPC UA 测试只覆盖 string 入参，此处锁定真实读写路径。
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = "UA-1",
+            Protocol = new ProtocolIdentifier { Name = "OPC UA" },
+            Connection = new DeviceConnection
+            {
+                Endpoint = "opc.tcp://127.0.0.1:4840",
+                Parameters = new Dictionary<string, object>
+                {
+                    ["SecurityPolicy"] = JsonSerializer.Deserialize<JsonElement>("\"Basic256Sha256\""),
+                    ["SecurityMode"] = JsonSerializer.Deserialize<JsonElement>("\"SignAndEncrypt\""),
+                    ["UserName"] = JsonSerializer.Deserialize<JsonElement>("\"opcuser\""),
+                    ["Password"] = JsonSerializer.Deserialize<JsonElement>("\"s3cret\"")
+                }
+            }
+        };
+
+        var editor = DeviceEditor.FromDevice(device);
+
+        Assert.Equal("Basic256Sha256", editor.SecurityPolicy);
+        Assert.Equal("SignAndEncrypt", editor.SecurityMode);
+        Assert.Equal("opcuser", editor.UserName);
+        Assert.True(editor.HasPassword);
+        Assert.Equal("s3cret", editor.ExistingPassword);
+        Assert.True(editor.Validate());
+    }
+
+    [Fact]
+    public void FromDevice_opcUa_jsonElement_roundtrip_preserves_existing_password_when_blank()
+    {
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = "UA-1",
+            Protocol = new ProtocolIdentifier { Name = "OPC UA" },
+            Connection = new DeviceConnection
+            {
+                Endpoint = "opc.tcp://127.0.0.1:4840",
+                Parameters = new Dictionary<string, object>
+                {
+                    ["UserName"] = JsonSerializer.Deserialize<JsonElement>("\"opcuser\""),
+                    ["Password"] = JsonSerializer.Deserialize<JsonElement>("\"s3cret\"")
+                }
+            }
+        };
+
+        // 编辑态：表单密码留空 → 保存时必须沿用既有密码（不得静默清空）
+        var saved = DeviceEditor.FromDevice(device).ToDevice();
+
+        Assert.Equal("opcuser", saved.Connection.Parameters["UserName"]);
+        Assert.Equal("s3cret", saved.Connection.Parameters["Password"]);
+    }
+
+    [Fact]
+    public void FromDevice_opcUa_jsonElement_non_string_policy_does_not_throw()
+    {
+        // 脏数据（类型不符）不应让设备编辑页崩溃；后端驱动会在连接期报类型错误
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = "UA-bad",
+            Protocol = new ProtocolIdentifier { Name = "OPC UA" },
+            Connection = new DeviceConnection
+            {
+                Endpoint = "opc.tcp://127.0.0.1:4840",
+                Parameters = new Dictionary<string, object>
+                {
+                    ["SecurityPolicy"] = JsonSerializer.Deserialize<JsonElement>("123")
+                }
+            }
+        };
+
+        var editor = DeviceEditor.FromDevice(device);
+
+        Assert.Equal("123", editor.SecurityPolicy);
+        Assert.True(editor.Validate());
     }
 }

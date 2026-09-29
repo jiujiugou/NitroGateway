@@ -2,12 +2,15 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NitroGateway.Desktop.Services.Connectivity;
 using NitroGateway.Desktop.Services.Infrastructure;
 
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.Desktop.Views;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
+using NitroGateway.Domain.Protocols;
+using NitroGateway.Shared;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
@@ -91,6 +94,21 @@ public sealed class DesktopViewSmokeTests
                 pointsWindow.Measure(new Size(800, 600));
                 pointsWindow.Arrange(new Rect(0, 0, 800, 600));
                 pointsWindow.UpdateLayout();
+
+                // 协议分区：OPC UA 点位窗口（地址空间点选）与其「左树右表单」编辑器窗口
+                var opcUaPointsWindow = new OpcUaPointsWindow(pointsVm);
+                Assert.NotNull(opcUaPointsWindow);
+                opcUaPointsWindow.Measure(new Size(800, 600));
+                opcUaPointsWindow.Arrange(new Rect(0, 0, 800, 600));
+                opcUaPointsWindow.UpdateLayout();
+
+                var opcUaEditorVm = new OpcUaPointEditorViewModel(
+                    Guid.NewGuid(), new PointEditor { ProtocolName = "OPC UA" }, new EmptyNodeBrowser());
+                var opcUaEditorWindow = new OpcUaPointEditorWindow(opcUaEditorVm);
+                Assert.NotNull(opcUaEditorWindow);
+                opcUaEditorWindow.Measure(new Size(800, 600));
+                opcUaEditorWindow.Arrange(new Rect(0, 0, 800, 600));
+                opcUaEditorWindow.UpdateLayout();
             }
             catch (Exception ex)
             {
@@ -117,6 +135,7 @@ public sealed class DesktopViewSmokeTests
                 // 无 Application 实例时 StaticResource 也必须可解析（DataContext 留空仅验证模板加载）
                 var views = new System.Windows.FrameworkElement[]
                 {
+                    new DashboardView(),
                     new DevicesView(),
                     new AlarmsView(),
                     new AlarmRulesView(),
@@ -143,5 +162,13 @@ public sealed class DesktopViewSmokeTests
 
         Assert.Null(error);
         Assert.False(thread.IsAlive);
+    }
+
+    /// <summary>冒烟用空浏览器：不访问网络，返回空根层。</summary>
+    private sealed class EmptyNodeBrowser : IOpcUaNodeBrowser
+    {
+        public Task<OperationResult<IReadOnlyList<BrowseNode>>> BrowseAsync(
+            Guid deviceId, string parentNodeId, CancellationToken ct = default) =>
+            Task.FromResult(OperationResult<IReadOnlyList<BrowseNode>>.Success(Array.Empty<BrowseNode>()));
     }
 }

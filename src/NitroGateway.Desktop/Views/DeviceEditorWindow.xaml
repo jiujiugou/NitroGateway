@@ -61,11 +61,10 @@
                         </StackPanel>
                         <StackPanel Style="{StaticResource FormFieldStyle}">
                             <TextBlock Text="协议" Style="{StaticResource FormLabelStyle}" />
-                            <ComboBox SelectedItem="{Binding ProtocolName}">
-                                <sys:String>Modbus</sys:String>
-                                <sys:String>S7</sys:String>
-                                <sys:String>OPC UA</sys:String>
-                            </ComboBox>
+                            <!-- 协议分区：通用页仅 Modbus/S7；OPC UA 页锁定为 OPC UA（对齐 web 两个设备表单互不出现对方协议） -->
+                            <ComboBox ItemsSource="{Binding ProtocolItems}"
+                                      SelectedItem="{Binding ProtocolName}"
+                                      IsEnabled="{Binding IsProtocolEditable}" />
                         </StackPanel>
                         <StackPanel Style="{StaticResource FormFieldStyle}">
                             <TextBlock Text="传输方式" Style="{StaticResource FormLabelStyle}" />
@@ -189,6 +188,30 @@
                         <StackPanel Style="{StaticResource FormFieldStyle}">
                             <TextBlock Text="重试间隔(ms)" Style="{StaticResource FormLabelStyle}" />
                             <TextBox Text="{Binding RetryIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                    </WrapPanel>
+                </GroupBox>
+
+                <!-- OPC UA 安全（ADR-073 层4）：仅 OPC UA 显示；空 = 自动（未声明则键不落库，后端按安全优先默认） -->
+                <GroupBox Header="OPC UA 安全" Margin="0,0,0,14"
+                          Visibility="{Binding IsOpcUa, Converter={StaticResource BoolToVis}}">
+                    <WrapPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="安全策略（空=自动）" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox ItemsSource="{Binding SecurityPolicyItems}" SelectedItem="{Binding SecurityPolicy}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="安全模式（空=自动）" Style="{StaticResource FormLabelStyle}" />
+                            <ComboBox ItemsSource="{Binding SecurityModeItems}" SelectedItem="{Binding SecurityMode}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="用户名（匿名留空）" Style="{StaticResource FormLabelStyle}" />
+                            <TextBox Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                            <TextBlock Text="密码（编辑留空=不修改）" Style="{StaticResource FormLabelStyle}" />
+                            <!-- PasswordBox 不支持绑定（WPF 安全设计）→ code-behind PasswordChanged 推给 VM -->
+                            <PasswordBox x:Name="PasswordBox" PasswordChanged="OnPasswordChanged" />
                         </StackPanel>
                     </WrapPanel>
                 </GroupBox>

@@ -36,7 +36,9 @@ public static class DesktopServiceCollectionExtensions
         services.AddSingleton<IMqttStateListener>(sp => sp.GetRequiredService<EventBridge>());
 
         services.AddSingleton<MainViewModel>();
-        services.AddSingleton<DevicesViewModel>();
+        services.AddSingleton<DashboardViewModel>();
+        // 设备列表按协议分区创建（Modbus/S7 与 OPC UA 各一份，对齐 web 两个设备页）
+        services.AddSingleton<IDevicesViewModelFactory, DevicesViewModelFactory>();
         services.AddSingleton<RealtimeViewModel>();
         services.AddSingleton<AlarmsViewModel>();
         services.AddSingleton<AlarmRulesViewModel>();
@@ -52,6 +54,9 @@ public static class DesktopServiceCollectionExtensions
 
         // ADR-044：桌面端连接测试（Connect+Ping，复用协议驱动工厂），供设备编辑窗口「测试连接」按钮
         services.AddSingleton<IDeviceConnectionTester, DeviceConnectionTester>();
+
+        // ADR-070 层次1：OPC UA 节点浏览（进程内复用协议驱动池长连接），供 OPC UA 点位「从服务器选点」
+        services.AddSingleton<IOpcUaNodeBrowser, OpcUaNodeBrowser>();
 
         services.AddSingleton<IMqttConnectionTester>(sp => new MqttConnectionTester(
             sp.GetRequiredService<IConfiguration>(),

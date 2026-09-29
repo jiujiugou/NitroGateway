@@ -6,6 +6,7 @@ using NitroGateway.Desktop.Services.Sync;
 using NitroGateway.Desktop.ViewModels;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
+using System.Text.Json;
 using Xunit;
 
 namespace NitroGateway.UnitTests;
@@ -382,9 +383,185 @@ public sealed class DevicesViewModelTests : IDisposable
         Assert.Equal("PLC-1", vm.Items[0].Name);
     }
 
+    // ── 协议分区（对齐 web DeviceListView/OpcUaDeviceList 的按协议过滤）──
+
+    [Fact]
+    public async Task Refresh_generic_scope_excludes_opcua_devices()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess(); // 构造时首次刷新
+        cache.EnqueueSuccess(TestDevices.Device("PLC-1"), OpcUaDevice());
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var item = Assert.Single(vm.Items);
+        Assert.Equal("Modbus", item.ProtocolName);
+    }
+
+    [Fact]
+    public async Task Refresh_opcua_scope_keeps_only_opcua_and_exposes_endpoint_and_security()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        cache.EnqueueSuccess(TestDevices.Device("PLC-1"), OpcUaDevice("UA-1"));
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService(),
+            scope: DeviceListScope.OpcUa);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        var item = Assert.Single(vm.Items);
+        Assert.Equal("OPC UA", item.ProtocolName);
+        Assert.Equal("opc.tcp://127.0.0.1:4840", item.Endpoint);
+        Assert.Equal("None / None", item.SecuritySummary);
+    }
+
+    [Fact]
+    public async Task Refresh_opcua_scope_security_summary_defaults_to_auto()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var device = OpcUaDevice("UA-anon");
+        device.Connection.Parameters.Clear();
+        cache.EnqueueSuccess(device);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService(),
+            scope: DeviceListScope.OpcUa);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("自动 / 自动", Assert.Single(vm.Items).SecuritySummary);
+    }
+
+    [Fact]
+    public async Task AddDevice_opcua_scope_locks_protocol_to_opcua_with_opc_tcp_default_endpoint()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var dialogs = new StubDeviceDialogService { EditDeviceFillName = "UA-new" };
+        var vm = CreateVm(cache, new StubDeviceManager(), dialogs, scope: DeviceListScope.OpcUa);
+        cache.EnqueueSuccess(OpcUaDevice("UA-new"));
+
+        await vm.AddDeviceCommand.ExecuteAsync(null);
+
+        Assert.NotNull(dialogs.LastDeviceEditor);
+        Assert.True(dialogs.LastDeviceEditor!.LockProtocol);
+        Assert.Equal("OPC UA", dialogs.LastDeviceEditor.ProtocolName);
+        Assert.StartsWith("opc.tcp://", dialogs.LastDeviceEditor.Endpoint, StringComparison.Ordinal);
+        Assert.Equal("OPC UA", Assert.Single(vm.Items).ProtocolName);
+    }
+
+    [Fact]
+    public async Task AddDevice_generic_scope_leaves_protocol_editable_with_modbus_default()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var dialogs = new StubDeviceDialogService { EditDeviceFillName = "PLC-new" };
+        var vm = CreateVm(cache, new StubDeviceManager(), dialogs);
+
+        await vm.AddDeviceCommand.ExecuteAsync(null);
+
+        Assert.NotNull(dialogs.LastDeviceEditor);
+        Assert.False(dialogs.LastDeviceEditor!.LockProtocol);
+        Assert.Equal("Modbus", dialogs.LastDeviceEditor.ProtocolName);
+    }
+
+    [Fact]
+    public async Task Refresh_opcua_scope_reads_security_summary_from_json_element_parameters()
+    {
+        // 仓储反序列化产出 JsonElement（DomainMapper.DeserializeParams），非 string
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var device = OpcUaDevice("UA-json");
+        device.Connection.Parameters["SecurityPolicy"] = JsonSerializer.Deserialize<JsonElement>("\"Basic256Sha256\"");
+        device.Connection.Parameters["SecurityMode"] = JsonSerializer.Deserialize<JsonElement>("\"SignAndEncrypt\"");
+        cache.EnqueueSuccess(device);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService(),
+            scope: DeviceListScope.OpcUa);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("Basic256Sha256 / SignAndEncrypt", Assert.Single(vm.Items).SecuritySummary);
+    }
+
+    [Fact]
+    public async Task Refresh_opcua_scope_security_summary_falls_back_per_missing_key()
+    {
+        // 半声明：只声明策略，模式未声明 → 未声明项显示「自动」
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var device = OpcUaDevice("UA-partial");
+        device.Connection.Parameters.Remove("SecurityMode");
+        cache.EnqueueSuccess(device);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService(),
+            scope: DeviceListScope.OpcUa);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("None / 自动", Assert.Single(vm.Items).SecuritySummary);
+    }
+
+    [Fact]
+    public async Task Refresh_opcua_scope_classifies_dirty_combo_box_protocol_name()
+    {
+        // 历史脏数据："System.Windows.Controls.ComboBoxItem: OPC UA" 必须仍归入 OPC UA 分区，
+        // 否则该设备会从两个分区同时消失（既非 OPC UA，又被通用分区排除）
+        var dirty = OpcUaDevice("UA-dirty");
+        dirty.Protocol = new ProtocolIdentifier { Name = "System.Windows.Controls.ComboBoxItem: OPC UA" };
+
+        var opcUaCache = new StagedSnapshotCache();
+        opcUaCache.EnqueueSuccess();
+        opcUaCache.EnqueueSuccess(dirty);
+        var opcUaVm = CreateVm(opcUaCache, new StubDeviceManager(), new StubDeviceDialogService(),
+            scope: DeviceListScope.OpcUa);
+
+        await opcUaVm.RefreshCommand.ExecuteAsync(null);
+
+        var item = Assert.Single(opcUaVm.Items);
+        Assert.Equal("OPC UA", item.ProtocolName); // 展示值已归一化
+    }
+
+    [Fact]
+    public async Task Refresh_generic_scope_excludes_dirty_opcua_protocol_name()
+    {
+        var dirty = OpcUaDevice("UA-dirty");
+        dirty.Protocol = new ProtocolIdentifier { Name = "System.Windows.Controls.ComboBoxItem: OPC UA" };
+
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        cache.EnqueueSuccess(dirty);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService());
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Empty(vm.Items);
+    }
+
+    [Fact]
+    public async Task Refresh_opcua_scope_counts_only_its_own_partition()
+    {
+        var cache = new StagedSnapshotCache();
+        cache.EnqueueSuccess();
+        var modbus = TestDevices.Device("PLC-1", TestDevices.Point("P1"), TestDevices.Point("P2"));
+        modbus.Status = DeviceStatus.Online;
+        var opcUa = OpcUaDevice("UA-1");
+        opcUa.Status = DeviceStatus.Offline;
+        opcUa.AddPoint(TestDevices.Point("MyLevel"));
+        cache.EnqueueSuccess(modbus, opcUa);
+        var vm = CreateVm(cache, new StubDeviceManager(), new StubDeviceDialogService(),
+            scope: DeviceListScope.OpcUa);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, vm.TotalCount);
+        Assert.Equal(0, vm.OnlineCount);
+        Assert.Equal(1, vm.OfflineCount);
+        Assert.Equal(1, vm.TotalPoints);
+    }
+
     private DevicesViewModel CreateVm(
         IDeviceSnapshotCache cache, StubDeviceManager manager, StubDeviceDialogService dialogs,
-        StubConfigSyncOutboxStore? outbox = null, IUiTimer? timer = null)
+        StubConfigSyncOutboxStore? outbox = null, IUiTimer? timer = null,
+        DeviceListScope? scope = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IDeviceManager>(_ => manager);
@@ -394,6 +571,27 @@ public sealed class DevicesViewModelTests : IDisposable
             cache, new FakeHealthMonitor(), new UiDispatcher(), _bridge,
             NullLogger<DevicesViewModel>.Instance,
             provider.GetRequiredService<IServiceScopeFactory>(), dialogs,
-            outbox ?? new StubConfigSyncOutboxStore(), timer);
+            outbox ?? new StubConfigSyncOutboxStore(), timer, scope);
+    }
+
+    /// <summary>构造 OPC UA 设备（含安全参数）用于协议分区过滤测试。</summary>
+    private static Device OpcUaDevice(string name = "UA-1")
+    {
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Protocol = new ProtocolIdentifier { Name = "OPC UA" },
+            Connection = new DeviceConnection
+            {
+                Endpoint = "opc.tcp://127.0.0.1:4840",
+                Parameters = new Dictionary<string, object>
+                {
+                    ["SecurityPolicy"] = "None",
+                    ["SecurityMode"] = "None"
+                }
+            }
+        };
+        return device;
     }
 }

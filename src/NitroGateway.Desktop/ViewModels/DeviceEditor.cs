@@ -80,6 +80,31 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     [ObservableProperty] private int _retryCount = 3;
     [ObservableProperty] private int _retryIntervalMs = 1000;
 
+    // ── OPC UA 安全（ADR-073 层4；对齐 web OpcUaDeviceForm.vue）。空串 = 未声明（键不落库，后端安全优先）。 ──
+    [ObservableProperty] private string _securityPolicy = "";
+    [ObservableProperty] private string _securityMode = "";
+    [ObservableProperty] private string _userName = "";
+
+    /// <summary>新输入的密码：编辑态留空 = 不修改（沿用 <see cref="ExistingPassword"/>）；密文不回填。</summary>
+    [ObservableProperty] private string _password = "";
+
+    /// <summary>已落库密码（明文，仓储读时解密）。仅在编辑态有值，用于「留空=不改」语义。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPassword))]
+    private string? _existingPassword;
+
+    /// <summary>协议是否锁定（OPC UA 分区的新增/编辑表单只允许 OPC UA，对齐 web 独立表单不出现协议下拉）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProtocolItems))]
+    [NotifyPropertyChangedFor(nameof(IsProtocolEditable))]
+    private bool _lockProtocol;
+
+    /// <summary>协议下拉是否可编辑（锁定时禁用，仅显示 OPC UA）。</summary>
+    public bool IsProtocolEditable => !LockProtocol;
+
+    /// <summary>是否为新增（调用方置位；用于窗口标题与默认值选择）。</summary>
+    public bool IsNew { get; set; }
+
     public bool IsModbus => ProtocolName == "Modbus";
     public bool IsS7 => ProtocolName == "S7";
     public bool IsOpcUa => ProtocolName == "OPC UA";
@@ -95,6 +120,18 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
         "OPC UA" => ["opc.tcp"],
         _ => ["TCP", "RTU"]
     };
+
+    /// <summary>协议下拉可选值：OPC UA 分区锁定为 OPC UA；通用分区仅 Modbus/S7（对齐 web 两个设备表单）。</summary>
+    public IReadOnlyList<string> ProtocolItems => LockProtocol ? ["OPC UA"] : ["Modbus", "S7"];
+
+    /// <summary>是否已设密码（编辑态提示「留空=不修改」）。</summary>
+    public bool HasPassword => !string.IsNullOrEmpty(ExistingPassword);
+
+    /// <summary>安全策略下拉：首项空串 = 自动（未声明，后端按安全优先）；None 须显式选择。</summary>
+    public IReadOnlyList<string> SecurityPolicyItems => ["", "None", "Basic128Rsa15", "Basic256", "Basic256Sha256"];
+
+    /// <summary>安全模式下拉：首项空串 = 自动。</summary>
+    public IReadOnlyList<string> SecurityModeItems => ["", "None", "Sign", "SignAndEncrypt"];
 
     /// <summary>连接地址字段标签（按协议给占位提示）：OPC UA 填 opc.tcp:// 端点、S7 端口 102、Modbus TCP IP:502 / RTU COM 口。</summary>
     public string EndpointLabel => IsOpcUa
@@ -137,6 +174,11 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
         SetError(nameof(RetryIntervalMs), RetryIntervalMs <= 0 ? "重试间隔须大于 0" : null);
         SetError(nameof(BaudRate), IsRtu && !ValidBaudRates.Contains(BaudRate) ? "波特率须为 9600/19200/38400/57600/115200" : null);
         SetError(nameof(DataBits), IsRtu && DataBits is not (7 or 8) ? "数据位须为 7 或 8" : null);
+        // OPC UA 凭据：用户名与密码须成对（对齐后端 OpcUaSecurityParameters 校验口径）
+        var hasUser = !string.IsNullOrWhiteSpace(UserName);
+        var hasPassword = !string.IsNullOrEmpty(Password) || !string.IsNullOrEmpty(ExistingPassword);
+        SetError(nameof(UserName), IsOpcUa && !hasUser && hasPassword ? "已设密码，须同时填写用户名（或清除密码）" : null);
+        SetError(nameof(Password), IsOpcUa && hasUser && !hasPassword ? "已填用户名，须同时填写密码" : null);
         return !HasErrors;
     }
 
@@ -173,6 +215,9 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
     partial void OnRetryIntervalMsChanged(int value) => Validate();
     partial void OnBaudRateChanged(int value) => Validate();
     partial void OnDataBitsChanged(int value) => Validate();
+    partial void OnUserNameChanged(string value) => Validate();
+    partial void OnPasswordChanged(string value) => Validate();
+    partial void OnExistingPasswordChanged(string? value) => Validate();
 
     /// <summary>
     /// 协议切换联动（docs/13，对齐 web DeviceForm.vue onProtocolChange/onDialectChange）：
@@ -252,7 +297,19 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
             parameters["CpuType"] = CpuType;
             parameters["PingAddress"] = PingAddress;
         }
-        // OPC UA：无协议特有参数（对齐 web syncParams 三路分流，避免切换协议残留的 Rack/Slot 污染连接）
+        else if (IsOpcUa)
+        {
+            // ADR-073 层4：键为空即不落库（后端按安全优先默认）；密码留空沿用既有（PreserveExistingCredential 语义）
+            if (!string.IsNullOrWhiteSpace(SecurityPolicy))
+                parameters["SecurityPolicy"] = SecurityPolicy;
+            if (!string.IsNullOrWhiteSpace(SecurityMode))
+                parameters["SecurityMode"] = SecurityMode;
+            if (!string.IsNullOrWhiteSpace(UserName))
+                parameters["UserName"] = UserName.Trim();
+            var password = string.IsNullOrEmpty(Password) ? ExistingPassword : Password;
+            if (!string.IsNullOrEmpty(password))
+                parameters["Password"] = password;
+        }
 
         return new Device
         {
@@ -306,7 +363,12 @@ public sealed partial class DeviceEditor : ObservableObject, INotifyDataErrorInf
             Rack = ToInt(p, "Rack", 0),
             Slot = ToInt(p, "Slot", 1),
             CpuType = Normalize(p.GetValueOrDefault("CpuType")?.ToString() ?? "S-1200"),
-            PingAddress = p.GetValueOrDefault("PingAddress")?.ToString() ?? "DB1.DBW0"
+            PingAddress = p.GetValueOrDefault("PingAddress")?.ToString() ?? "DB1.DBW0",
+            // OPC UA 安全（ADR-073 层4）：密码密文不回填，仅记录「已设置」以支持留空=不修改
+            SecurityPolicy = p.GetValueOrDefault("SecurityPolicy")?.ToString() ?? "",
+            SecurityMode = p.GetValueOrDefault("SecurityMode")?.ToString() ?? "",
+            UserName = p.GetValueOrDefault("UserName")?.ToString() ?? "",
+            ExistingPassword = p.GetValueOrDefault("Password")?.ToString()
         };
     }
 
