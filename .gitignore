@@ -493,6 +493,9 @@ backups/
 # 临时分析脚本（不提交）
 .scratch/
 
+# Stryker.NET 变异测试报告
+StrykerOutput/
+
 # OPC UA 运行期生成的证书 / PKI（不提交）
 **/opcua/pki/
 

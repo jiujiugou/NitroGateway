@@ -1,0 +1,15 @@
+{
+  "stryker-config": {
+    "project": "NitroGateway.Collection.csproj",
+    "mutate": [
+      "**/*.cs",
+      "!**/obj/**",
+      "!**/bin/**"
+    ],
+    "mutation-level": "Standard",
+    "coverage-analysis": "perTest",
+    "reporters": ["html", "json", "progress", "cleartext"],
+    "thresholds": { "high": 80, "low": 60, "break": 60 },
+    "ignore-methods": ["Log*", "ConfigureAwait", "*Exception.ctor"]
+  }
+}

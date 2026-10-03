@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>NitroGateway.LoadTests</AssemblyName>
+    <RootNamespace>NitroGateway.LoadTests</RootNamespace>
+    <!-- 压测控制台：非测试程序集，不纳入 dotnet test -->
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Device\NitroGateway.Device.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Storage\Buffer\NitroGateway.Storage.Buffer.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Storage\TimeSeries\NitroGateway.Storage.TimeSeries.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
+  </ItemGroup>
+
+</Project>

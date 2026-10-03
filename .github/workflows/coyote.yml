@@ -1,0 +1,35 @@
+name: Coyote concurrency (bounded, non-blocking)
+
+# 独立 Exe 跑批：build → coyote rewrite → 运行不变量检测器。
+# 手动触发或每周一跑；continue-on-error 使其不阻塞合并（先做"信号"，不做门禁）。
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: '每个不变量的测试迭代次数'
+        required: false
+        default: '100'
+  schedule:
+    - cron: '0 3 * * 1'
+
+jobs:
+  coyote:
+    name: Coyote systematic concurrency
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore local tools (coyote CLI)
+        run: dotnet tool restore
+
+      - name: Build + rewrite + run invariants
+        shell: pwsh
+        run: ./tests/NitroGateway.CoyoteTests/run.ps1 -Iterations ${{ github.event.inputs.iterations || '100' }}

@@ -32,8 +32,8 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
     // ADR-006 P1-3：保证任意时刻只有一个重连循环在跑。
     // ConnectAsync 失败、DisconnectedAsync 事件、MqttHostedService 监督循环都可能触发，这里统一去重。
-    private readonly object _reconnectLock = new();
-    private bool _reconnectLoopActive;
+    // 守卫抽成可注入接缝（IReconnectGuard），便于 Coyote 系统化验证单实例不变量。
+    private readonly IReconnectGuard _reconnectGuard;
 
     // 并发发布/重连路径并发读改，无同步时状态机可能被写丢（读-改-写非原子）。
     private readonly object _stateLock = new();
@@ -45,6 +45,9 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     // 不再自写 attempt 循环与退避算法（原 int 溢出 bug 由 Polly 的 MaxDelay 结构性消除）。
     private readonly ResiliencePipeline _reconnectPipeline;
     private CancellationTokenSource? _reconnectCts;
+
+    /// <summary>重连 CTS 工厂（测试缝：便于观测 Dispose 次数）。默认创建真实 CTS。</summary>
+    private readonly Func<CancellationTokenSource> _reconnectCtsFactory;
 
     /// <inheritdoc />
     public MqttConnectionState State
@@ -76,13 +79,17 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         ILogger<MqttClientWrapper> logger,
         MqttNet.IMqttClient inner,
         IEnumerable<IMqttStateListener> stateListeners,
-        IForwardMqttToggle? forwardMqttToggle = null)
+        IForwardMqttToggle? forwardMqttToggle = null,
+        IReconnectGuard? reconnectGuard = null,
+        Func<CancellationTokenSource>? reconnectCtsFactory = null)
     {
         _options = options;
         _logger = logger;
         _inner = inner;
         _stateListeners = stateListeners;
         _toggle = forwardMqttToggle;
+        _reconnectGuard = reconnectGuard ?? new ReconnectGuard();
+        _reconnectCtsFactory = reconnectCtsFactory ?? (static () => new CancellationTokenSource());
         if (_toggle is not null)
             _toggle.EnabledChanged += OnEnabledChanged;
         // 避免每次 ConnectAsync 生成新 ID 造成 CleanStart 会话漂移。
@@ -538,7 +545,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         try
         {
             CancelReconnect();
-            _reconnectCts = new CancellationTokenSource();
+            _reconnectCts = _reconnectCtsFactory();
             var token = _reconnectCts.Token;
 
             SetState(MqttConnectionState.Reconnecting);
@@ -571,7 +578,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             // ADR-006 P3-2：成功/失败/取消退出循环都释放 CTS，避免残留到下次断开才清理
             _reconnectCts?.Dispose();
             _reconnectCts = null;
-            lock (_reconnectLock) _reconnectLoopActive = false;
+            _reconnectGuard.End();
         }
     }
 
@@ -581,11 +588,7 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     /// <summary>启动重连循环（单实例，已运行则跳过），供 ConnectAsync 失败与断开事件共用</summary>
     private void StartReconnectLoop()
     {
-        lock (_reconnectLock)
-        {
-            if (_reconnectLoopActive) return;
-            _reconnectLoopActive = true;
-        }
+        if (!_reconnectGuard.TryBegin()) return;
         _ = TryReconnectAsync();
     }
 

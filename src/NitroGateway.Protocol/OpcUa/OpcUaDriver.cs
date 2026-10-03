@@ -669,20 +669,48 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         }
     }
 
-    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    /// <summary>0=未释放，1=已释放；同步/异步释放共用一个幂等位。</summary>
     private int _disposed;
 
-    /// <summary>幂等释放：停自愈重连、解绑 KeepAlive、删订阅、关会话，最后释放闸门（ADR-072 D6）。</summary>
+    /// <summary>同步释放：停自愈重连、解绑 KeepAlive、删订阅、关会话（不排水，ADR-077），幂等、不抛。</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        // ADR-072 D6：先停自愈重连 handler、解绑 KeepAlive，再关会话（幂等，单条各自吞异常）
+        try { DisposeCore(); } catch { }
+    }
+
+    /// <summary>异步释放：在闸门内优雅拆除；删除订阅改为 await（不再 sync-over-async），幂等、不抛。</summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try
+        {
+            await _gate.WaitAsync();
+            try
+            {
+                try { CancelReconnectHandler(); } catch { }
+                try { UnbindKeepAlive(); } catch { }
+                try { await DeleteSubscriptionAsync(CancellationToken.None); } catch { }
+                try { _session?.CloseSession(null, true); } catch { }
+                _session?.Dispose();
+                _session = null;
+                State = DriverState.Disconnected;
+            }
+            finally { _gate.Release(); }
+        }
+        catch { }
+    }
+
+    /// <summary>同步拆除核心（ADR-072 D6 顺序：停自愈 → 解绑 KeepAlive → 删订阅 → 关会话）。</summary>
+    private void DisposeCore()
+    {
         try { CancelReconnectHandler(); } catch { }
         try { UnbindKeepAlive(); } catch { }
         try { DeleteSubscriptionAsync(CancellationToken.None).GetAwaiter().GetResult(); } catch { }
         try { _session?.CloseSession(null, true); } catch { }
         _session?.Dispose();
-        _gate.Dispose();
+        _session = null;
+        State = DriverState.Disconnected;
     }
 
     /// <summary>

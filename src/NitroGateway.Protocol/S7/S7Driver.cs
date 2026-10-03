@@ -242,15 +242,35 @@ public sealed class S7Driver : IProtocolDriver, IDisposable
         return OperationResult.Success();
     }
 
-    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    /// <summary>0=未释放，1=已释放；同步/异步释放共用一个幂等位。</summary>
     private int _disposed;
 
+    /// <summary>同步释放：不排水（ADR-077），幂等、不抛。</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try { DisposeCore(); } catch { }
+    }
+
+    /// <summary>异步释放：在闸门内关闭，等待在途读/写完成。</summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try
+        {
+            await _gate.WaitAsync();
+            try { DisposeCore(); }
+            finally { _gate.Release(); }
+        }
+        catch { }
+    }
+
+    private void DisposeCore()
+    {
         try { _client?.ConnectClose(); } catch { }
         _client?.Dispose();
-        _gate.Dispose();
+        _client = null;
+        State = DriverState.Disconnected;
     }
 
     private static string FormatAddress(DevicePoint point) =>

@@ -1,0 +1,11 @@
+{
+  "stryker-config": {
+    "project": "NitroGateway.Persistence.csproj",
+    "mutate": ["**/*.cs", "!**/obj/**", "!**/bin/**", "!**/Migrations/**"],
+    "mutation-level": "Standard",
+    "coverage-analysis": "perTest",
+    "reporters": ["json", "progress", "cleartext"],
+    "thresholds": { "high": 80, "low": 60, "break": 0 },
+    "ignore-methods": ["Log*", "ConfigureAwait", "*Exception.ctor"]
+  }
+}

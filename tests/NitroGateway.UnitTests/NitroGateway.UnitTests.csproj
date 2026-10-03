@@ -43,6 +43,7 @@
     <ProjectReference Include="..\..\src\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Security\NitroGateway.Security.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Primitives\NitroGateway.Primitives.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Webapi\NitroGateway.Webapi.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Desktop\NitroGateway.Desktop.csproj" />

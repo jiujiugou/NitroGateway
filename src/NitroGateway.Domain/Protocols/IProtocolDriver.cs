@@ -8,12 +8,16 @@ namespace NitroGateway.Domain.Protocols;
 /// 每种工业协议（Modbus、OPC UA、S7 等）提供一个实现，负责连接的建立/断开与点位的读写。
 /// 调用方无需关心底层协议细节，通过本接口即可操作任意协议的设备。
 /// 所有操作返回 <see cref="OperationResult"/>，不抛异常。
-/// <para><b>释放契约：</b><see cref="IDisposable.Dispose"/> 不保证等待在途操作
-/// （驱动池装饰器不排水，见 ADR-077）；释放后的任何调用必须返回失败
-/// <see cref="OperationResult"/>，不得抛异常。调用方须把「释放与在途调用并发」导致的
-/// 失败当作可恢复错误处理。</para>
+/// <para><b>释放契约（双接口）：</b></para>
+/// <list type="bullet">
+/// <item><b>同步 <see cref="IDisposable.Dispose"/></b>：尽力而为、<b>不排水</b>——不等在途操作/闸门
+/// （ADR-077），幂等、不抛；释放后的调用必须返回失败 <see cref="OperationResult"/>。</item>
+/// <item><b>异步 <see cref="IAsyncDisposable.DisposeAsync"/></b>：优雅拆除——等本驱动闸门后再拆，
+/// 不阻塞线程，因此不会触发 ADR-077 的宿主 UI 死锁；幂等、不抛。</item>
+/// </list>
+/// <para>调用方须把「同步释放与在途调用并发」导致的失败当作可恢复错误处理；需要优雅关停时用异步释放。</para>
 /// </summary>
-public interface IProtocolDriver : IDisposable
+public interface IProtocolDriver : IDisposable, IAsyncDisposable
 {
     /// <summary>当前连接状态</summary>
     DriverState State { get; }
@@ -50,4 +54,14 @@ public interface IProtocolDriver : IDisposable
     /// <param name="entries">点位与值的键值对集合</param>
     /// <param name="ct">取消令牌</param>
     Task<OperationResult> WriteBatchAsync(IEnumerable<KeyValuePair<DevicePoint, object>> entries, CancellationToken ct = default);
+
+    /// <summary>
+    /// 默认异步释放：未显式实现异步拆除的驱动（含测试替身）退化为同步 <see cref="Dispose"/>。
+    /// 具体驱动应覆写为「等本驱动闸门」的优雅拆除。
+    /// </summary>
+    ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
 }

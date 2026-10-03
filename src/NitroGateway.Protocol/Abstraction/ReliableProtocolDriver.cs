@@ -255,6 +255,17 @@ namespace NitroGateway.Protocol.Abstractions
         }
 
         /// <summary>
+        /// 异步释放：置位后异步拆除内层（可等待内层闸门）。与同步 <see cref="Dispose"/> 共用
+        /// <see cref="_disposed"/>，先到先得。与同步路径一样不做引用计数排水（ADR-077），
+        /// 但异步等待不阻塞线程，故不会造成宿主 UI 死锁。
+        /// </summary>
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            await _inner.DisposeAsync();
+        }
+
+        /// <summary>
         /// 已连接直接返回，否则转调内层 <c>ConnectAsync</c>。
         /// <para>串行化由<b>各具体驱动实例自身的闸门</b>负责（ADR-074）：同一实例的
         /// Connect/Disconnect/Read/Write/Ping 都过同一把闸门，内层 <c>ConnectAsync</c> 在闸门内双检

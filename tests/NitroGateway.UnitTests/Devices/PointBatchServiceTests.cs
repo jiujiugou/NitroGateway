@@ -1,0 +1,532 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using NitroGateway.DeviceManagement;
+using NitroGateway.Domain.Devices;
+using Xunit;
+
+namespace NitroGateway.UnitTests.Devices;
+
+/// <summary>
+/// 点位批量服务测试：CSV 导入/导出、名称模板替换、地址自动递增。
+///
+/// <para>这些功能是现场工程师的日常操作——"从 Excel 导入 500 个点位"。
+/// 解析错误会导致点位配置偏差，地址偏移错误会导致读取错误寄存器。</para>
+///
+/// <para>测试覆盖了 7 个场景：基础 CSV、可选列、格式容错、名称模板、地址递增（Float/Int16）、导出格式。
+/// 重点验证边界情况——空输入、无效行跳过、逗号字段转义。</para>
+/// </summary>
+public class PointBatchServiceTests
+{
+    private readonly PointBatchService _service = new(NullLogger<PointBatchService>.Instance);
+    private readonly Guid _deviceId = Guid.NewGuid();
+
+    // ══════════════════════════════════════════════════
+    //  CSV 导入
+    // ══════════════════════════════════════════════════
+
+    /// <summary>基础三列（Name, Address, DataType）CSV 解析，验证名称、地址、类型正确解析。</summary>
+    [Fact]
+    public void ParseCsv_BasicThreeColumns_ParsesCorrectly()
+    {
+        var csv = "Name,Address,DataType\nTemp1,40001,Float\nPress2,40003,Int16";
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Equal("Temp1", result.Value[0].Name);
+        Assert.Equal("40001", result.Value[0].Address);
+        Assert.Equal(DataType.Float, result.Value[0].DataType);
+    }
+
+    /// <summary>CSV 包含可选列（ScaleFactor、Deadband、Description）时应正确应用。</summary>
+    [Fact]
+    public void ParseCsv_WithOptionalColumns_Applied()
+    {
+        var csv = "Name,Address,DataType,ScaleFactor,Deadband,Description\nTemp,40001,Float,0.5,1.5,炉温";
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsSuccess);
+        var p = result.Value![0];
+        Assert.Equal(0.5, p.ScaleFactor);
+        Assert.Equal(1.5, p.Deadband);
+        Assert.Equal("炉温", p.Description);
+    }
+
+    /// <summary>
+    /// 当 DataType 无法解析时（如拼写错误），该行应被跳过，不污染有效数据。
+    /// 工业场景中 Excel 表格的格式错误很常见，不应导致整批导入失败。
+    /// </summary>
+    [Fact]
+    public void ParseCsv_InvalidDataType_SkipsRow()
+    {
+        var csv = "Name,Address,DataType\nTemp1,40001,Float\nBad,40003,Unknown\nPress2,40005,Int16";
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  名称模板
+    // ══════════════════════════════════════════════════
+
+    /// <summary>
+    /// 模板 AI_{###} count=3 → AI_001, AI_002, AI_003。
+    /// 花括号 {###} 被替换为数字，花括号本身也被移除。
+    /// </summary>
+    [Fact]
+    public void Generate_NameTemplate_PadsWithZeros()
+    {
+        var points = _service.Generate(_deviceId, "AI_{###}", "40001", 3, DataType.Float);
+        Assert.Equal(3, points.Count);
+        Assert.True(points[0].Enabled);
+        Assert.Equal("AI_001", points[0].Name);
+        Assert.Equal("AI_002", points[1].Name);
+        Assert.Equal("AI_003", points[2].Name);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  地址自动递增（核心：按 DataType.RegisterCount 步进）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>
+    /// Float 占 2 个 Modbus 寄存器：40001 → 40003 → 40005。
+    /// 步长 = 2，不是 1——这是批量生成最容易出 bug 的地方。
+    /// </summary>
+    [Fact]
+    public void Generate_Float_IncrementsByTwo()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "40001", 3, DataType.Float);
+        Assert.Equal("40001", points[0].Address);
+        Assert.Equal("40003", points[1].Address);
+        Assert.Equal("40005", points[2].Address);
+    }
+
+    /// <summary>
+    /// Int16 占 1 个寄存器：40001 → 40002 → 40003。
+    /// 和 Float 对比——不同数据类型步长不同。
+    /// </summary>
+    [Fact]
+    public void Generate_Int16_IncrementsByOne()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "40001", 3, DataType.Int16);
+        Assert.Equal("40001", points[0].Address);
+        Assert.Equal("40002", points[1].Address);
+        Assert.Equal("40003", points[2].Address);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  边界条件
+    // ══════════════════════════════════════════════════
+
+    /// <summary>count=0 应返回空列表，不抛异常。</summary>
+    [Fact]
+    public void Generate_ZeroCount_ReturnsEmpty()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "40001", 0, DataType.Float);
+        Assert.Empty(points);
+    }
+
+    // ══════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════
+
+    /// <summary>S7 Float 占 4 字节：DB1.DBD0 → DBD4 → DBD8。</summary>
+    [Fact]
+    public void Generate_S7_Float_IncrementsByFourBytes()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "DB1.DBD0", 3, DataType.Float, protocol: "S7");
+        Assert.Equal("DB1.DBD0", points[0].Address);
+        Assert.Equal("DB1.DBD4", points[1].Address);
+        Assert.Equal("DB1.DBD8", points[2].Address);
+    }
+
+    /// <summary>S7 Int16 占 2 字节：DB3.DBW0 → DBW2 → DBW4，起始类型与数据类型一致。</summary>
+    [Fact]
+    public void Generate_S7_Int16_IncrementsByTwoBytes()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "DB3.DBW0", 3, DataType.Int16, protocol: "S7");
+        Assert.Equal("DB3.DBW0", points[0].Address);
+        Assert.Equal("DB3.DBW2", points[1].Address);
+        Assert.Equal("DB3.DBW4", points[2].Address);
+    }
+
+    /// <summary>S7 起始地址类型与数据类型不兼容时应显式报错（如 Int16 不能用 DBD）。</summary>
+    [Fact]
+    public void Generate_S7_TypeMismatch_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "DB1.DBD0", 3, DataType.Int16, protocol: "S7"));
+        Assert.Contains("不兼容", ex.Message);
+    }
+
+    /// <summary>S7 非法起始地址（非 DB 区格式）应显式报错。</summary>
+    [Fact]
+    public void Generate_S7_InvalidAddress_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "40001", 3, DataType.Float, protocol: "S7"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "M100", 3, DataType.Float, protocol: "S7"));
+    }
+
+    /// <summary>S7 Bool 位地址不支持批量生成（位步进易错），显式报错并提示手动添加。</summary>
+    [Fact]
+    public void Generate_S7_Bool_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "DB1.DBX0.0", 3, DataType.Bool, protocol: "S7"));
+        Assert.Contains("暂不支持 Bool", ex.Message);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  OPC UA 批量生成（ns={n};i={id} 数值标识符 +1 递增）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>OPC UA 数值标识符逐点 +1：ns=2;i=1001 → 1002 → 1003，NamespaceIndex 保持不变。</summary>
+    [Fact]
+    public void Generate_OpcUa_NumericId_IncrementsByOne()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "ns=2;i=1001", 3, DataType.Float, protocol: "OPC UA");
+        Assert.Equal("ns=2;i=1001", points[0].Address);
+        Assert.Equal("ns=2;i=1002", points[1].Address);
+        Assert.Equal("ns=2;i=1003", points[2].Address);
+    }
+
+    /// <summary>协议名 "OPC UA" 带空格也应识别（前端 device.protocol.name 透传）。</summary>
+    [Fact]
+    public void Generate_OpcUa_ProtocolNameWithSpace_Works()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "ns=0;i=1", 2, DataType.Int32, protocol: "OPC UA");
+        Assert.Equal("ns=0;i=1", points[0].Address);
+        Assert.Equal("ns=0;i=2", points[1].Address);
+    }
+
+    /// <summary>OPC UA 字符串标识符（s=）无连续编号语义，批量生成应明确拒绝并提示。</summary>
+    [Fact]
+    public void Generate_OpcUa_StringId_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=3;s=Temperature", 3, DataType.Float, protocol: "OPC UA"));
+        Assert.Contains("仅支持数值标识符", ex.Message);
+    }
+
+    /// <summary>OPC UA GUID 标识符（g=）与 Opaque 标识符（b=）同样不支持批量生成。</summary>
+    [Fact]
+    public void Generate_OpcUa_GuidAndOpaqueId_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=4;g=6A4E4C20-4D72-4B4C-9C8A-123456789ABC", 2, DataType.Float, protocol: "OPC UA"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=5;b=AQID", 2, DataType.Float, protocol: "OPC UA"));
+    }
+
+    /// <summary>OPC UA 非法起始地址（缺 ns 前缀 / 非 i= 形式）应显式报错。</summary>
+    [Fact]
+    public void Generate_OpcUa_InvalidAddress_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "40001", 2, DataType.Float, protocol: "OPC UA"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=2;s=Temperature", 2, DataType.Float, protocol: "OPC UA"));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "ns=2;i=abc", 2, DataType.Float, protocol: "OPC UA"));
+    }
+
+    /// <summary>Modbus 起始地址含非数字内容时应显式报错（回归：int→string 后仍拒绝垃圾输入）。</summary>
+    [Fact]
+    public void Generate_Modbus_InvalidStartAddress_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "4O001", 3, DataType.Float));
+        Assert.Throws<ArgumentException>(() =>
+            _service.Generate(_deviceId, "P_{###}", "-1", 3, DataType.Float));
+    }
+
+    // ══════════════════════════════════════════════════
+    //  CSV 导出
+    // ══════════════════════════════════════════════════
+
+    /// <summary>导出 CSV 应包含列头行 + 每个点位一行。</summary>
+    [Fact]
+    public void ExportCsv_IncludesHeaderAndDataRows()
+    {
+        var points = new[]
+        {
+            MakePoint("Temp1", "40001", DataType.Float),
+            MakePoint("Press2", "40003", DataType.Int16)
+        };
+        var csv = _service.ExportCsv(points);
+        var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(3, lines.Length);
+        Assert.StartsWith("Name,Address,DataType", lines[0]);
+    }
+
+    /// <summary>字段包含逗号时应用双引号包裹，保证 CSV 格式合法。</summary>
+    [Fact]
+    public void ExportCsv_FieldWithComma_WrapsInQuotes()
+    {
+        var points = new[] { MakePoint("Temp,Top", "40001", DataType.Float) };
+        var csv = _service.ExportCsv(points);
+        Assert.Contains("\"Temp,Top\"", csv);
+    }
+
+    /// <summary>引号包裹的字段（含逗号）应作为一个整体解析，不能被逗号拆开。</summary>
+    [Fact]
+    public void ParseCsv_QuotedFieldWithComma_ParsesAsSingleField()
+    {
+        var csv = "Name,Address,DataType,Description\n\"Temp,Top\",40001,Float,\"炉温,1#炉\"";
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value!);
+        Assert.Equal("Temp,Top", result.Value![0].Name);
+        Assert.Equal("炉温,1#炉", result.Value![0].Description);
+    }
+
+    /// <summary>引号转义 "" 应还原为单个引号。</summary>
+    [Fact]
+    public void ParseCsv_QuotedFieldWithEscapedQuote_Unescapes()
+    {
+        var csv = "Name,Address,DataType,Description\nTemp,40001,Float,\"他说\"\"好\"\"\"";
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("他说\"好\"", result.Value![0].Description);
+    }
+
+    /// <summary>导出→导入往返应完整保留含逗号/引号的字段，Excel 场景闭环。</summary>
+    [Fact]
+    public void ParseCsv_RoundTrip_PreservesEscapedFields()
+    {
+        var point = MakePoint("Temp,Top", "40001", DataType.Float);
+        point.Description = "炉温,1#炉 \"A\" 区";
+
+        var csv = _service.ExportCsv(new[] { point });
+        var result = _service.ParseCsv(csv);
+
+        Assert.True(result.IsSuccess);
+        var parsed = result.Value![0];
+        Assert.Equal("Temp,Top", parsed.Name);
+        Assert.Equal("炉温,1#炉 \"A\" 区", parsed.Description);
+        Assert.Equal(DataType.Float, parsed.DataType);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  CSV 边界（缺列 / 短行 / 空行 / 可选列默认值）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>只有列头、没有数据行 → 校验失败（至少需要两行）。</summary>
+    [Fact]
+    public void ParseCsv_OnlyHeader_Fails()
+    {
+        var result = _service.ParseCsv("Name,Address,DataType");
+        Assert.True(result.IsFailure);
+        Assert.Contains("至少", result.Error!.Message);
+    }
+
+    /// <summary>缺少任一必填列（Name/Address/DataType）都应失败。</summary>
+    [Theory]
+    [InlineData("Address,DataType\n40001,Float")]
+    [InlineData("Name,DataType\nTemp,Float")]
+    [InlineData("Name,Address\nTemp,40001")]
+    public void ParseCsv_MissingRequiredColumn_Fails(string csv)
+    {
+        var result = _service.ParseCsv(csv);
+        Assert.True(result.IsFailure);
+        Assert.Contains("缺少必填列", result.Error!.Message);
+    }
+
+    /// <summary>必填列出现在第 0 列时也应被识别（列索引 0 合法）。</summary>
+    [Fact]
+    public void ParseCsv_RequiredColumnsReordered_Parses()
+    {
+        var addressFirst = _service.ParseCsv("Address,Name,DataType\n40001,Temp,Float");
+        Assert.True(addressFirst.IsSuccess);
+        Assert.Equal("Temp", addressFirst.Value![0].Name);
+        Assert.Equal("40001", addressFirst.Value![0].Address);
+
+        var typeFirst = _service.ParseCsv("DataType,Name,Address\nFloat,Temp,40001");
+        Assert.True(typeFirst.IsSuccess);
+        Assert.Equal(DataType.Float, typeFirst.Value![0].DataType);
+    }
+
+    /// <summary>字段数少于列头数的行应被跳过，不污染有效数据。</summary>
+    [Fact]
+    public void ParseCsv_ShortRow_Skipped()
+    {
+        var result = _service.ParseCsv("Name,Address,DataType\nTemp,40001");
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!);
+    }
+
+    /// <summary>空行（含中间与结尾）应被忽略。</summary>
+    [Fact]
+    public void ParseCsv_BlankLines_Ignored()
+    {
+        var result = _service.ParseCsv("Name,Address,DataType\n\nTemp,40001,Float\n\n");
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value!);
+        Assert.Equal("Temp", result.Value![0].Name);
+    }
+
+    /// <summary>可选列位于第 0 列时仍应生效（索引 0 合法）。</summary>
+    [Fact]
+    public void ParseCsv_OptionalColumnsAtFirstPosition_Applied()
+    {
+        static DevicePoint Parse(PointBatchService service, string header, string value)
+        {
+            var r = service.ParseCsv($"{header},Name,Address,DataType\n{value},Temp,40001,Float");
+            Assert.True(r.IsSuccess);
+            return r.Value![0];
+        }
+
+        Assert.Equal(PointAccess.ReadWrite, Parse(_service, "Access", "ReadWrite").Access);
+        Assert.False(Parse(_service, "Enabled", "false").Enabled);
+        Assert.Equal(500, Parse(_service, "ScanIntervalMs", "500").ScanIntervalMs);
+        Assert.Equal(1.5, Parse(_service, "Deadband", "1.5").Deadband);
+        Assert.Equal(2.5, Parse(_service, "ScaleFactor", "2.5").ScaleFactor);
+        Assert.Equal(3.5, Parse(_service, "ScaleOffset", "3.5").ScaleOffset);
+        Assert.Equal("炉温", Parse(_service, "Description", "炉温").Description);
+    }
+
+    /// <summary>缺省可选列应使用默认值（Access=ReadOnly、Enabled=true、ScaleFactor=1）。</summary>
+    [Fact]
+    public void ParseCsv_MissingOptionalColumns_UsesDefaults()
+    {
+        var result = _service.ParseCsv("Name,Address,DataType\nTemp,40001,Float");
+        var p = result.Value![0];
+
+        Assert.Equal(PointAccess.ReadOnly, p.Access);
+        Assert.True(p.Enabled);
+        Assert.Equal(0, p.ScanIntervalMs);
+        Assert.Equal(0, p.Deadband);
+        Assert.Equal(1, p.ScaleFactor);
+        Assert.Equal(0, p.ScaleOffset);
+        Assert.Null(p.Description);
+    }
+
+    /// <summary>可选列提供了无法解析的值时应回退到默认值而非整行失败。</summary>
+    [Fact]
+    public void ParseCsv_InvalidOptionalValues_FallBackToDefaults()
+    {
+        var csv = "Name,Address,DataType,Access,Enabled,ScanIntervalMs,Deadband,ScaleFactor,ScaleOffset\n"
+                + "Temp,40001,Float,Bogus,notbool,abc,xyz,abc,abc";
+        var result = _service.ParseCsv(csv);
+
+        Assert.True(result.IsSuccess);
+        var p = result.Value![0];
+        Assert.Equal(PointAccess.ReadOnly, p.Access);
+        Assert.True(p.Enabled);
+        Assert.Equal(0, p.ScanIntervalMs);
+        Assert.Equal(0, p.Deadband);
+        Assert.Equal(1, p.ScaleFactor);
+        Assert.Equal(0, p.ScaleOffset);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  名称模板回退（裸 ### / 无占位符）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>DataType 大小写不敏感（Excel 常见小写）。</summary>
+    [Fact]
+    public void ParseCsv_LowercaseDataType_Parses()
+    {
+        var result = _service.ParseCsv("Name,Address,DataType\nTemp,40001,float");
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DataType.Float, result.Value![0].DataType);
+    }
+
+    /// <summary>PointAccess 值大小写不敏感。</summary>
+    [Fact]
+    public void ParseCsv_LowercaseAccess_Parses()
+    {
+        var result = _service.ParseCsv("Name,Address,DataType,Access\nTemp,40001,Float,readwrite");
+        Assert.True(result.IsSuccess);
+        Assert.Equal(PointAccess.ReadWrite, result.Value![0].Access);
+    }
+
+    /// <summary>CRLF（Excel 默认换行）应正确切行。</summary>
+    [Fact]
+    public void ParseCsv_CRLF_Parses()
+    {
+        var result = _service.ParseCsv("Name,Address,DataType\r\nTemp,40001,Float\r\nPress,40003,Int16\r\n");
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Equal("Press", result.Value![1].Name);
+    }
+
+    /// <summary>花括号占位符位于模板开头（idx=0）也应替换。</summary>
+    [Fact]
+    public void Generate_BracedPlaceholderAtStart_Replaces()
+    {
+        var points = _service.Generate(_deviceId, "{###}", "40001", 2, DataType.Int16);
+        Assert.Equal("001", points[0].Name);
+        Assert.Equal("002", points[1].Name);
+    }
+
+    /// <summary>裸 ### 占位符位于模板开头（idx=0）也应替换。</summary>
+    [Fact]
+    public void Generate_BarePlaceholderAtStart_Replaces()
+    {
+        var points = _service.Generate(_deviceId, "###_T", "40001", 2, DataType.Int16);
+        Assert.Equal("001_T", points[0].Name);
+        Assert.Equal("002_T", points[1].Name);
+    }
+
+    /// <summary>Modbus 起始地址 0 是合法地址（非负）。</summary>
+    [Fact]
+    public void Generate_ModbusStartZero_Works()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "0", 1, DataType.Int16);
+        Assert.Equal("0", points[0].Address);
+    }
+
+    /// <summary>裸 ### 占位符（无花括号）也应替换，且保留前后缀。</summary>
+    [Fact]
+    public void Generate_BareHashTemplate_Replaces()
+    {
+        var points = _service.Generate(_deviceId, "P_###_T", "40001", 2, DataType.Float);
+        Assert.Equal("P_001_T", points[0].Name);
+        Assert.Equal("P_002_T", points[1].Name);
+    }
+
+    /// <summary>模板没有占位符时保持原样。</summary>
+    [Fact]
+    public void Generate_TemplateWithoutPlaceholder_KeepsName()
+    {
+        var points = _service.Generate(_deviceId, "固定名", "40001", 2, DataType.Float);
+        Assert.Equal("固定名", points[0].Name);
+        Assert.Equal("固定名", points[1].Name);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  S7 类型兼容（DBB / DBD 各分支）
+    // ══════════════════════════════════════════════════
+
+    /// <summary>DBB 与 Byte 兼容，按 1 字节步进。</summary>
+    [Fact]
+    public void Generate_S7_ByteWithDBB_Works()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "DB1.DBB0", 2, DataType.Byte, protocol: "S7");
+        Assert.Equal("DB1.DBB0", points[0].Address);
+        Assert.Equal("DB1.DBB1", points[1].Address);
+    }
+
+    /// <summary>DBB 与 String 兼容，按 ByteSize(String)=10 步进。</summary>
+    [Fact]
+    public void Generate_S7_StringWithDBB_Works()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "DB1.DBB0", 2, DataType.String, protocol: "S7");
+        Assert.Equal("DB1.DBB0", points[0].Address);
+        Assert.Equal("DB1.DBB10", points[1].Address);
+    }
+
+    /// <summary>DBD 与 UInt32 兼容，按 4 字节步进。</summary>
+    [Fact]
+    public void Generate_S7_UInt32WithDBD_Works()
+    {
+        var points = _service.Generate(_deviceId, "P_{###}", "DB1.DBD0", 2, DataType.UInt32, protocol: "S7");
+        Assert.Equal("DB1.DBD0", points[0].Address);
+        Assert.Equal("DB1.DBD4", points[1].Address);
+    }
+
+    private static DevicePoint MakePoint(string name, string address, DataType type) => new()
+    {
+        Id = Guid.NewGuid(), Name = name, Address = address, DataType = type
+    };
+}
+

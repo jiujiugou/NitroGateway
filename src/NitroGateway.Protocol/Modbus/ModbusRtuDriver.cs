@@ -44,7 +44,7 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
     }
 
     /// <summary>读写闸门：连接后为共享串口闸门；未连接时退化为驱动内锁</summary>
-    protected override SemaphoreSlim ReadGate => _lease?.Gate ?? _sync;
+    protected override SemaphoreSlim Gate => _lease?.Gate ?? _sync;
 
     /// <summary>持有共享闸门后切换到本驱动的从站号，实现同端口多从站复用</summary>
     protected override void OnGateAcquired()
@@ -94,8 +94,9 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
             catch (Exception ex)
             {
                 State = DriverState.Faulted;
-                _lease?.Dispose();
-                _lease = null;
+                // 同上：原子置空后再释放，防止并发 ConnectAsync 刚写入的新租约被延迟的置空覆盖而泄漏。
+                var failed = Interlocked.Exchange(ref _lease, null);
+                failed?.Dispose();
                 return OperationalError.Communication($"串口连接失败: {ex.Message}");
             }
         }
@@ -114,8 +115,9 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
             if (gate is not null) await gate.WaitAsync(ct);
             try
             {
-                _lease?.Dispose();
-                _lease = null;
+                // 与 DisposeCore 同款：原子置空后再释放，避免清空动作与并发的 ConnectAsync/DisposeCore 写入互相覆盖。
+                var lease = Interlocked.Exchange(ref _lease, null);
+                lease?.Dispose();
                 State = DriverState.Disconnected;
                 return OperationResult.Success();
             }
@@ -130,13 +132,43 @@ public sealed class ModbusRtuDriver : ModbusDriverBase
         }
     }
 
-    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
-    private int _disposed;
-
-    public override void Dispose()
+    /// <summary>同步拆除：尽力归还租约，不等 _sync/共享闸门（不排水，ADR-077）。</summary>
+    /// <remarks>
+    /// 必须用 <c>Interlocked.Exchange(ref _lease, null)</c> 原子地「读旧值 + 置空」，<b>不能</b>写成
+    /// <c>_lease?.Dispose(); _lease = null;</c>。
+    /// <para>
+    /// 原因：<see cref="DisposeCore"/> 按设计<b>不取 _sync</b>（同步释放不排水），因此可与
+    /// <see cref="ConnectAsync"/> 真正并发；而 <c>_lease.Dispose()</c> 内部会经
+    /// <c>SerialPortManager.Release</c> 走 <c>lock (_lock)</c>——这是一个可阻塞、可被调度切走的点。
+    /// 危险交错（设初始 <c>_lease = L1</c>）：
+    /// </para>
+    /// <list type="number">
+    /// <item>本方法读到 <c>_lease</c> = L1 并调用 <c>L1.Dispose()</c>，卡在 <c>lock (_lock)</c> 上（尚未执行置空）；</item>
+    /// <item>此时字段 <c>_lease</c> 仍是 L1，并发 <see cref="ConnectAsync"/> 执行
+    ///       <c>_lease = Acquire(_settings)</c>，写入新租约 L2；</item>
+    /// <item>本方法从锁返回后继续执行 <c>_lease = null</c>，把刚写入的 L2 <b>覆盖丢失</b>；</item>
+    /// <item>结果：管理器里 L2 的引用计数仍为 1（串口保持打开、条目仍在 <c>_ports</c>），
+    ///       但驱动再也不持有 L2、无人释放它 → <b>串口租约泄漏、端口永不关闭</b>（静默、窗口窄、难复现）。
+    ///       收尾的 <see cref="DisconnectAsync"/> 读到 <c>_lease == null</c> 也救不回来。</item>
+    /// </list>
+    /// <para>
+    /// 原子交换后，「清空」成为不可分割的一步：并发 <c>ConnectAsync</c> 的写入只可能发生在交换<b>之前</b>
+    /// （Exchange 返回的就是那个新值，会被正常释放）或交换<b>之后</b>（留在字段里，由后续 Disconnect 释放），
+    /// 不再存在「延迟执行的 <c>= null</c> 覆盖新值」的窗口。Coyote 用例
+    /// <c>ModbusRtuDriverInvariants.I3_LeaseAccounted_*</c> 守此性质。
+    /// </para>
+    /// </remarks>
+    protected override void DisposeCore()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        DisconnectAsync().GetAwaiter().GetResult();
+        var lease = Interlocked.Exchange(ref _lease, null);
+        lease?.Dispose();
+        State = DriverState.Disconnected;
+    }
+
+    /// <summary>异步拆除：走 <see cref="DisconnectAsync"/> 优雅断开（等 _sync + 共享闸门，不阻塞线程）。</summary>
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await DisconnectAsync();
     }
 
     /// <summary>共享串口客户端；未连接时抛出</summary>

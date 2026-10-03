@@ -33,7 +33,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
     public DriverCapability Capability => ModbusDriverCapability.Instance;
 
     /// <summary>读写闸门：TCP 为驱动内锁，RTU 为同端口共享闸门</summary>
-    protected abstract SemaphoreSlim ReadGate { get; }
+    protected abstract SemaphoreSlim Gate { get; }
 
     /// <summary>获取到读写闸门后回调；RTU 驱动在此切换到本驱动的从站号</summary>
     protected virtual void OnGateAcquired() { }
@@ -48,21 +48,54 @@ public abstract class ModbusDriverBase : IProtocolDriver
     protected abstract Task<OperationResult> WriteSingleValueAsync(DevicePoint point, string address, object value);
 
     /// <summary>
-    /// 在 <see cref="ReadGate"/> 保护下执行一段操作。
+    /// 在 <see cref="Gate"/> 保护下执行一段操作。
     /// <para><b>并发所有权（ADR-074）：</b>同一驱动实例对底层客户端的所有访问——读/写/Ping，
-    /// 以及 TCP 驱动的建连/断开——都必须经<b>同一把</b> <see cref="ReadGate"/> 串行。
+    /// 以及 TCP 驱动的建连/断开——都必须经<b>同一把</b> <see cref="Gate"/> 串行。
     /// 规则在此一处定义：新增方法只要走 <c>GuardedAsync</c>（或自行取同一闸门）就不会漏加锁。</para>
     /// </summary>
     protected async Task<T> GuardedAsync<T>(Func<CancellationToken, Task<T>> action, CancellationToken ct)
     {
-        await ReadGate.WaitAsync(ct);
+        await Gate.WaitAsync(ct);
         try { return await action(ct); }
-        finally { ReadGate.Release(); }
+        finally { Gate.Release(); }
     }
 
     public abstract Task<OperationResult> ConnectAsync(CancellationToken ct = default);
     public abstract Task<OperationResult> DisconnectAsync(CancellationToken ct = default);
-    public abstract void Dispose();
+
+    /// <summary>0=未释放，1=已释放；同步/异步释放共用一个幂等位。</summary>
+    private int _disposed;
+
+    /// <summary>是否已释放。</summary>
+    protected bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+
+    /// <summary>
+    /// 同步释放：尽力而为、<b>不排水</b>（ADR-077）——不等待闸门/在途操作；幂等、不抛。
+    /// </summary>
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try { DisposeCore(); } catch { /* Dispose 不向外抛 */ }
+    }
+
+    /// <summary>
+    /// 异步释放：优雅拆除——在本驱动闸门保护下关闭（可等待在途操作完成，但不阻塞线程）；幂等、不抛。
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try { await DisposeAsyncCore(); } catch { /* Dispose 不向外抛 */ }
+    }
+
+    /// <summary>同步拆除核心：不得等待闸门/在途操作（ADR-077）。</summary>
+    protected abstract void DisposeCore();
+
+    /// <summary>异步拆除核心：默认退化为同步拆除；子类可覆写为「取本驱动闸门后拆除」。</summary>
+    protected virtual ValueTask DisposeAsyncCore()
+    {
+        DisposeCore();
+        return ValueTask.CompletedTask;
+    }
 
     // ─────────────── 公共参数解析（兼容 System.Text.Json 的 JsonElement） ───────────────
 
@@ -118,7 +151,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
 
     public virtual async Task<OperationResult> PingAsync(CancellationToken ct = default)
     {
-        await ReadGate.WaitAsync(ct);
+        await Gate.WaitAsync(ct);
         try
         {
             OnGateAcquired();
@@ -138,13 +171,13 @@ public abstract class ModbusDriverBase : IProtocolDriver
         }
         finally
         {
-            ReadGate.Release();
+            Gate.Release();
         }
     }
 
     public async Task<OperationResult<RawPointValue>> ReadAsync(DevicePoint point, CancellationToken ct = default)
     {
-        await ReadGate.WaitAsync(ct);
+        await Gate.WaitAsync(ct);
         try
         {
             OnGateAcquired();
@@ -153,13 +186,13 @@ public abstract class ModbusDriverBase : IProtocolDriver
         }
         finally
         {
-            ReadGate.Release();
+            Gate.Release();
         }
     }
 
     public async Task<OperationResult> WriteAsync(DevicePoint point, object value, CancellationToken ct = default)
     {
-        await ReadGate.WaitAsync(ct);
+        await Gate.WaitAsync(ct);
         try
         {
             OnGateAcquired();
@@ -179,7 +212,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
         }
         finally
         {
-            ReadGate.Release();
+            Gate.Release();
         }
     }
 
@@ -207,7 +240,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
     public async Task<OperationResult<IReadOnlyList<RawPointValue>>> ReadBatchAsync(
         IEnumerable<DevicePoint> points, CancellationToken ct = default)
     {
-        await ReadGate.WaitAsync(ct);
+        await Gate.WaitAsync(ct);
         try
         {
             OnGateAcquired();
@@ -266,7 +299,7 @@ public abstract class ModbusDriverBase : IProtocolDriver
         }
         finally
         {
-            ReadGate.Release();
+            Gate.Release();
         }
     }
 

@@ -30,7 +30,7 @@ public sealed class CircuitBreakerHealthListener : IDeviceHealthListener
     /// </summary>
     /// <param name="e">健康状态变更事件</param>
     /// <param name="ct">取消令牌（本实现同步完成，不使用）</param>
-    public ValueTask OnHealthChangedAsync(DeviceHealthChanged e, CancellationToken ct = default)
+    public async ValueTask OnHealthChangedAsync(DeviceHealthChanged e, CancellationToken ct = default)
     {
         switch (e.NewStatus)
         {
@@ -38,11 +38,10 @@ public sealed class CircuitBreakerHealthListener : IDeviceHealthListener
                 _breakers.Reset(e.DeviceId);
                 break;
             case DeviceStatus.Offline:
-                // 熔断期间不会采集，直接 Evict 释放池中滞留的 socket；HalfOpen 探测时重建。
-                _driverPool.Evict(e.DeviceId);
+                // 熔断期间不会采集，直接 EvictAsync 优雅释放池中滞留的 socket；HalfOpen 探测时重建。
+                await _driverPool.EvictAsync(e.DeviceId);
                 _breakers.Get(e.DeviceId).Trip();
                 break;
         }
-        return ValueTask.CompletedTask;
     }
 }

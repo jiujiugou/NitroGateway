@@ -59,7 +59,7 @@ public sealed class OpcUaCertificatesController : ControllerBase
         // 信任成功后按需驱逐设备驱动，令其在下一轮以信任证书重连（错误响应由调用方展示）
         if (deviceId.HasValue)
         {
-            _pool.Evict(deviceId.Value);
+            await _pool.EvictAsync(deviceId.Value);
             _logger.LogInformation("已信任 OPC UA 证书 {Thumbprint} 并触发设备 {DeviceId} 重连",
                 thumbprint, deviceId.Value);
         }

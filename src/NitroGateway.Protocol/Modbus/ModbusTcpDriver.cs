@@ -17,13 +17,23 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
     private const byte MaxUnitId = 247;
 
     private readonly DeviceConnection _connection;
-    private readonly ModbusTcpNet _client = new();
+    private readonly ModbusTcpNet _client;
     private readonly SemaphoreSlim _readLock = new(1, 1);
     private readonly byte _unitId;
 
-    public ModbusTcpDriver(DeviceConnection connection, ILogger logger) : base(logger)
+    public ModbusTcpDriver(DeviceConnection connection, ILogger logger)
+        : this(connection, logger, new ModbusTcpNet())
+    {
+    }
+
+    /// <summary>
+    /// 测试缝：注入 ModbusTcpNet 替身（默认行为不变）。Hsl 客户端的读写/释放方法为 virtual，
+    /// 并发测试可覆写以受控阻塞/观测；建连（ConnectServerAsync）非 virtual，故不覆盖。
+    /// </summary>
+    internal ModbusTcpDriver(DeviceConnection connection, ILogger logger, ModbusTcpNet client) : base(logger)
     {
         _connection = connection;
+        _client = client;
         _unitId = (byte)Math.Clamp(ToInt64(connection.Parameters.GetValueOrDefault("UnitId") ?? 1), 1, MaxUnitId);
 
         _client.Station = _unitId;
@@ -33,13 +43,13 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
         _client.Port = 502; // Modbus TCP 标准端口；ConnectAsync 可按 Endpoint 覆盖
     }
 
-    protected override SemaphoreSlim ReadGate => _readLock;
+    protected override SemaphoreSlim Gate => _readLock;
 
     public override Task<OperationResult> ConnectAsync(CancellationToken ct = default)
         => GuardedAsync(ConnectCoreAsync, ct);
 
     /// <summary>
-    /// 闸门内建连：与读/写/Ping 共用 <see cref="ModbusDriverBase.ReadGate"/>，
+    /// 闸门内建连：与读/写/Ping 共用 <see cref="ModbusDriverBase.Gate"/>，
     /// 并与并发建连（写路径显式 Connect + 读路径自动建连）串行（ADR-074）；闸门内双检 <see cref="DriverState"/>。
     /// </summary>
     private async Task<OperationResult> ConnectCoreAsync(CancellationToken ct)
@@ -103,14 +113,24 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
             return Task.FromResult(OperationResult.Success());
         }, ct);
 
-    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
-    private int _disposed;
-
-    public override void Dispose()
+    /// <summary>同步拆除：直接关闭客户端（不排水，ADR-077）。</summary>
+    protected override void DisposeCore()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        _client.ConnectClose();
+        try { _client.ConnectClose(); } catch { }
         _client.Dispose();
+        State = DriverState.Disconnected;
+    }
+
+    /// <summary>异步拆除：在闸门内关闭，等待在途读/写完成（修复 Dispose 与在途并发，X1）。</summary>
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await GuardedAsync(_ =>
+        {
+            try { _client.ConnectClose(); } catch { }
+            _client.Dispose();
+            State = DriverState.Disconnected;
+            return Task.FromResult(OperationResult.Success());
+        }, CancellationToken.None);
     }
 
     protected override async Task<object[]?> ReadBatchTypedAsync(string address, DataType type, int count)
@@ -118,31 +138,31 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
         var c = (ushort)count;
         return type switch
         {
-            DataType.Float   => (await ReadCheckedAsync(_client.ReadFloatAsync(address, c), "读取 Float")).Cast<object>().ToArray(),
-            DataType.Int16   => (await ReadCheckedAsync(_client.ReadInt16Async(address, c), "读取 Int16")).Cast<object>().ToArray(),
-            DataType.Int32   => (await ReadCheckedAsync(_client.ReadInt32Async(address, c), "读取 Int32")).Cast<object>().ToArray(),
-            DataType.UInt16  => (await ReadCheckedAsync(_client.ReadInt16Async(address, c), "读取 UInt16")).Select(v => (object)(ushort)v).ToArray(),
-            DataType.UInt32  => (await ReadCheckedAsync(_client.ReadInt32Async(address, c), "读取 UInt32")).Select(v => (object)(uint)v).ToArray(),
-            DataType.Int64   => (await ReadCheckedAsync(_client.ReadInt64Async(address, c), "读取 Int64")).Cast<object>().ToArray(),
-            DataType.UInt64  => (await ReadCheckedAsync(_client.ReadInt64Async(address, c), "读取 UInt64")).Select(v => (object)(ulong)v).ToArray(),
-            DataType.Double  => (await ReadCheckedAsync(_client.ReadDoubleAsync(address, c), "读取 Double")).Cast<object>().ToArray(),
+            DataType.Float => (await ReadCheckedAsync(_client.ReadFloatAsync(address, c), "读取 Float")).Cast<object>().ToArray(),
+            DataType.Int16 => (await ReadCheckedAsync(_client.ReadInt16Async(address, c), "读取 Int16")).Cast<object>().ToArray(),
+            DataType.Int32 => (await ReadCheckedAsync(_client.ReadInt32Async(address, c), "读取 Int32")).Cast<object>().ToArray(),
+            DataType.UInt16 => (await ReadCheckedAsync(_client.ReadInt16Async(address, c), "读取 UInt16")).Select(v => (object)(ushort)v).ToArray(),
+            DataType.UInt32 => (await ReadCheckedAsync(_client.ReadInt32Async(address, c), "读取 UInt32")).Select(v => (object)(uint)v).ToArray(),
+            DataType.Int64 => (await ReadCheckedAsync(_client.ReadInt64Async(address, c), "读取 Int64")).Cast<object>().ToArray(),
+            DataType.UInt64 => (await ReadCheckedAsync(_client.ReadInt64Async(address, c), "读取 UInt64")).Select(v => (object)(ulong)v).ToArray(),
+            DataType.Double => (await ReadCheckedAsync(_client.ReadDoubleAsync(address, c), "读取 Double")).Cast<object>().ToArray(),
             _ => null    // Bool/String 等不支持批量读的类型，回退逐点
         };
     }
 
     protected override async Task<object> ReadSingleTypedAsync(DataType type, string address) => type switch
     {
-        DataType.Float   => (await ReadCheckedAsync(_client.ReadFloatAsync(address, 1), "读取 Float"))[0],
-        DataType.Double  => (await ReadCheckedAsync(_client.ReadDoubleAsync(address, 1), "读取 Double"))[0],
-        DataType.Int16   => (await ReadCheckedAsync(_client.ReadInt16Async(address, 1), "读取 Int16"))[0],
-        DataType.UInt16  => (ushort)(await ReadCheckedAsync(_client.ReadInt16Async(address, 1), "读取 UInt16"))[0],
-        DataType.Int32   => (await ReadCheckedAsync(_client.ReadInt32Async(address, 1), "读取 Int32"))[0],
-        DataType.UInt32  => (uint)(await ReadCheckedAsync(_client.ReadInt32Async(address, 1), "读取 UInt32"))[0],
-        DataType.Bool    => (await ReadCheckedAsync(_client.ReadBoolAsync(address, 1), "读取 Bool"))[0],
-        DataType.Byte    => (byte)(await ReadCheckedAsync(_client.ReadInt16Async(address, 1), "读取 Byte"))[0],
-        DataType.Int64   => (await ReadCheckedAsync(_client.ReadInt64Async(address, 1), "读取 Int64"))[0],
-        DataType.UInt64  => (ulong)(await ReadCheckedAsync(_client.ReadInt64Async(address, 1), "读取 UInt64"))[0],
-        DataType.String  => await ReadCheckedAsync(_client.ReadStringAsync(address, DefaultStringLength), "读取 String"),
+        DataType.Float => (await ReadCheckedAsync(_client.ReadFloatAsync(address, 1), "读取 Float"))[0],
+        DataType.Double => (await ReadCheckedAsync(_client.ReadDoubleAsync(address, 1), "读取 Double"))[0],
+        DataType.Int16 => (await ReadCheckedAsync(_client.ReadInt16Async(address, 1), "读取 Int16"))[0],
+        DataType.UInt16 => (ushort)(await ReadCheckedAsync(_client.ReadInt16Async(address, 1), "读取 UInt16"))[0],
+        DataType.Int32 => (await ReadCheckedAsync(_client.ReadInt32Async(address, 1), "读取 Int32"))[0],
+        DataType.UInt32 => (uint)(await ReadCheckedAsync(_client.ReadInt32Async(address, 1), "读取 UInt32"))[0],
+        DataType.Bool => (await ReadCheckedAsync(_client.ReadBoolAsync(address, 1), "读取 Bool"))[0],
+        DataType.Byte => (byte)(await ReadCheckedAsync(_client.ReadInt16Async(address, 1), "读取 Byte"))[0],
+        DataType.Int64 => (await ReadCheckedAsync(_client.ReadInt64Async(address, 1), "读取 Int64"))[0],
+        DataType.UInt64 => (ulong)(await ReadCheckedAsync(_client.ReadInt64Async(address, 1), "读取 UInt64"))[0],
+        DataType.String => await ReadCheckedAsync(_client.ReadStringAsync(address, DefaultStringLength), "读取 String"),
         _ => (await ReadCheckedAsync(_client.ReadFloatAsync(address, 1), "读取 Float"))[0]
     };
 
@@ -150,18 +170,18 @@ public sealed class ModbusTcpDriver : ModbusDriverBase
     {
         var result = point.DataType switch
         {
-            DataType.Bool    => await _client.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Byte    => await _client.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),  // 1 寄存器，按 short 写入
-            DataType.Int16   => await _client.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.UInt16  => await _client.WriteAsync(address, Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Int32   => await _client.WriteAsync(address, Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.UInt32  => await _client.WriteAsync(address, Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Int64   => await _client.WriteAsync(address, Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.UInt64  => await _client.WriteAsync(address, Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Float   => await _client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.Double  => await _client.WriteAsync(address, Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
-            DataType.String  => await _client.WriteAsync(address, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)),
-            _                => await _client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture))
+            DataType.Bool => await _client.WriteAsync(address, Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Byte => await _client.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),  // 1 寄存器，按 short 写入
+            DataType.Int16 => await _client.WriteAsync(address, Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt16 => await _client.WriteAsync(address, Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int32 => await _client.WriteAsync(address, Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt32 => await _client.WriteAsync(address, Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Int64 => await _client.WriteAsync(address, Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.UInt64 => await _client.WriteAsync(address, Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Float => await _client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.Double => await _client.WriteAsync(address, Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)),
+            DataType.String => await _client.WriteAsync(address, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)),
+            _ => await _client.WriteAsync(address, Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture))
         };
 
         return result.IsSuccess ? OperationResult.Success() : (OperationResult)OperationalError.Protocol(result.Message);

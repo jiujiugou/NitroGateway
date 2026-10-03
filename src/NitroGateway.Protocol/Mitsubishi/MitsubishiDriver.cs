@@ -107,13 +107,28 @@ public sealed class MitsubishiDriver : IProtocolDriver, IDisposable
         return OperationResult.Success();
     }
 
-    /// <summary>0=未释放，1=已释放；保证 Dispose 幂等</summary>
+    /// <summary>0=未释放，1=已释放；同步/异步释放共用一个幂等位。</summary>
     private int _disposed;
 
+    /// <summary>同步释放：不排水，幂等、不抛。</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        _client?.ConnectClose();
+        try { DisposeCore(); } catch { }
+    }
+
+    /// <summary>异步释放：本驱动无闸门，等价于同步拆除。</summary>
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private void DisposeCore()
+    {
+        try { _client?.ConnectClose(); } catch { }
         _client?.Dispose();
+        _client = null;
+        State = DriverState.Disconnected;
     }
 }

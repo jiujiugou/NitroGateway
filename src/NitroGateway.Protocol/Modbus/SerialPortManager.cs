@@ -85,12 +85,19 @@ public interface ISerialPortManager
     IReadOnlyList<SerialPortInfo> GetStatus();
 }
 
+/// <summary>串口连接工厂（测试缝）：默认创建并打开真实 HslCommunication <see cref="ModbusRtu"/>。</summary>
+internal interface ISerialPortConnectionFactory
+{
+    ModbusRtu Open(SerialPortSettings settings);
+}
+
 /// <inheritdoc cref="ISerialPortManager" />
 public sealed class SerialPortManager : ISerialPortManager
 {
     private readonly ILogger<SerialPortManager> _logger;
     private readonly object _lock = new();
     private readonly Dictionary<string, Entry> _ports = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ISerialPortConnectionFactory _connectionFactory;
 
     private sealed class Entry
     {
@@ -100,7 +107,22 @@ public sealed class SerialPortManager : ISerialPortManager
         public int LeaseCount;
     }
 
-    public SerialPortManager(ILogger<SerialPortManager> logger) => _logger = logger;
+    public SerialPortManager(ILogger<SerialPortManager> logger)
+        : this(logger, new DefaultConnectionFactory())
+    {
+    }
+
+    /// <summary>测试缝：注入连接工厂以在无串口硬件时验证租约引用计数/共享语义。</summary>
+    internal SerialPortManager(ILogger<SerialPortManager> logger, ISerialPortConnectionFactory connectionFactory)
+    {
+        _logger = logger;
+        _connectionFactory = connectionFactory;
+    }
+
+    private sealed class DefaultConnectionFactory : ISerialPortConnectionFactory
+    {
+        public ModbusRtu Open(SerialPortSettings settings) => OpenRtu(settings);
+    }
 
     public SerialPortLease Acquire(SerialPortSettings settings)
     {
@@ -118,7 +140,7 @@ public sealed class SerialPortManager : ISerialPortManager
                 return new SerialPortLease(this, entry.Rtu, entry.Gate, entry.Settings);
             }
 
-            var rtu = OpenRtu(settings);
+            var rtu = _connectionFactory.Open(settings);
             entry = new Entry { Settings = settings, Rtu = rtu, Gate = new SemaphoreSlim(1, 1), LeaseCount = 1 };
             _ports[settings.PortName] = entry;
             _logger.LogInformation("串口已打开: {Port} ({BaudRate},{DataBits},{Parity},{StopBits})",

@@ -10,6 +10,7 @@
     <InternalsVisibleTo Include="NitroGateway.Protocol.Modbus" />
     <InternalsVisibleTo Include="NitroGateway.Protocol.S7" />
     <InternalsVisibleTo Include="NitroGateway.UnitTests" />
+    <InternalsVisibleTo Include="NitroGateway.CoyoteTests" />
   </ItemGroup>
 
   <ItemGroup>

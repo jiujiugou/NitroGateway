@@ -39,7 +39,7 @@ public sealed class DeviceManager : IDeviceManager
             return result.Error!;
 
         // 设备新建或更新：驱逐旧驱动，下一轮采集用新连接参数重建
-        _driverPool.Evict(device.Id);
+        await _driverPool.EvictAsync(device.Id);
         _logger.LogInformation("设备已注册: {DeviceName} [{DeviceId}]", device.Name, device.Id);
         _healthMonitor.UpdateStatus(device.Id, device.Status);
         _cache.Invalidate();
@@ -54,7 +54,7 @@ public sealed class DeviceManager : IDeviceManager
         var deleted = await _repository.DeleteAsync(deviceId, ct);
         if (deleted.IsFailure) return deleted.Error!;
 
-        _driverPool.Evict(deviceId);
+        await _driverPool.EvictAsync(deviceId);
         _healthMonitor.Remove(deviceId);
         _logger.LogInformation("设备已注销: {DeviceId}", deviceId);
         _cache.Invalidate();
@@ -125,7 +125,7 @@ public sealed class DeviceManager : IDeviceManager
         var saved = await _repository.SaveAsync(device, ct);
         if (saved.IsFailure) return saved.Error!;
 
-        _driverPool.Evict(deviceId);
+        await _driverPool.EvictAsync(deviceId);
         _healthMonitor.Remove(deviceId);
         _cache.Invalidate();
         _logger.LogInformation("设备已软删（tombstone）: {DeviceName} [{DeviceId}]", device.Name, deviceId);
@@ -152,7 +152,7 @@ public sealed class DeviceManager : IDeviceManager
         if (saved.IsFailure) return saved.Error!;
 
         // 下线/维护时释放连接；恢复后下一轮采集重建
-        _driverPool.Evict(deviceId);
+        await _driverPool.EvictAsync(deviceId);
         _cache.Invalidate();
         _logger.LogInformation("设备状态变更: {DeviceName} [{DeviceId}] {Old} → {New}",
             device.Name, deviceId, oldStatus, status);

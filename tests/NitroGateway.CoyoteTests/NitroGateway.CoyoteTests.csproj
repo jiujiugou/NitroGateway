@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Coyote" Version="1.7.11" />
+    <PackageReference Include="Microsoft.Coyote.Test" Version="1.7.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\Abstraction\NitroGateway.Protocol.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\Modbus\NitroGateway.Protocol.Modbus.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Domain\NitroGateway.Domain.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

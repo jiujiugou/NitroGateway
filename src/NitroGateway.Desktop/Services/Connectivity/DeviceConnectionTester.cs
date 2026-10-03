@@ -21,7 +21,7 @@ public sealed class DeviceConnectionTester : IDeviceConnectionTester
 
         try
         {
-            using var driver = _driverFactory.Create(device.Protocol, connection);
+            await using var driver = _driverFactory.Create(device.Protocol, connection);
             var sw = Stopwatch.StartNew();
             var connectResult = await driver.ConnectAsync(ct);
 

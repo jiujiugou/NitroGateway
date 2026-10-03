@@ -189,7 +189,7 @@ public class DevicesController : ControllerBase
 
         try
         {
-            using var driver = _driverFactory.Create(protocol, connection);
+            await using var driver = _driverFactory.Create(protocol, connection);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var result = await driver.ConnectAsync();
 

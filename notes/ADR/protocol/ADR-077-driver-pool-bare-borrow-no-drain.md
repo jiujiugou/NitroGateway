@@ -43,7 +43,7 @@
 
 - `ReliableProtocolDriver`：删除 `_inFlight` / `_drained` / `Enter` / `Exit`；保留 `_disposed` 幂等与快速失败检查。
 - `IProtocolDriver` 释放契约措辞更新：**不承诺** `Dispose` 等待在途；释放后调用必须返回失败、不抛异常。
-- 检测器 `ReliableProtocolDriverConcurrencyTests`：保留 G2（释放后干净失败）并配负控 `NoGuardWrapper`；新增 R1（`Dispose` 不阻塞在途）并配负控 `DrainWrapper`，**防止排水被重新引入**。
+- 检测器（Coyote `ReliableDriverInvariants`，权威）：G2（释放后干净失败）+ 负控 `NoGuardDriver`；R1（`Dispose` 不阻塞在途）+ 负控 `DrainDriver`，**防止排水被重新引入**；另含释放幂等正例 + 非幂等负控。
 - 豁免 X1 保留于 `notes/Invariants/protocol-driver-pool.md`，并记录"曾尝试排水、因 UI 死锁回退"。
 - **遗留（另案）**：全链路缺 `ConfigureAwait(false)` 使驱动调用绑定宿主上下文。本 ADR 不处理，但它是本决策成立的前提；若未来统一改为 `ConfigureAwait(false)`，可重估是否重新引入排水。
 - 桌面 UI 线程上的 `Evict → Dispose` 仍会同步执行 `_inner.Dispose()`（含 socket 关闭），可能短暂卡 UI；不在本 ADR 范围。
