@@ -19,6 +19,11 @@
     <ProjectReference Include="..\..\src\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Domain\NitroGateway.Domain.csproj" />
     <ProjectReference Include="..\..\src\NitroGateway.Shared\NitroGateway.Shared.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Collection\NitroGateway.Collection.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Forwarder\NitroGateway.Forwarder.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Persistence\NitroGateway.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Host\NitroGateway.Host.csproj" />
+    <ProjectReference Include="..\..\src\NitroGateway.Protocol\OpcUa\NitroGateway.Protocol.OpcUa.csproj" />
   </ItemGroup>
 
 </Project>

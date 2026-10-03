@@ -345,7 +345,10 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
 
         _inner.Dispose();
         _channel.Writer.Complete();
-        _reconnectCts?.Dispose();
+        // 防御：CancelReconnect 之后若有迟到重连循环又创建了 CTS，原子取走并释放，避免泄漏
+        var leftover = TakeReconnectCts();
+        if (leftover is not null)
+            DisposeCts(leftover);
     }
 
     // ---- 内部实现 ----
@@ -544,9 +547,12 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
     {
         try
         {
+            // 清理上一轮可能残留（原子取走，避免与外部取消方重复释放）
             CancelReconnect();
-            _reconnectCts = _reconnectCtsFactory();
-            var token = _reconnectCts.Token;
+            var cts = _reconnectCtsFactory();
+            // 先取 token 再暴露字段：外部并发 CancelReconnect 取走并释放后，本线程仍持有有效 token
+            var token = cts.Token;
+            _reconnectCts = cts;
 
             SetState(MqttConnectionState.Reconnecting);
 
@@ -575,9 +581,11 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         }
         finally
         {
-            // ADR-006 P3-2：成功/失败/取消退出循环都释放 CTS，避免残留到下次断开才清理
-            _reconnectCts?.Dispose();
-            _reconnectCts = null;
+            // ADR-006 P3-2：原子取走（外部可能已取消并取走）→ 恰释放一次，避免重复释放/漏释放。
+            // 外部取消时由 CancelReconnect 负责 Cancel+Dispose；此处仅负责正常退出路径的释放。
+            var leftover = TakeReconnectCts();
+            if (leftover is not null)
+                DisposeCts(leftover);
             _reconnectGuard.End();
         }
     }
@@ -619,11 +627,29 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         }
     }
 
-    /// <summary>取消当前进行中的重连尝试</summary>
+    /// <summary>
+    /// 取消并释放当前进行中的重连 CTS（原子取走 → Cancel → Dispose 恰一次）。
+    /// <para><b>并发契约：</b><c>Interlocked.Exchange</c> 保证重连循环 <c>finally</c> 与外部取消方
+    /// （Disconnect/Disable/Dispose）之间恰一方取得非空实例——消除重复释放、对已释放实例
+    /// <c>Cancel()</c> 抛 <see cref="ObjectDisposedException"/>、以及取消后漏释放三类竞态。</para>
+    /// </summary>
     private void CancelReconnect()
     {
-        _reconnectCts?.Cancel();
-        _reconnectCts?.Dispose();
-        _reconnectCts = null;
+        var cts = TakeReconnectCts();
+        if (cts is null)
+            return;
+        try { cts.Cancel(); }
+        catch (ObjectDisposedException) { /* 已被释放：幂等忽略 */ }
+        catch (Exception ex) { _logger.LogDebug(ex, "取消重连 CTS 异常"); }
+        DisposeCts(cts);
+    }
+
+    /// <summary>原子取走当前重连 CTS（唯一所有权语义）；无则返回 null。</summary>
+    private CancellationTokenSource? TakeReconnectCts() => Interlocked.Exchange(ref _reconnectCts, null);
+
+    private void DisposeCts(CancellationTokenSource cts)
+    {
+        try { cts.Dispose(); }
+        catch (Exception ex) { _logger.LogDebug(ex, "释放重连 CTS 异常"); }
     }
 }

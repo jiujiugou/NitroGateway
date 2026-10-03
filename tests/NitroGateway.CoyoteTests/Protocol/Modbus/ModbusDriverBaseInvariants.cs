@@ -14,7 +14,8 @@ namespace NitroGateway.CoyoteTests;
 /// <para><b>覆盖边界：</b>本文件只验证基类模板。<c>ModbusTcpDriver</c> 的读串行/X1 异步释放见
 /// <see cref="ModbusTcpDriverInvariants"/>，<c>ModbusRtuDriver</c> 的租约账目/X2 见
 /// <see cref="ModbusRtuDriverInvariants"/>。仍为非目标：TCP 建连（ConnectServerAsync 非 virtual、无缝）、
-/// RTU 帧级 Station 一致（I2）与换租约撕裂（I4/X3，需抽象 ModbusRtu）、S7/Mitsubishi/OpcUa（无 SDK 测试缝）。</para>
+/// RTU 帧级 Station 一致（I2）与换租约撕裂（I4/X3，需抽象 ModbusRtu）、S7/Mitsubishi（无 SDK 测试缝）；
+/// OpcUa 的会话自愈并发见 <see cref="OpcUaDriverInvariants"/>，真实会话闸门串行仍为非目标。</para>
 /// </summary>
 internal static class ModbusDriverBaseInvariants
 {

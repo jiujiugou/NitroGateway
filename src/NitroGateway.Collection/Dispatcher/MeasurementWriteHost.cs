@@ -97,5 +97,15 @@ namespace NitroGateway.Collection
                 }
             }
         }
+
+        /// <summary>
+        /// 停止：等待消费循环与停机排空完成后关闭写入端，使此后 <see cref="Post"/> 返回 false。
+        /// 否则宿主已停后生产者仍能入队，批次滞留 Channel 且再无消费者 → 静默丢失。
+        /// </summary>
+        public override async Task StopAsync(CancellationToken cancellationToken)
+        {
+            await base.StopAsync(cancellationToken);
+            _channel.Writer.TryComplete();
+        }
     }
 }

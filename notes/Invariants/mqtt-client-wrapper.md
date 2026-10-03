@@ -54,12 +54,14 @@
 - 负控：去掉 `_reconnectLock` 守卫的坏实现 → 多循环并发。
 - 够不着：Polly 在单循环内的重试次数（不重写）→ 用 `MaxReconnectAttempts` 夹小。
 
-### I3 `_reconnectCts` 生命周期（疑似真缺陷）
+### I3 `_reconnectCts` 生命周期（已确认真缺陷，2026-10-03 修复）
 - 断言：至多一个活跃 CTS；`CancelReconnect`/`DisposeAsync` 后 field 为 null 且只 Dispose 一次；不抛 `ObjectDisposedException`；不被旧循环的 `finally` 误清/误 Dispose 新 CTS。
 - 参与者：③重连循环建/清（L541/L572）vs 取消方 `CancelReconnect`（来自 `Disconnect` L203 / `ApplyDisabled` L374 / `DisposeAsync` L323）。
 - 交错点：`_reconnectCts = new`（L541）与 `_reconnectCts?.Dispose(); = null`（L620–624）之间；`finally`（L572）。
 - 接缝：可控 inner + **CTS 工厂/观测**（包一层统计 Dispose 次数；或在建模阶段决定加内部接缝）。
-- 负控：现状即"无同步"，可由 Coyote 直接尝试抓反例；坏实现 seed = 显式 `_reconnectCts?.Dispose()` 双调。
+- 负控：**修复前实现即种子**——`notes/Invariants` 记录：修复前 `ObservingCts.DisposeCount` 交错下取 2（6 连跑 5 红，`实际 2`）；修复后 8 连跑全绿。
+- **根因**：`_reconnectCts` 无同步，循环 `finally`（`?.Dispose(); = null`）与外部 `CancelReconnect`（`?.Cancel(); ?.Dispose(); = null`）是**两条独立 read-then-act 路径**，同时读到同一实例 → 重复 Dispose / 对已释放实例 `Cancel()` 抛 ODE / 取消后漏 Dispose 三态摇摆；`_reconnectGuard` 只锁循环单实例，管不到外部取消。
+- **修复**：统一为**原子取走**——`TakeReconnectCts()` 用 `Interlocked.Exchange(ref _reconnectCts, null)`；`CancelReconnect` 取到后 Cancel+Dispose 各一次；循环 `finally` 只取走并 Dispose（正常退出不 Cancel）；`DisposeAsync` 防御性取走残余。循环内先取 `token` 再暴露字段，避免外部释放后访问 `.Token()` 抛 ODE。
 - 够不着：Polly 取消传播的精确时序。
 
 ### I4 释放后不再连接/重连；管道关闭
@@ -108,5 +110,10 @@
 
 ## 5. 阻塞项（人定）
 1. **负控策略**：`MqttClientWrapper` 为 `sealed` → 抽一个内部小接缝（如可注入 `IReconnectCoordinator`/CTS 工厂）做真负控，还是按 `SerialPortLease` 先例记"无负控豁免"？
-2. **I3 定性**：`_reconnectCts` 无同步是现状。Coyote 若抓到反例 → 修（回实现）还是显式豁免（写理由+风险）？
+2. ~~**I3 定性**：`_reconnectCts` 无同步是现状。Coyote 若抓到反例 → 修（回实现）还是显式豁免？~~ **已定（2026-10-03）：确认缺陷，回实现修复**（原子取走），正例检测器由红转绿。
 3. **`MqttHostedService`**：监督循环作为第 6 条到达流是否纳入本模型，还是列为非目标（跨服务、`Task.Delay` 半可控）？
+
+## 6. 变更记录
+| 日期 | 变更 | 来源 |
+|---|---|---|
+| 2026-10-03 | I3 `_reconnectCts` 竞态确认并修复（原子取走）；`[Mqtt] I3` 检测器红→绿；全套 63 例通过 | 本会话（修复 MQTT CTS 竞态） |

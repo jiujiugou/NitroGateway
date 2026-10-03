@@ -771,20 +771,32 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
 
     /// <summary>
     /// <c>Session.KeepAlive</c> 事件处理（ADR-072 D1）。运行在 SDK 保活线程：
-    /// 只做事件分类，不手写恢复路径；仅在确认"当前会话 + Connected + 无进行中重连"后，
-    /// 用有界等待取得 <c>_gate</c> 复核并启动 <see cref="SessionReconnectHandler"/>。
+    /// 只做事件分类，不手写恢复路径；委托 <see cref="HandleKeepAliveBad"/> 完成
+    /// 有界等待取得 <c>_gate</c> 复核并启动 <see cref="SessionReconnectHandler"/>。
     /// </summary>
     private void OnSessionKeepAlive(ISession session, KeepAliveEventArgs e)
+        => HandleKeepAliveBad(session, e.Status);
+
+    /// <summary>
+    /// ADR-072 D3/D6 自愈抢占与启动：快速路径（无闸门）判定 → 有界取得 <c>_gate</c> → 闸门内复核
+    /// → 原子置防重入位 → <b>仍在闸门内</b>启动 <see cref="SessionReconnectHandler"/>（顺序不可反，
+    /// 防与 Disconnect/Dispose 抢会话）。返回 true 表示本次调用赢得抢占并已启动自愈。
+    /// <para><b>可测性：</b>会话身份与状态经 <see cref="CurrentSession"/> / <see cref="CurrentState"/> 读取，
+    /// 测试可注入 <see cref="CurrentSessionOverrideForTesting" /> /
+    /// <see cref="StateOverrideForTesting" /> / <see cref="ReconnectStarterOverrideForTesting" />
+    /// 驱动全路径而无需真实 SDK 会话（SDK 类型不外泄）。</para>
+    /// </summary>
+    internal bool HandleKeepAliveBad(object? session, ServiceResult? status)
     {
         // Good/空状态 = 会话存活，无动作（D1）
-        if (e.Status is null || StatusCode.IsGood(e.Status.Code))
-            return;
+        if (status is null || ServiceResult.IsGood(status))
+            return false;
 
         // 已有活动自愈重连：忽略重复 Bad 触发（防重入，D3）——快速路径，不争闸门
         if (Volatile.Read(ref _reconnectActive) != 0)
         {
-            _logger.LogDebug("OPC UA 保活中断（{Code}）但已有自愈重连进行中，忽略", e.Status.Code);
-            return;
+            _logger.LogDebug("OPC UA 保活中断（{Code}）但已有自愈重连进行中，忽略", status.Code);
+            return false;
         }
 
         // 与 Disconnect/Dispose 串行（D6）：有界等待 _gate，闸门内复核后再启动自愈。
@@ -794,31 +806,46 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
         catch { acquired = false; }
         if (!acquired)
         {
-            _logger.LogDebug("OPC UA 保活中断（{Code}）但无法取得闸门，暂不启动自愈", e.Status.Code);
-            return;
+            _logger.LogDebug("OPC UA 保活中断（{Code}）但无法取得闸门，暂不启动自愈", status.Code);
+            return false;
         }
         try
         {
             // 闸门内复核：会话已被置空/替换、状态已迁移、事件来自旧会话 → 放弃（D6 幂等）
-            if (!ShouldStartSelfHeal(e.Status, session, _session, State, Volatile.Read(ref _reconnectActive)))
+            if (!ShouldStartSelfHeal(status, session, CurrentSession, CurrentState, Volatile.Read(ref _reconnectActive)))
             {
                 _logger.LogDebug("OPC UA 保活中断但不触发自愈（非当前会话/未连接/已有重连）: {Code}",
-                    e.Status.Code);
-                return;
+                    status.Code);
+                return false;
             }
 
-            var current = _session;
+            var current = CurrentSession;
             if (current is null)
-                return;
+                return false;
             // 闸门内无并发启动，直接置位（防重入位，D3）
             Interlocked.Exchange(ref _reconnectActive, 1);
-            _logger.LogWarning("OPC UA 保活中断（{Code}），启动会话自愈重连（当前状态 {State}）",
-                e.Status.Code, e.CurrentState);
-            var telemetry = current.SessionFactory.Telemetry;
+            _logger.LogWarning("OPC UA 保活中断（{Code}），启动会话自愈重连", status.Code);
+
+            // 测试缝：无 SDK 会话时由替身接管，不触达 SessionReconnectHandler
+            if (ReconnectStarterOverrideForTesting is { } starter)
+            {
+                starter(current);
+                return true;
+            }
+
+            if (current is not Session currentSession)
+            {
+                // 防御：非 SDK 会话无法启动重连，回退防重入位
+                Interlocked.Exchange(ref _reconnectActive, 0);
+                return false;
+            }
+
+            var telemetry = currentSession.SessionFactory.Telemetry;
             var handler = new SessionReconnectHandler(telemetry);
             _reconnectHandler = handler;
             // 第二参数为毫秒重连周期（SDK 1.5.378.156 语义，非重试次数；ADR-072 已更正 docs/07）
-            handler.BeginReconnect(current, SessionReconnectHandler.DefaultReconnectPeriod, OnReconnectComplete);
+            handler.BeginReconnect(currentSession, SessionReconnectHandler.DefaultReconnectPeriod, OnReconnectComplete);
+            return true;
         }
         catch (Exception ex)
         {
@@ -826,6 +853,7 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
             try { pending?.Dispose(); } catch { }
             Interlocked.Exchange(ref _reconnectActive, 0);
             _logger.LogError(ex, "启动 OPC UA 会话自愈重连失败");
+            return false;
         }
         finally
         {
@@ -990,6 +1018,27 @@ public sealed class OpcUaDriver : IProtocolDriver, IBrowseableDriver, ISubscript
     /// <summary>测试探针：置位/复位自愈防重入位（供无 SDK 会话的单测驱动 D3/D5 分支）。</summary>
     internal void SetReconnectActiveForTesting(bool active) =>
         Interlocked.Exchange(ref _reconnectActive, active ? 1 : 0);
+
+    /// <summary>
+    /// 测试缝：自愈身份/分类用的"当前会话"（null 表示使用真实 <c>_session</c>）。
+    /// 供无需 SDK 会话的并发测试注入替身身份。
+    /// </summary>
+    internal object? CurrentSessionOverrideForTesting { get; set; }
+
+    /// <summary>测试缝：自愈分类用的状态（null 表示使用真实 <see cref="State"/>）。</summary>
+    internal DriverState? StateOverrideForTesting { get; set; }
+
+    /// <summary>
+    /// 测试缝：自愈启动替身（null 表示走真实 <see cref="SessionReconnectHandler"/>）。
+    /// 仅测试设置，生产为 null。
+    /// </summary>
+    internal Action<object>? ReconnectStarterOverrideForTesting { get; set; }
+
+    /// <summary>自愈分类用的当前会话身份：生产为 <c>_session</c>，测试可覆盖。</summary>
+    private object? CurrentSession => CurrentSessionOverrideForTesting ?? _session;
+
+    /// <summary>自愈分类用的状态：生产为 <see cref="State"/>，测试可覆盖。</summary>
+    private DriverState CurrentState => StateOverrideForTesting ?? State;
 
     /// <summary>
     /// 订阅数据变更通知回调（运行在 SDK 发布线程）。统一解包 <c>DataValue</c>，仅 Good 状态转

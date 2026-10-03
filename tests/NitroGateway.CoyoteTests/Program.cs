@@ -63,6 +63,40 @@ var cases = new (string Name, bool ExpectBug, bool ReportDeadlocks, Func<Task> B
     ("[Mqtt] I5 正例：Disabled 不触达、Enable 可恢复", false, false, MqttWrapperInvariants.I5_Disabled_DoesNotConnect_EnableRecovers),
     ("[Mqtt] I6 正例：重连后重放订阅", false, false, MqttWrapperInvariants.I6_Reconnect_ReplaysSubscriptions),
     ("[Mqtt] I7 正例：监听重入读 State 不死锁", false, true, MqttWrapperInvariants.I7_Listener_ReentrantState_NoDeadlock),
+
+    // ForwardBuffer（SqliteForwardOutbox）跨流 I1–I4
+    ("[FwdBuf] I1 正例：并发出队不重复", false, false, ForwardBufferInvariants.I1_DequeueNoDuplicate_Positive),
+    ("[FwdBuf] I1 负控：非原子出队 → 重复", true, false, ForwardBufferInvariants.I1_DequeueNoDuplicate_Negative_Racy),
+    ("[FwdBuf] I2 正例：提交后不再出现", false, false, ForwardBufferInvariants.I2_CommitRemoves_Positive),
+    ("[FwdBuf] I2 负控：提交不删 → 残留可再出队", true, false, ForwardBufferInvariants.I2_CommitRemoves_Negative_Noop),
+    ("[FwdBuf] I3 正例：MarkFailed 收敛、无残留 InFlight", false, false, ForwardBufferInvariants.I3_InFlightConverges_Positive),
+    ("[FwdBuf] I3 负控：MarkFailed 不重置 → 卡 InFlight", true, false, ForwardBufferInvariants.I3_InFlightConverges_Negative_Stuck),
+    ("[FwdBuf] I4 正例：并发入队不超上限", false, false, ForwardBufferInvariants.I4_Backpressure_Positive),
+    ("[FwdBuf] I4 负控：check-then-act → 超限", true, false, ForwardBufferInvariants.I4_Backpressure_Negative_CheckThenAct),
+
+    // Retention cutoff
+    ("[Retention] I4 正例：cutoff=now-30d 且停后不清理", false, false, RetentionInvariants.I4_CutoffAndCancellation_Positive),
+    ("[Retention] I4 负控：cutoff=now", true, false, RetentionInvariants.I4_CutoffAndCancellation_Negative_NowCutoff),
+
+    // CollectionEngine 关停
+    ("[Collection] I1 正例：停后不再启新轮", false, false, CollectionEngineInvariants.I1_NoNewRoundAfterStop_Positive),
+    ("[Collection] I1 负控：忽略停止 → 停后继续", true, false, CollectionEngineInvariants.I1_NoNewRoundAfterStop_Negative_IgnoringStop),
+
+    // MeasurementWriteHost 关停
+    ("[Collection] I3 正例：停后 Post 被拒", false, false, ChannelHostInvariants.I3_PostRejectedAfterStop_Positive),
+    ("[Collection] I3 负控：停后仍接收", true, false, ChannelHostInvariants.I3_PostRejectedAfterStop_Negative_AcceptAlways),
+
+    // GatewayLifecycle
+    ("[Lifecycle] I1 正例：并发停止单调", false, false, GatewayLifecycleInvariants.I1_Monotonic_Positive),
+    ("[Lifecycle] I1 负控：翻转 → 非 true", true, false, GatewayLifecycleInvariants.I1_Monotonic_Negative_Toggling),
+
+    // OpcUaDriver 会话自愈（ADR-072 D2/D3/D5；经 SDK-free 自愈缝）
+    ("[OpcUa] I1 正例：并发 Bad 恰启动一次自愈且防重入位粘滞", false, false, OpcUaDriverInvariants.I1_AntiReentry_SingleWinner_Positive),
+    ("[OpcUa] I1 负控：无闸门 check-then-act → 多路胜出", true, false, OpcUaDriverInvariants.I1_AntiReentry_Negative_CheckThenAct),
+    ("[OpcUa] I2 正例：混杂 Bad 仅当前会话胜出", false, false, OpcUaDriverInvariants.I2_Classification_GatesConcurrentBad_Positive),
+    ("[OpcUa] I2 负控：忽略身份/防重入 → 多路胜出", true, false, OpcUaDriverInvariants.I2_Classification_Negative_IgnoresIdentity),
+    ("[OpcUa] I3 正例：自愈窗口内失败读不置 Faulted", false, false, OpcUaDriverInvariants.I3_FaultSuppression_InWindow_Positive),
+    ("[OpcUa] I3 负控：忽略窗口无条件 Faulted → 被抓", true, false, OpcUaDriverInvariants.I3_FaultSuppression_Negative_AlwaysFaulted),
 };
 
 const uint defaultIterations = 100;
