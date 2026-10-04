@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NitroGateway.DeviceManagement;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
+using NitroGateway.Telemetry;
 
 namespace NitroGateway.Desktop.Services.Sync;
 
@@ -83,12 +84,14 @@ public sealed class SiteConfigSyncService : BackgroundService
         var snapshotResult = await _client.FetchSyncSnapshotAsync(centerUrl, token, _siteId, ct);
         if (snapshotResult.IsFailure)
         {
+            NitroMetrics.ConfigSyncFailuresTotal.Inc();
             _logger.LogDebug("配置同步跳过：拉取中心快照失败 {Error}", snapshotResult.Error!.Message);
             return;
         }
 
         await ApplySnapshotAsync(snapshotResult.Value!.Devices, ct);
         await PushPendingAsync(centerUrl, token, ct);
+        NitroMetrics.ConfigSyncSuccessTotal.Inc();
     }
 
     /// <summary>

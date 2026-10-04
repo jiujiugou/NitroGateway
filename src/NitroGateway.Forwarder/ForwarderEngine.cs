@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using NitroGateway.Host;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.Disk;
+using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Forwarder;
@@ -37,11 +38,15 @@ public sealed class ForwarderEngine : BackgroundService
 
     private readonly GatewayLifecycle _lifecycle;
 
-    /// <summary>停机排空：等待采集侧停止的超时上限。</summary>
-    private static readonly TimeSpan DrainWaitCollectionTimeout = TimeSpan.FromSeconds(15);
+    /// <summary>停机排空：等待采集侧停止的超时上限（关停必须快，不能被子系统拖住）。</summary>
+    private static readonly TimeSpan DrainWaitCollectionTimeout = TimeSpan.FromSeconds(2);
 
-    /// <summary>停机排空：排空剩余缓冲的时间上限，防止停机被慢 Broker 拖死。</summary>
-    private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(10);
+    /// <summary>
+    /// 停机排空：整段排空的时间上限，防止停机被慢 Broker 拖死。
+    /// 该预算作为取消令牌传入 <see cref="IForwarder.ForwardBatchAsync"/>，保证**单次**调用也受约束
+    /// （单次真发 1000 批到高 RTT 远程 Broker 可能耗时数十秒）。
+    /// </summary>
+    private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>创建转发引擎</summary>
     /// <param name="scopeFactory">DI 作用域工厂，每轮创建作用域解析转发所需服务</param>
@@ -107,12 +112,15 @@ public sealed class ForwarderEngine : BackgroundService
                 _logger.LogWarning("停机排空：等待采集停止超时，按当前缓冲内容排空");
         }
 
-        var drainDeadline = DateTime.UtcNow + DrainTimeout;
-        while (DateTime.UtcNow < drainDeadline)
+        // 整段排空用带超时的取消令牌；透传给 ForwardBatchAsync 使**单次**调用也在预算内被取消，
+        // 否则一次真发 1000 批到远程 Broker 会把关停拖到分钟级（进程残留、独占单实例锁）。
+        using var drainCts = new CancellationTokenSource(DrainTimeout);
+        var drainToken = drainCts.Token;
+        while (!drainToken.IsCancellationRequested)
         {
             try
             {
-                var pending = await _buffer.GetCountAsync(CancellationToken.None);
+                var pending = await _buffer.GetCountAsync(drainToken);
                 if (pending == 0)
                     break;
 
@@ -122,7 +130,12 @@ public sealed class ForwarderEngine : BackgroundService
                     break; // MQTT 已不可用：剩余批次留在缓冲，下次启动续传
 
                 var forwarder = scope.ServiceProvider.GetRequiredService<IForwarder>();
-                await forwarder.ForwardBatchAsync(MaxDrainPerRound, CancellationToken.None);
+                await forwarder.ForwardBatchAsync(MaxDrainPerRound, drainToken);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("停机排空到达时间上限，剩余批次留待下次启动续传");
+                break;
             }
             catch (Exception ex)
             {
@@ -140,7 +153,10 @@ public sealed class ForwarderEngine : BackgroundService
     private async Task RunRoundAsync(CancellationToken stoppingToken)
     {
         if (_diskStatus?.Level == DiskLevel.Critical)
+        {
+            NitroMetrics.DispatchSkippedTotal.WithLabels("disk_critical").Inc();
             return;
+        }
 
         // ── 积压检查（限流：首次立即 + 之后每 60s 一次，回落后重置）──
         int backlog;
@@ -158,6 +174,14 @@ public sealed class ForwarderEngine : BackgroundService
             _logger.LogError(ex, "转发积压查询异常，跳过本轮");
             return;
         }
+
+        // 无论 MQTT 是否连接都刷新积压指标：否则未连接时 Forwarder 不运行，
+        // nitro_buffer_backlog 会恒为初值 0，掩盖"缓冲已满/数据被拒"的真实状态。
+        NitroMetrics.BufferBacklog.Set(backlog);
+        NitroMetrics.BufferBacklogByChannel
+            .WithLabels(IForwardBuffer.MqttChannel)
+            .Set(await _buffer.GetCountAsync(IForwardBuffer.MqttChannel, stoppingToken));
+
         if (backlog > BacklogWarningThreshold)
         {
             var now = DateTimeOffset.UtcNow;

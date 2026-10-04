@@ -93,6 +93,9 @@ public sealed class HttpForwarderEngine : BackgroundService
             _logger.LogError(ex, "HTTP 转发积压查询异常，跳过本轮");
             return;
         }
+        NitroMetrics.BufferBacklogByChannel
+            .WithLabels(IForwardBuffer.HttpChannel)
+            .Set(await _buffer.GetCountAsync(IForwardBuffer.HttpChannel, stoppingToken));
         if (backlog > BacklogWarningThreshold)
         {
             var now = DateTimeOffset.UtcNow;

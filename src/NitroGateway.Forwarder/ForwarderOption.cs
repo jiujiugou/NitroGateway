@@ -13,6 +13,13 @@ public sealed class ForwarderOption
     /// <summary>启用通道：mqtt / http / both（大小写不敏感）</summary>
     public string Channels { get; init; } = "mqtt";
 
+    /// <summary>
+    /// 单轮转发的最大并发发布数（在途 QoS1 上限），默认 8。
+    /// 公网 RTT 下串行发布的吞吐被 RTT 卡死（约 1/RTT 条/秒），并发后吞吐 ≈ 并发数/RTT；
+    /// 取值为有界节流，防止 MQTT 恢复瞬间一次性冲垮 Broker。运行时夹紧到 [1, 64]。
+    /// </summary>
+    public int MaxConcurrentPublishes { get; init; } = 8;
+
     /// <summary>HTTP 通道参数（Channels 含 http 时必填 BaseUrl）</summary>
     public HttpForwarderOption Http { get; init; } = new();
 

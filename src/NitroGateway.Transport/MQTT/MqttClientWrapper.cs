@@ -170,7 +170,12 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
         if (!string.IsNullOrEmpty(_options.Username))
             builder.WithCredentials(_options.Username, _options.Password);
 
-        builder.WithTcpServer(_options.Host, _options.Port);
+        // 先 WithTcpServer(host,port) 设端点，再用 Action 重载替换 TCP 选项以设置 socket 缓冲：
+        // MQTTnet 默认 BufferSize 仅 8KB，高 RTT 公网链路上会把单条发布卡到 ~1 个 RTT（并发无效）；
+        // 放大到 MB 级后并发发布才真正提升吞吐。Action 重载会新建 MqttClientTcpOptions，
+        // 但 Build() 会用已保存的端点回填 RemoteEndpoint。
+        builder.WithTcpServer(_options.Host, _options.Port)
+            .WithTcpServer(o => o.BufferSize = _options.BufferSize);
 
         var result = await _inner.ConnectAsync(builder.Build(), ct);
 
@@ -260,7 +265,21 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
                 .WithQualityOfServiceLevel(qosLevel)
                 .Build();
 
-            var result = await _inner.PublishAsync(msg, ct);
+            var publishSw = Stopwatch.StartNew();
+            MqttNet.MqttClientPublishResult result;
+            try
+            {
+                // WaitAsync(ct)：即使 MQTTnet 内部不观察取消，也能在关停取消时立即退出等待，
+                // 否则一次真发 1000 批会把宿主关停拖到分钟级。
+                result = await _inner.PublishAsync(msg, ct).WaitAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "发布被取消（关停）");
+                throw; // 向上传播，让转发轮快速结束
+            }
+            publishSw.Stop();
+            NitroMetrics.MqttPublishDurationMs.Observe(publishSw.Elapsed.TotalMilliseconds);
 
             if (result.ReasonCode is MqttNet.MqttClientPublishReasonCode.Success or
                 MqttNet.MqttClientPublishReasonCode.NoMatchingSubscribers)
@@ -340,7 +359,20 @@ public sealed class MqttClientWrapper : IMqttClient, IAsyncDisposable
             {
                 Reason = MqttNet.MqttClientDisconnectOptionsReason.NormalDisconnection
             };
-            await _inner.DisconnectAsync(options);
+            // 断开必须有超时：远程/半死链路下 DisconnectAsync 可能长时间不返回，拖死宿主释放。
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                await _inner.DisconnectAsync(options, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("MQTT 断开超时，强制释放客户端");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "MQTT 断开异常，强制释放客户端");
+            }
         }
 
         _inner.Dispose();

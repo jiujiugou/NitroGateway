@@ -13,6 +13,7 @@ public class ForwarderOptionTests
         var option = new ForwarderOption();
         Assert.Equal(5000, option.IntervalMs);
         Assert.Equal("mqtt", option.Channels);
+        Assert.Equal(8, option.MaxConcurrentPublishes);
 
         var http = new HttpForwarderOption();
         Assert.Equal("", http.BaseUrl);

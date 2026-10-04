@@ -114,13 +114,33 @@ public partial class App : Application, IDisposable
     /// <param name="e">退出事件参数。</param>
     protected override void OnExit(ExitEventArgs e)
     {
-        // 兜底关闭：MainWindow.Closing 已正常 drain 时，此处 StopAsync 幂等快速返回。
+        // 兜底关闭：StopAsync 已在 MainWindow.Closing 完成，这里只释放。
+        // 释放放到线程池并设超时——绝不在 UI 线程上无限 GetResult()，
+        // 否则某个 Dispose（MQTT 断开/后台循环）卡住会让进程永不退出、独占单实例锁。
         if (_host is not null)
         {
-            // 注意：OnExit 无法异步等待，只能同步阻塞；正常路径下宿主已停，不会长时间等待。
-            try { _host.StopAsync().GetAwaiter().GetResult(); }
-            catch (Exception ex) { _logger?.LogError(ex, "退出时宿主停止异常"); }
-            finally { _host.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            var host = _host;
+            bool completed;
+            try
+            {
+                completed = Task.Run(async () =>
+                {
+                    try { await host.DisposeAsync(); }
+                    catch (Exception ex) { _logger?.LogError(ex, "退出时宿主释放异常"); }
+                }).Wait(TimeSpan.FromSeconds(3));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "退出时宿主释放异常");
+                completed = false;
+            }
+
+            if (!completed)
+            {
+                _logger?.LogWarning("宿主释放超时，强制退出进程");
+                Dispose();
+                Environment.Exit(0);
+            }
         }
 
         // 释放单实例 Mutex，再交给基类完成退出。

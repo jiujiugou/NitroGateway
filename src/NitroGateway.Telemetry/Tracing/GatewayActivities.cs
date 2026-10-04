@@ -23,6 +23,18 @@ public static class GatewayActivities
     /// <summary>数据转发（Forwarder）</summary>
     public const string Forward = "Forward";
 
+    /// <summary>转发缓冲入队（SqliteForwardOutbox.EnqueueAsync）</summary>
+    public const string OutboxEnqueue = "OutboxEnqueue";
+
+    /// <summary>转发缓冲出队（SqliteForwardOutbox.DequeueAsync）</summary>
+    public const string OutboxDequeue = "OutboxDequeue";
+
+    /// <summary>转发缓冲提交（SqliteForwardOutbox.CommitAsync）</summary>
+    public const string OutboxCommit = "OutboxCommit";
+
+    /// <summary>转发缓冲标记失败（SqliteForwardOutbox.MarkFailedAsync）</summary>
+    public const string OutboxMarkFailed = "OutboxMarkFailed";
+
     /// <summary>SQLite 写入操作（SqliteMeasurementStore / SqliteForwardOutbox）</summary>
     public const string SqliteWrite = "SqliteWrite";
 

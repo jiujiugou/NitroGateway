@@ -30,6 +30,9 @@ public static class DesktopServiceCollectionExtensions
     {
         services.AddSingleton<UiDispatcher>();
 
+        // 系统监控页：进程内抓取 prometheus-net 指标（不经 HTTP / 外部 Prometheus）
+        services.AddSingleton<IMetricsSource, PrometheusMetricsSource>();
+
         services.AddSingleton<EventBridge>();
         services.AddSingleton<IPointStoredSink>(sp => sp.GetRequiredService<EventBridge>());
         services.AddSingleton<IDeviceHealthListener>(sp => sp.GetRequiredService<EventBridge>());
@@ -44,6 +47,7 @@ public static class DesktopServiceCollectionExtensions
         services.AddSingleton<AlarmRulesViewModel>();
         services.AddSingleton<HistoryViewModel>();
         services.AddSingleton<SettingsViewModel>();
+        services.AddSingleton<MetricsViewModel>();
 
         services.AddSingleton<IDeviceDialogService, DeviceDialogService>();
 

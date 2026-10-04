@@ -39,6 +39,33 @@ public static class NitroMetrics
             LabelNames = ["device"]
         });
 
+    /// <summary>进入分发的点位样本总数（转换后待落库 + 转发）。用于与转发点数对账，发现丢数。</summary>
+    public static readonly Counter CollectionPointsTotal = Metrics.CreateCounter(
+        "nitro_collection_points_total",
+        "进入分发的点位样本总数");
+
+    /// <summary>死区变化抑制的点位样本总数（故意不落库/不转发，非丢失）。</summary>
+    public static readonly Counter DeadbandSuppressedPointsTotal = Metrics.CreateCounter(
+        "nitro_deadband_suppressed_points_total",
+        "死区变化抑制的点位样本总数（故意不转发）");
+
+    /// <summary>被跳过的设备采集轮次。label: reason (not_due|circuit_open)。</summary>
+    public static readonly Counter CollectionSkippedTotal = Metrics.CreateCounter(
+        "nitro_collection_skipped_total",
+        "被跳过的设备采集轮次",
+        new CounterConfiguration
+        {
+            LabelNames = ["reason"]
+        });
+
+    /// <summary>
+    /// 最近进入分发的样本时间戳（Unix 秒）。端到端新鲜度 = time() - 本值；
+    /// 数据停止时该值不再更新，年龄随之增长，故能暴露数据停滞。
+    /// </summary>
+    public static readonly Gauge LatestSampleTimestampSeconds = Metrics.CreateGauge(
+        "nitro_latest_sample_timestamp_seconds",
+        "最近进入分发的样本时间戳（Unix 秒）");
+
     // ═══════════════════════════════════════════════════════════════
     //  转发
     // ═══════════════════════════════════════════════════════════════
@@ -52,10 +79,83 @@ public static class NitroMetrics
             LabelNames = ["status"]
         });
 
-    /// <summary>转发缓冲积压批次数</summary>
+    /// <summary>转发点位样本数。label: status (success|failure|dropped)。比批次计数更能反映实际数据量。</summary>
+    public static readonly Counter ForwardPointsTotal = Metrics.CreateCounter(
+        "nitro_forward_points_total",
+        "转发点位样本总数",
+        new CounterConfiguration
+        {
+            LabelNames = ["status"]
+        });
+
+    /// <summary>转发缓冲积压批次数（全通道合计）</summary>
     public static readonly Gauge BufferBacklog = Metrics.CreateGauge(
         "nitro_buffer_backlog",
         "转发缓冲中待处理的批次数");
+
+    /// <summary>转发缓冲分通道积压批次数。label: channel (mqtt|http)</summary>
+    public static readonly Gauge BufferBacklogByChannel = Metrics.CreateGauge(
+        "nitro_buffer_backlog_by_channel",
+        "转发缓冲中待处理的批次数（按通道）",
+        new GaugeConfiguration
+        {
+            LabelNames = ["channel"]
+        });
+
+    /// <summary>单轮转发总耗时（毫秒，含出队/发布/提交）</summary>
+    public static readonly Histogram ForwardRoundDurationMs = Metrics.CreateHistogram(
+        "nitro_forward_round_duration_ms",
+        "单轮转发总耗时（毫秒）",
+        new HistogramConfiguration
+        {
+            Buckets = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000]
+        });
+
+    /// <summary>转发出队耗时（毫秒）</summary>
+    public static readonly Histogram ForwardDequeueDurationMs = Metrics.CreateHistogram(
+        "nitro_forward_dequeue_duration_ms",
+        "转发缓冲出队耗时（毫秒）",
+        new HistogramConfiguration
+        {
+            Buckets = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 5000]
+        });
+
+    /// <summary>转发提交耗时（毫秒）</summary>
+    public static readonly Histogram ForwardCommitDurationMs = Metrics.CreateHistogram(
+        "nitro_forward_commit_duration_ms",
+        "转发成功批次提交耗时（毫秒）",
+        new HistogramConfiguration
+        {
+            Buckets = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 5000]
+        });
+
+    /// <summary>当前在途 MQTT 发布数（QoS1 ack 未回）</summary>
+    public static readonly Gauge ForwardInflight = Metrics.CreateGauge(
+        "nitro_forward_inflight",
+        "当前在途 MQTT 发布数");
+
+    /// <summary>单次 MQTT 发布耗时（毫秒，含等待 PUBACK）</summary>
+    public static readonly Histogram MqttPublishDurationMs = Metrics.CreateHistogram(
+        "nitro_mqtt_publish_duration_ms",
+        "单次 MQTT 发布耗时（毫秒，含等待 PUBACK）",
+        new HistogramConfiguration
+        {
+            Buckets = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
+        });
+
+    /// <summary>转发缓冲入队失败/拒绝总次数（背压拒绝或 DB 异常）</summary>
+    public static readonly Counter BufferEnqueueFailures = Metrics.CreateCounter(
+        "nitro_buffer_enqueue_failures_total",
+        "转发缓冲入队失败/拒绝总次数");
+
+    /// <summary>转发缓冲入队耗时（毫秒）</summary>
+    public static readonly Histogram BufferEnqueueDurationMs = Metrics.CreateHistogram(
+        "nitro_buffer_enqueue_duration_ms",
+        "转发缓冲入队耗时（毫秒）",
+        new HistogramConfiguration
+        {
+            Buckets = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000]
+        });
 
     public static readonly Counter HttpForwardTotal = Metrics.CreateCounter(
         "nitro_http_forward_total",
@@ -96,12 +196,35 @@ public static class NitroMetrics
         "nitro_store_write_failures_total",
         "时序库落库失败总次数");
 
+    /// <summary>存储落库通道因满而丢弃的点位数（DropOldest，静默丢弃的可见化）。</summary>
+    public static readonly Counter StoreChannelDroppedPointsTotal = Metrics.CreateCounter(
+        "nitro_store_channel_dropped_points_total",
+        "存储落库通道满而丢弃的点位样本数");
+
     public static readonly Gauge DiskFreeBytes = Metrics.CreateGauge(
         "nitro_disk_free_bytes",
         "数据目录与日志目录剩余空间字节数",
         new GaugeConfiguration
         {
             LabelNames = ["path"]
+        });
+
+    /// <summary>数据库文件大小。label: kind (main|wal)。</summary>
+    public static readonly Gauge DbSizeBytes = Metrics.CreateGauge(
+        "nitro_db_size_bytes",
+        "数据库文件大小字节数",
+        new GaugeConfiguration
+        {
+            LabelNames = ["kind"]
+        });
+
+    /// <summary>因磁盘 Critical 等原因跳过整轮分发/转发的次数。label: reason。</summary>
+    public static readonly Counter DispatchSkippedTotal = Metrics.CreateCounter(
+        "nitro_dispatch_skipped_total",
+        "分发/转发被跳过的总次数",
+        new CounterConfiguration
+        {
+            LabelNames = ["reason"]
         });
 
     // ═══════════════════════════════════════════════════════════════
@@ -151,4 +274,28 @@ public static class NitroMetrics
     public static readonly Counter CommandAckPublishFailuresTotal = Metrics.CreateCounter(
         "nitro_command_ack_publish_failures_total",
         "命令回执发布失败总次数");
+
+    // ═══════════════════════════════════════════════════════════════
+    //  告警 / 配置同步（业务健康）
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>告警触发总数</summary>
+    public static readonly Counter AlarmTriggeredTotal = Metrics.CreateCounter(
+        "nitro_alarm_triggered_total",
+        "告警触发总次数");
+
+    /// <summary>告警通知发送失败次数（MQTT 推送等）</summary>
+    public static readonly Counter AlarmNotifyFailuresTotal = Metrics.CreateCounter(
+        "nitro_alarm_notify_failures_total",
+        "告警通知发送失败总次数");
+
+    /// <summary>配置同步成功轮次</summary>
+    public static readonly Counter ConfigSyncSuccessTotal = Metrics.CreateCounter(
+        "nitro_config_sync_success_total",
+        "配置同步成功轮次");
+
+    /// <summary>配置同步失败轮次（拉取/上报失败，下次重试）</summary>
+    public static readonly Counter ConfigSyncFailuresTotal = Metrics.CreateCounter(
+        "nitro_config_sync_failures_total",
+        "配置同步失败轮次");
 }

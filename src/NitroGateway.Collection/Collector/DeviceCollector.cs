@@ -86,6 +86,7 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
         var duePoints = _reader.GetDuePoints(device);
         if (duePoints is { Count: 0 })
         {
+            NitroMetrics.CollectionSkippedTotal.WithLabels("not_due").Inc();
             _logger.LogDebug("设备 {Device} 全部点位未到采样间隔，跳过本轮", device.Name);
             return;
         }
@@ -95,6 +96,7 @@ internal sealed class DeviceCollector : IDeviceCollector, IDisposable
         var circuitBreaker = _circuitBreakerRegistry.Get(device.Id);
         if (!circuitBreaker.TryEnterProbe())
         {
+            NitroMetrics.CollectionSkippedTotal.WithLabels("circuit_open").Inc();
             _logger.LogDebug("设备 {Device} 熔断中（{State}），跳过本轮采集",
                 device.Name, circuitBreaker.State);
             return;

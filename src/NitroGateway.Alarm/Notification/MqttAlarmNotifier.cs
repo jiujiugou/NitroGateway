@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NitroGateway.Alarm.Domain;
 using NitroGateway.Shared;
+using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 
 namespace NitroGateway.Alarm.Notification;
@@ -48,8 +49,13 @@ public sealed class MqttAlarmNotifier : IAlarmNotifier
         var result = await _mqtt.PublishAsync(topic, Encoding.UTF8.GetBytes(payload), qos: 1, ct);
 
         if (result.IsSuccess)
+        {
             _logger.LogInformation("告警已推送 MQTT: {AlarmId} {Severity}", alarm.Id, alarm.Severity);
+        }
         else
+        {
+            NitroMetrics.AlarmNotifyFailuresTotal.Inc();
             _logger.LogWarning("告警推送 MQTT 失败: {Error}", result.Error!.Message);
+        }
     }
 }

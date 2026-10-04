@@ -33,6 +33,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         AlarmRulesViewModel alarmRules,
         HistoryViewModel history,
         SettingsViewModel settings,
+        MetricsViewModel metrics,
         EventBridge bridge,
         UiDispatcher ui)
     {
@@ -57,6 +58,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         NavTree.Add(NavNode.Page("告警", "\uE7BA", alarms));
         NavTree.Add(NavNode.Page("告警规则", "\uE8FD", alarmRules));
         NavTree.Add(NavNode.Page("历史查询", "\uE81C", history));
+        NavTree.Add(NavNode.Page("系统监控", "\uE9D9", metrics));
         NavTree.Add(NavNode.Page("设置", "\uE713", settings));
 
         foreach (var node in AllNodes())

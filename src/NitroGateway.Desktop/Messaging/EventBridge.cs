@@ -235,7 +235,9 @@ public sealed class EventBridge : IDisposable, IPointStoredSink, IDeviceHealthLi
             return;
 
         _cts.Cancel();
-        try { _loop.GetAwaiter().GetResult(); } catch { /* 循环异常已隔离 */ }
+        // 有限等待：循环正常时秒退；万一卡在 DB/IO 上也只等 2s，绝不无限阻塞宿主释放。
+        try { _loop.Wait(TimeSpan.FromSeconds(2)); }
+        catch { /* 循环异常/超时已隔离，交由进程退出回收 */ }
         _cts.Dispose();
     }
 }

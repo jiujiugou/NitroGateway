@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Domain.Measurements;
 using NitroGateway.Forwarder;
@@ -21,7 +22,8 @@ public class ForwarderTests
     {
         public List<BatchMeasurements> Pending { get; } = [];
         public List<Guid> Committed { get; } = [];
-        public List<(Guid BatchId, string Reason)> MarkedFailed { get; } = [];
+        // 并发发布下 MarkFailed 由多个 worker 触发，容器必须线程安全
+        public ConcurrentBag<(Guid BatchId, string Reason)> MarkedFailed { get; } = [];
         public OperationalError? DequeueError { get; set; }
         public OperationalError? CommitError { get; set; }
         public OperationalError? MarkFailedError { get; set; }
@@ -76,7 +78,8 @@ public class ForwarderTests
     private sealed class RecordingMqtt : IMqttClient
     {
         public MqttConnectionState State { get; set; } = MqttConnectionState.Connected;
-        public List<(string Topic, byte[] Payload)> Published { get; } = [];
+        // 并发发布下 Published 由多个 worker 写入，容器必须线程安全
+        public ConcurrentBag<(string Topic, byte[] Payload)> Published { get; } = [];
         public OperationResult? PublishResult { get; set; }
         public Exception? PublishException { get; set; }
 
@@ -117,9 +120,10 @@ public class ForwarderTests
 
     private static ForwarderImpl Create(
         IForwardBuffer buffer, IMqttClient mqtt,
-        string? siteId = null, IMessageSerializer? serializer = null)
+        string? siteId = null, IMessageSerializer? serializer = null,
+        int? maxConcurrentPublishes = null)
         => new(buffer, serializer ?? new JsonMessageSerializer(), mqtt,
-               NullLogger<ForwarderImpl>.Instance, siteId);
+               NullLogger<ForwarderImpl>.Instance, siteId, maxConcurrentPublishes ?? 8);
 
     // ── 站点 topic（ADR-035）──
 
@@ -398,6 +402,96 @@ public class ForwarderTests
         Assert.Equal(before + 1, NitroMetrics.ForwardTotal.WithLabels("failure").Value);
     }
 
+    // ── 有界并发发布 ──
+
+    /// <summary>并发发布受 MaxConcurrentPublishes 限制，单轮在途不超过配置值，且确实大于 1。</summary>
+    [Fact]
+    public async Task ForwardBatchAsync_BoundedConcurrency_NeverExceedsConfiguredDegree()
+    {
+        var buffer = new RecordingBuffer();
+        for (var i = 0; i < 30; i++)
+            await buffer.EnqueueAsync(Batch());
+        var mqtt = new ConcurrencyTrackingMqtt { PublishDelay = TimeSpan.FromMilliseconds(30) };
+        var forwarder = Create(buffer, mqtt, maxConcurrentPublishes: 4);
+
+        await forwarder.ForwardBatchAsync(30);
+
+        Assert.Equal(30, buffer.Committed.Count);
+        Assert.Equal(30, mqtt.PublishedCount);
+        Assert.InRange(mqtt.MaxObserved, 2, 4);
+    }
+
+    /// <summary>MaxConcurrentPublishes=1 退化为串行：在途峰值恒为 1。</summary>
+    [Fact]
+    public async Task ForwardBatchAsync_MaxConcurrentPublishesOne_IsSerial()
+    {
+        var buffer = new RecordingBuffer();
+        for (var i = 0; i < 10; i++)
+            await buffer.EnqueueAsync(Batch());
+        var mqtt = new ConcurrencyTrackingMqtt { PublishDelay = TimeSpan.FromMilliseconds(5) };
+        var forwarder = Create(buffer, mqtt, maxConcurrentPublishes: 1);
+
+        await forwarder.ForwardBatchAsync(10);
+
+        Assert.Equal(10, buffer.Committed.Count);
+        Assert.Equal(1, mqtt.MaxObserved);
+    }
+
+    /// <summary>并发下部分设备失败：成功的全部提交、失败的全部标记。</summary>
+    [Fact]
+    public async Task ForwardBatchAsync_ConcurrentPartialFailure_CommitsSuccessesMarksFailures()
+    {
+        var buffer = new RecordingBuffer();
+        var all = Enumerable.Range(0, 20).Select(_ => Batch()).ToList();
+        var failing = all.Where((_, i) => i % 2 == 0).Select(b => b.DeviceId).ToHashSet();
+        foreach (var b in all)
+            await buffer.EnqueueAsync(b);
+        var mqtt = new SetFailingMqtt(failing, TimeSpan.FromMilliseconds(10));
+        var forwarder = Create(buffer, mqtt, maxConcurrentPublishes: 4);
+
+        await forwarder.ForwardBatchAsync(20);
+
+        var devOf = all.ToDictionary(b => b.Id, b => b.DeviceId);
+        Assert.Equal(10, buffer.Committed.Count);
+        Assert.All(buffer.Committed, id => Assert.False(failing.Contains(devOf[id])));
+        Assert.Equal(10, buffer.MarkedFailed.Count);
+        Assert.All(buffer.MarkedFailed, mf => Assert.True(failing.Contains(devOf[mf.BatchId])));
+    }
+
+    /// <summary>同一批只发布一次（并发不产生重复发送）。</summary>
+    [Fact]
+    public async Task ForwardBatchAsync_Concurrent_DoesNotPublishDuplicateBatches()
+    {
+        var buffer = new RecordingBuffer();
+        var all = Enumerable.Range(0, 50).Select(_ => Batch()).ToList();
+        foreach (var b in all)
+            await buffer.EnqueueAsync(b);
+        var mqtt = new ConcurrencyTrackingMqtt { PublishDelay = TimeSpan.FromMilliseconds(2) };
+        var forwarder = Create(buffer, mqtt, maxConcurrentPublishes: 8);
+
+        await forwarder.ForwardBatchAsync(50);
+
+        // 每批 DeviceId 唯一 ⇒ topic 唯一；重复发布会出现重复 topic
+        Assert.Equal(50, mqtt.PublishedTopics.Count);
+        Assert.Equal(50, mqtt.PublishedTopics.Distinct().Count());
+    }
+
+    /// <summary>并发发布时若配置越界应被夹紧而非抛异常（0 → 串行，100 → 64）。</summary>
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-5, 1)]
+    [InlineData(100, 64)]
+    public void Constructor_ClampsMaxConcurrentPublishes(int configured, int expected)
+    {
+        var forwarder = Create(new RecordingBuffer(), new RecordingMqtt(),
+            maxConcurrentPublishes: configured);
+        var actual = (int)typeof(ForwarderImpl)
+            .GetField("_maxConcurrentPublishes", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(forwarder)!;
+
+        Assert.Equal(expected, actual);
+    }
+
     /// <summary>按 deviceId 失败特定 topic 的 MQTT 替身（构造部分成功场景）。</summary>
     private sealed class TogglingMqtt(Guid failTopicDeviceId) : IMqttClient
     {
@@ -411,6 +505,93 @@ public class ForwarderTests
             => Task.FromResult(topic.Contains(failTopicDeviceId.ToString())
                 ? OperationResult.Failure(OperationalError.Communication("broker 不可达"))
                 : OperationResult.Success());
+
+        public Task<OperationResult> SubscribeAsync(string topic, int qos = 1, CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
+
+        public IAsyncEnumerable<MqttMessage> Messages => EmptyMessages();
+
+        private static async IAsyncEnumerable<MqttMessage> EmptyMessages()
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    /// <summary>记录在途并发峰值的 MQTT 替身：发布前自增、延时、发布后自减，用于验证并发上限。</summary>
+    private sealed class ConcurrencyTrackingMqtt : IMqttClient
+    {
+        private int _current;
+        private int _max;
+
+        public TimeSpan PublishDelay { get; set; } = TimeSpan.Zero;
+        public int MaxObserved => Volatile.Read(ref _max);
+        public int PublishedCount => PublishedTopics.Count;
+        public ConcurrentBag<string> PublishedTopics { get; } = [];
+
+        public MqttConnectionState State { get; set; } = MqttConnectionState.Connected;
+        public event Action<MqttConnectionState>? StateChanged;
+
+        public Task<OperationResult> ConnectAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+        public Task<OperationResult> DisconnectAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+
+        public async Task<OperationResult> PublishAsync(string topic, byte[] payload, int qos = 1, CancellationToken ct = default)
+        {
+            var now = Interlocked.Increment(ref _current);
+            UpdateMax(now);
+            try
+            {
+                if (PublishDelay > TimeSpan.Zero)
+                    await Task.Delay(PublishDelay, ct).ConfigureAwait(false);
+                PublishedTopics.Add(topic);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _current);
+            }
+            return OperationResult.Success();
+        }
+
+        private void UpdateMax(int value)
+        {
+            int seen;
+            while (value > (seen = Volatile.Read(ref _max)))
+            {
+                if (Interlocked.CompareExchange(ref _max, value, seen) == seen)
+                    break;
+            }
+        }
+
+        public Task<OperationResult> SubscribeAsync(string topic, int qos = 1, CancellationToken ct = default)
+            => Task.FromResult(OperationResult.Success());
+
+        public IAsyncEnumerable<MqttMessage> Messages => EmptyMessages();
+
+        private static async IAsyncEnumerable<MqttMessage> EmptyMessages()
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    /// <summary>按 deviceId 集合失败特定 topic 的 MQTT 替身；带延时以制造真实并发。</summary>
+    private sealed class SetFailingMqtt(IReadOnlySet<Guid> failingDeviceIds, TimeSpan delay) : IMqttClient
+    {
+        public MqttConnectionState State { get; set; } = MqttConnectionState.Connected;
+        public event Action<MqttConnectionState>? StateChanged;
+
+        public Task<OperationResult> ConnectAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+        public Task<OperationResult> DisconnectAsync(CancellationToken ct = default) => Task.FromResult(OperationResult.Success());
+
+        public async Task<OperationResult> PublishAsync(string topic, byte[] payload, int qos = 1, CancellationToken ct = default)
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+            var failed = failingDeviceIds.Any(id => topic.Contains(id.ToString()));
+            return failed
+                ? OperationResult.Failure(OperationalError.Communication("broker 不可达"))
+                : OperationResult.Success();
+        }
 
         public Task<OperationResult> SubscribeAsync(string topic, int qos = 1, CancellationToken ct = default)
             => Task.FromResult(OperationResult.Success());

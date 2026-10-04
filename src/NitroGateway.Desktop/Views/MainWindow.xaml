@@ -17,6 +17,7 @@
         <DataTemplate DataType="{x:Type vm:AlarmsViewModel}"><views:AlarmsView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:AlarmRulesViewModel}"><views:AlarmRulesView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:HistoryViewModel}"><views:HistoryView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:MetricsViewModel}"><views:MetricsView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}"><views:SettingsView /></DataTemplate>
 
         <!-- 侧栏导航（深色两级树）：一级「协议」目录点击仅展开/收起且不高亮；

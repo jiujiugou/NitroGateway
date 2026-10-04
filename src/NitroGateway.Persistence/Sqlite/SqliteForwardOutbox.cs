@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -6,6 +7,7 @@ using NitroGateway.Domain.Measurements;
 using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Telemetry;
+using NitroGateway.Telemetry.Tracing;
 
 namespace NitroGateway.Persistence.Sqlite;
 
@@ -121,6 +123,31 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         }
     }
 
+    /// <summary>按通道统计 Pending 批次数；失败按 0 处理（与全量计数同语义）。</summary>
+    public async Task<int> GetCountAsync(string channel, CancellationToken ct = default)
+    {
+        try
+        {
+            await EnsureRecoveredAsync(ct);
+            await using var conn = await OpenConnectionAsync(ct);
+            return await conn.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    "SELECT COUNT(*) FROM forward_buffer WHERE status = 'Pending' AND channel = @channel",
+                    new { channel },
+                    cancellationToken: ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var error = SqliteErrorClassifier.Classify(ex, "Buffer 分通道积压计数失败");
+            _logger.LogWarning("{Context}，按 0 处理: {Error}", "Buffer 分通道积压计数失败", error.Message);
+            return 0;
+        }
+    }
+
 
 
     /// <summary>
@@ -182,6 +209,10 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     /// </summary>
     public async Task<OperationResult> EnqueueAsync(BatchMeasurements batch, string channel, CancellationToken ct = default)
     {
+        using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.OutboxEnqueue);
+        activity?.SetTag(GatewayActivityTags.Channel, channel);
+        activity?.SetTag(GatewayActivityTags.BatchId, batch.Id.ToString());
+
         // P0-2：入队异常统一走 SqliteErrorClassifier，与 Dequeue/Commit/MarkFailed 一致，
         // 使 DataDispatcher 的优雅降级分支（bufResult.IsFailure）真正可达。
         try
@@ -198,6 +229,7 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
             if (pending >= _maxPending)
             {
                 _logger.LogError("转发缓冲已满（上限 {Max}），拒绝入队 {BatchId}", _maxPending, batch.Id);
+                activity?.SetStatus(ActivityStatusCode.Error, "缓冲已满拒绝入队");
                 return OperationalError.Storage($"转发缓冲已满（上限 {_maxPending}），拒绝入队");
             }
 
@@ -205,6 +237,7 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
             await conn.ExecuteAsync(
                 "INSERT INTO forward_buffer (id, payload, status, retry_count, enqueued_at, channel) VALUES (@id, @payload, 'Pending', 0, @ts, @channel)",
                 new { id = batch.Id.ToString(), payload, ts = DateTime.UtcNow.ToString("O"), channel });
+            activity?.SetStatus(ActivityStatusCode.Ok);
             return OperationResult.Success();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -213,7 +246,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         }
         catch (Exception ex)
         {
-            return SqliteErrorClassifier.Classify(ex, "Buffer 入队失败");
+            var error = SqliteErrorClassifier.Classify(ex, "Buffer 入队失败");
+            activity?.SetStatus(ActivityStatusCode.Error, error.Message);
+            return error;
         }
     }
 
@@ -234,6 +269,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     string channel,
     CancellationToken ct = default)
     {
+        using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.OutboxDequeue);
+        activity?.SetTag(GatewayActivityTags.Channel, channel);
+
         await EnsureRecoveredAsync(ct);
 
         List<BufferRow> rows;
@@ -256,6 +294,8 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
             {
                 // 空队列：无写入，提交空事务并返回空列表
                 await tx.CommitAsync(ct);
+                activity?.SetTag(GatewayActivityTags.DequeueCount, 0);
+                activity?.SetStatus(ActivityStatusCode.Ok);
                 return new List<BatchMeasurements>();
             }
 
@@ -279,7 +319,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         catch (Exception ex)
         {
             // 事务未提交时在作用域结束时自动回滚
-            return SqliteErrorClassifier.Classify(ex, "Buffer 出队失败");
+            var error = SqliteErrorClassifier.Classify(ex, "Buffer 出队失败");
+            activity?.SetStatus(ActivityStatusCode.Error, error.Message);
+            return error;
         }
 
         // ② 反序列化。损坏行不能卡在 InFlight（P0-1②）：
@@ -308,6 +350,8 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
             result.Add(batch);
         }
 
+        activity?.SetTag(GatewayActivityTags.DequeueCount, result.Count);
+        activity?.SetStatus(ActivityStatusCode.Ok);
         return result;
     }
 
@@ -341,6 +385,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         // 无待提交批次，幂等短路
         if (batchIds.Count == 0) return OperationResult.Success();
 
+        using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.OutboxCommit);
+        activity?.SetTag(GatewayActivityTags.CommitCount, batchIds.Count);
+
         await EnsureRecoveredAsync(ct);
 
         try
@@ -351,6 +398,7 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
                 "DELETE FROM forward_buffer WHERE id IN @ids AND status = 'InFlight'",
                 new { ids = batchIds.Select(id => id.ToString()) }, tx);
             await tx.CommitAsync(ct);
+            activity?.SetStatus(ActivityStatusCode.Ok);
             return OperationResult.Success();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -359,7 +407,9 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         }
         catch (Exception ex)
         {
-            return SqliteErrorClassifier.Classify(ex, "Buffer 提交失败");
+            var error = SqliteErrorClassifier.Classify(ex, "Buffer 提交失败");
+            activity?.SetStatus(ActivityStatusCode.Error, error.Message);
+            return error;
         }
     }
 
@@ -373,12 +423,20 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
     string reason,
     CancellationToken ct = default)
     {
+        using var activity = GatewayActivitySource.Source.StartActivity(GatewayActivities.OutboxMarkFailed);
+        activity?.SetTag(GatewayActivityTags.BatchId, batchId.ToString());
+
         await EnsureRecoveredAsync(ct);
 
         try
         {
             await using var conn = await OpenConnectionAsync(ct);
             await using var tx = await conn.BeginTransactionAsync(ct);
+
+            // 丢弃前取出负载以统计丢失点位数（仅超限行命中，失败路径低频）；解析失败按 0 计。
+            var dropPayload = await conn.ExecuteScalarAsync<string?>(
+                @"SELECT payload FROM forward_buffer WHERE id = @id AND retry_count + 1 >= @max",
+                new { id = batchId.ToString(), max = _maxRetries }, tx);
 
             // 简化（2026-08-22）：重试超限即丢弃——先按"超限"条件 DELETE，未命中再走重试计数+1 回 Pending。
             var dropped = await conn.ExecuteAsync(
@@ -401,11 +459,13 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
             {
                 // 与 Forwarder.cs 的 success/failure 上报互补：丢弃发生在 MarkFailed 内部，故在此上报。
                 NitroMetrics.ForwardTotal.WithLabels("dropped").Inc();
+                NitroMetrics.ForwardPointsTotal.WithLabels("dropped").Inc(CountRecords(dropPayload));
                 _logger.LogWarning(
                     "转发批次 {BatchId} 重试超限（{MaxRetries} 次）已丢弃: {Error}",
                     batchId, _maxRetries, reason);
             }
 
+            activity?.SetStatus(ActivityStatusCode.Ok);
             return OperationResult.Success();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -414,7 +474,26 @@ public sealed class SqliteForwardOutbox : IForwardBuffer, IDisposable
         }
         catch (Exception ex)
         {
-            return SqliteErrorClassifier.Classify(ex, "标记失败异常");
+            var error = SqliteErrorClassifier.Classify(ex, "标记失败异常");
+            activity?.SetStatus(ActivityStatusCode.Error, error.Message);
+            return error;
+        }
+    }
+
+    /// <summary>从被丢弃批次的序列化负载解析点位数；空/损坏负载按 0 计（不阻断丢弃流程）。</summary>
+    private int CountRecords(string? payload)
+    {
+        if (string.IsNullOrEmpty(payload))
+            return 0;
+
+        try
+        {
+            var batch = JsonSerializer.Deserialize<BatchMeasurements>(payload, _json);
+            return batch?.Records.Count ?? 0;
+        }
+        catch
+        {
+            return 0;
         }
     }
 

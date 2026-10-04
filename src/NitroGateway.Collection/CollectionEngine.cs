@@ -114,9 +114,11 @@ public sealed class CollectionEngine : BackgroundService
         {
             _logger.LogInformation("等待当前采集轮完成...");
 
+            // 关停必须快：等待在途轮 5s，超时取消后再等 2s；剩余未完成的采集轮到点放弃
+            // （未提交的采集不入缓冲，不产生丢数；下一次启动重新采）。
             var completed = await Task.WhenAny(
                 current,
-                Task.Delay(TimeSpan.FromSeconds(30), cancellationToken));
+                Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
 
             if (completed != current)
             {
@@ -125,7 +127,7 @@ public sealed class CollectionEngine : BackgroundService
                 try { roundCts?.Cancel(); } catch (ObjectDisposedException) { }
                 await Task.WhenAny(
                     current,
-                    Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                    Task.Delay(TimeSpan.FromSeconds(2), cancellationToken));
             }
         }
 

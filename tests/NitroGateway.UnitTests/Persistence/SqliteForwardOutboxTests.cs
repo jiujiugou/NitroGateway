@@ -152,6 +152,21 @@ public class SqliteForwardOutboxTests
     }
 
     [Fact]
+    public async Task GetCountAsync_ByChannel_CountsOnlyThatChannel()
+    {
+        using var db = new TempForwardBufferDb();
+        var buffer = new SqliteForwardOutbox(db.ConnectionString, NullLogger<SqliteForwardOutbox>.Instance);
+
+        Assert.True((await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()), IForwardBuffer.MqttChannel)).IsSuccess);
+        Assert.True((await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()), IForwardBuffer.MqttChannel)).IsSuccess);
+        Assert.True((await buffer.EnqueueAsync(NewBatch(Guid.NewGuid()), IForwardBuffer.HttpChannel)).IsSuccess);
+
+        Assert.Equal(3, await buffer.GetCountAsync());
+        Assert.Equal(2, await buffer.GetCountAsync(IForwardBuffer.MqttChannel));
+        Assert.Equal(1, await buffer.GetCountAsync(IForwardBuffer.HttpChannel));
+    }
+
+    [Fact]
     public async Task EnqueueAndDequeue_WithoutChannel_DefaultsToMqtt()
     {
         using var db = new TempForwardBufferDb();

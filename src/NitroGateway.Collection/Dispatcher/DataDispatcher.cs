@@ -7,6 +7,7 @@ using NitroGateway.Shared;
 using NitroGateway.Storage.Buffer;
 using NitroGateway.Storage.Disk;
 using NitroGateway.Storage.TimeSeries;
+using NitroGateway.Telemetry;
 using NitroGateway.Telemetry.Tracing;
 
 namespace NitroGateway.Collection;
@@ -71,10 +72,16 @@ public sealed class DataDispatcher : IDataDispatcher
             return OperationResult.Success();
         }
 
+        // 采点计数与新鲜度：在磁盘/死区分支之前统计，保证"采到的点"能覆盖后续任何丢弃，
+        // 便于用 采点 = 转发成功 + 死区抑制 + 丢失 对账。
+        NitroMetrics.CollectionPointsTotal.Inc(snapshots.Count);
+        SetLatestSampleTimestamp(snapshots);
+
         // 采集循环继续运行（CPU 侧不写盘），等级恢复后数据流自动恢复。跳过不记日志（等级变化
         // 已由 DiskGuardService 记 Warning），避免热路径每轮刷屏。
         if (_diskStatus?.Level == DiskLevel.Critical)
         {
+            NitroMetrics.DispatchSkippedTotal.WithLabels("disk_critical").Inc();
             activity?.SetTag(GatewayActivityTags.ErrorMessage, "disk critical, dispatch skipped");
             return OperationResult.Success();
         }
@@ -83,6 +90,11 @@ public sealed class DataDispatcher : IDataDispatcher
         // 存储(SQLite)、转发(MQTT)、推送(SignalR) 三处共用，避免各算一遍、语义不一致。
         // 事件仍发全量（桌面实时图/告警不受影响），PersistedSnapshots 携带实际放行子集。
         var toStore = _changeDetector?.Filter(snapshots, DateTime.UtcNow) ?? snapshots;
+
+        // 死区抑制量：采点 - 放行 = 故意不转发的点，用于与"真丢"区分
+        var suppressed = snapshots.Count - toStore.Count;
+        if (suppressed > 0)
+            NitroMetrics.DeadbandSuppressedPointsTotal.Inc(suppressed);
 
         if (toStore.Count > 0)
         {
@@ -106,9 +118,13 @@ public sealed class DataDispatcher : IDataDispatcher
                 var channelBatch = _forwardChannels.Count > 1
                     ? batch with { Id = Guid.NewGuid() }
                     : batch;
+                var enqueueSw = Stopwatch.StartNew();
                 var bufResult = await _buffer.EnqueueAsync(channelBatch, channel, ct);
+                enqueueSw.Stop();
+                NitroMetrics.BufferEnqueueDurationMs.Observe(enqueueSw.Elapsed.TotalMilliseconds);
                 if (bufResult.IsFailure)
                 {
+                    NitroMetrics.BufferEnqueueFailures.Inc();
                     var err = bufResult.Error!;
                     if (err.Severity >= OperationalSeverity.Error)
                         _logger.LogError("缓冲入队失败 [{Code}] {Message}（通道 {Channel}）", err.Code, err.Message, channel);
@@ -130,6 +146,17 @@ public sealed class DataDispatcher : IDataDispatcher
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         return OperationResult.Success();
+    }
+
+    /// <summary>上报本批最新采样时间戳（Unix 秒）；未知 Kind 按 UTC 处理。</summary>
+    private static void SetLatestSampleTimestamp(IReadOnlyList<PointSnapshot> snapshots)
+    {
+        var newest = snapshots.Max(s => s.Timestamp);
+        var newestUtc = newest.Kind == DateTimeKind.Utc
+            ? newest
+            : DateTime.SpecifyKind(newest, DateTimeKind.Utc);
+        NitroMetrics.LatestSampleTimestampSeconds.Set(
+            new DateTimeOffset(newestUtc).ToUnixTimeMilliseconds() / 1000.0);
     }
 
     private BatchMeasurements ToBatchMeasurements(

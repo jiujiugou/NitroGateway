@@ -32,9 +32,9 @@ public static class MigrationRunner
 
         SqlitePragmas.Apply(connection);
 
-        // ── 2. 预迁移备份（仅当库已存在；WAL 下先 checkpoint 再复制，保证一致性） ──
-        if (dbExistsBeforeOpen)
-            BackupDatabase(connection, dbPath, logger);
+        // 启动期 WAL checkpoint：WAL 异常增长（数 GB）会拖慢全部读写，启动时先回收一次。
+        // WAL 较大时用 TRUNCATE（阻塞但一次性），较小用 PASSIVE（快且不阻塞）。失败不阻断启动。
+        CheckpointOnStartup(connection, dbPath, logger);
 
         var services = new ServiceCollection()
             .AddFluentMigratorCore()
@@ -46,11 +46,48 @@ public static class MigrationRunner
 
         using var scope = services.CreateScope();
         var runner = scope.ServiceProvider.GetRequiredService<IMigrationRunner>();
+
+        // ── 2. 预迁移备份（仅当确有迁移待执行；库已存在；WAL 下先 checkpoint 再复制，保证一致性） ──
+        // 关键：无待执行迁移时绝不做全量复制——否则每次启动都要复制数 GB 主库，
+        // 同步阻塞宿主与全部后台服务启动（本机实测 4GB 库复制约 100s）。
+        if (dbExistsBeforeOpen && runner.HasMigrationsToApplyUp())
+            BackupDatabase(connection, dbPath, logger);
+
         runner.MigrateUp();
 
         // ── 3. 记录当前版本 ──
         var appVersion = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.1.0";
         RecordVersion(connection, appVersion, logger);
+    }
+
+    /// <summary>
+    /// 启动期 WAL checkpoint。WAL 超过 256MB 用 TRUNCATE（回收文件），否则 PASSIVE（快速）。
+    /// 失败仅记日志不阻断启动（运行期由 <see cref="Sqlite.SqliteMaintenanceService"/> 兜底）。
+    /// </summary>
+    private static void CheckpointOnStartup(SqliteConnection connection, string dbPath, ILogger? logger)
+    {
+        try
+        {
+            var walPath = dbPath + "-wal";
+            var walBytes = File.Exists(walPath) ? new FileInfo(walPath).Length : 0;
+            var truncate = walBytes > 256L * 1024 * 1024;
+
+            using var command = connection.CreateCommand();
+            command.CommandText = truncate
+                ? "PRAGMA wal_checkpoint(TRUNCATE);"
+                : "PRAGMA wal_checkpoint(PASSIVE);";
+            command.ExecuteScalar();
+
+            if (walBytes > 0)
+            {
+                logger?.LogInformation("启动 WAL checkpoint（{Mode}）：checkpoint 前 WAL {WalMB:F1}MB",
+                    truncate ? "TRUNCATE" : "PASSIVE", walBytes / (1024.0 * 1024.0));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "启动 WAL checkpoint 失败，忽略（运行期维护服务会重试）");
+        }
     }
 
     /// <summary>

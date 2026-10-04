@@ -65,6 +65,68 @@ public class TelemetryServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void MetricsServer_Enabled_RegistersHostedService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNitroMetricsServer(Config(
+            ("Telemetry:Metrics:Enabled", "true"),
+            ("Telemetry:Metrics:Port", "19102")));
+
+        Assert.Contains(services, d => d.ServiceType == typeof(IHostedService));
+    }
+
+    [Fact]
+    public async Task MetricsServer_Enabled_ServesMetricsEndpoint()
+    {
+        var port = GetFreePort();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNitroMetricsServer(Config(
+            ("Telemetry:Metrics:Enabled", "true"),
+            ("Telemetry:Metrics:Host", "127.0.0.1"),
+            ("Telemetry:Metrics:Port", port.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+
+        await using var sp = services.BuildServiceProvider();
+        var hosted = sp.GetServices<IHostedService>().ToArray();
+        foreach (var h in hosted)
+            await h.StartAsync(CancellationToken.None);
+        try
+        {
+            // 触发 NitroMetrics 静态注册，确保端点返回自有指标
+            NitroMetrics.BufferBacklog.Set(1);
+
+            using var client = new HttpClient();
+            var body = await client.GetStringAsync($"http://127.0.0.1:{port}/metrics");
+            Assert.Contains("nitro_buffer_backlog", body);
+        }
+        finally
+        {
+            foreach (var h in hosted)
+                await h.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static int GetFreePort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    [Fact]
+    public void MetricsServer_Disabled_RegistersNothing()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNitroMetricsServer(Config(("Telemetry:Metrics:Enabled", "false")));
+
+        Assert.DoesNotContain(services, d => d.ServiceType == typeof(IHostedService));
+    }
+
+    [Fact]
     public async Task Enabled_RegistersTracerProvider_AndSamplesGlobalSource()
     {
         var services = new ServiceCollection();

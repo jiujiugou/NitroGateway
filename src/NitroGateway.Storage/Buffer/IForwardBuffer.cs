@@ -55,4 +55,11 @@ public interface IForwardBuffer
 
     /// <summary>异步获取当前待转发的批次数（不含死信）。async 路径请用本方法，避免同步查询阻塞</summary>
     Task<int> GetCountAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// 异步获取指定通道当前待转发的批次数。默认实现退化为全通道合计，
+    /// 便于既有实现（测试替身）无需改动即可编译；支持通道隔离的实现应覆写。
+    /// </summary>
+    Task<int> GetCountAsync(string channel, CancellationToken ct = default)
+        => GetCountAsync(ct);
 }

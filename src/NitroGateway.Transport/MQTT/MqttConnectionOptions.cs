@@ -27,6 +27,20 @@ public sealed record MqttConnectionOptions
     /// <summary>是否启用 TLS</summary>
     public bool UseTls { get; init; }
 
+    // TCP socket 发送/接收缓冲。MQTTnet 默认仅 8192 字节，高 RTT 公网链路会把每条 QoS1 发布
+    // 卡到 ~1 个 RTT（实测 32KB 消息 ~4 条/s），并发也无法提升；放大到 MB 级后并发才生效。
+    private int _bufferSize = 1024 * 1024;
+
+    /// <summary>
+    /// TCP socket 发送/接收缓冲区字节数（MQTTnet <c>MqttClientTcpOptions.BufferSize</c>），
+    /// 默认 1 MB；夹紧到 [8 KB, 64 MB]。默认 8 KB 会在高 RTT 链路上严重限制转发吞吐。
+    /// </summary>
+    public int BufferSize
+    {
+        get => _bufferSize;
+        init => _bufferSize = Math.Clamp(value, 8 * 1024, 64 * 1024 * 1024);
+    }
+
     // ADR-006 P3-5：KeepAliveSeconds 夹紧到 [5, 3600]，防止 0/负值导致 MQTTnet 心跳异常。
     private int _keepAliveSeconds = 60;
 

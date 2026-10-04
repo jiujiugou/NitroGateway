@@ -80,18 +80,39 @@ public partial class MainWindow : Window
 
         _shuttingDown = true;
         e.Cancel = true;
+        var logger = _host.Services.GetRequiredService<ILogger<MainWindow>>();
+
+        // 硬看门狗：任何路径卡住超过 10s 一律强杀进程，避免窗口已关但进程残留、独占单实例锁。
+        _ = ForceExitAfterAsync(TimeSpan.FromSeconds(10));
+
         try
         {
             Title = "正在关闭（排空转发缓冲）...";
-            await _host.StopAsync();
+            // 最多等 5 秒优雅关停；慢 Broker 排空/卡死的子系统一律到此为止，绝不让进程滞留。
+            var stopTask = _host.StopAsync();
+            if (await Task.WhenAny(stopTask, Task.Delay(TimeSpan.FromSeconds(5))) != stopTask)
+            {
+                logger.LogWarning("宿主关停超过 5 秒，强制退出进程");
+                Environment.Exit(0);
+            }
+
+            try { await stopTask; }
+            catch (Exception ex) { logger.LogError(ex, "宿主优雅关闭异常"); }
         }
         catch (Exception ex)
         {
-            _host.Services.GetRequiredService<ILogger<MainWindow>>().LogError(ex, "宿主优雅关闭异常");
+            logger.LogError(ex, "宿主优雅关闭异常");
         }
         finally
         {
             Application.Current.Shutdown();
         }
+    }
+
+    /// <summary>延时后强制退出进程（关停看门狗）。正常运行路径下进程会先于该延时退出。</summary>
+    private static async Task ForceExitAfterAsync(TimeSpan timeout)
+    {
+        await Task.Delay(timeout).ConfigureAwait(false);
+        Environment.Exit(0);
     }
 }

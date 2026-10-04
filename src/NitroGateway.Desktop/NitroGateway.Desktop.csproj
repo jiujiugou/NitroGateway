@@ -46,6 +46,7 @@
     <ProjectReference Include="..\NitroGateway.Alarm\NitroGateway.Alarm.csproj" />
     <ProjectReference Include="..\NitroGateway.Host\NitroGateway.Host.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+    <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
   </ItemGroup>
 
   <ItemGroup>

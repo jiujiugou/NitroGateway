@@ -29,7 +29,9 @@ namespace NitroGateway.Collection
                 new BoundedChannelOptions(1000)
                 {
                     FullMode = BoundedChannelFullMode.DropOldest
-                });
+                },
+                // DropOldest 下 TryWrite 恒返回 true，丢弃悄无声息；用 itemDropped 回调把静默丢弃可见化。
+                itemDropped: dropped => NitroMetrics.StoreChannelDroppedPointsTotal.Inc(dropped.Count));
         }
 
         /// <summary>

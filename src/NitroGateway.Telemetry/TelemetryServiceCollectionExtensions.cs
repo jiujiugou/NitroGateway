@@ -23,6 +23,24 @@ public static class TelemetryServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册独立指标 HTTP 端点（<c>Telemetry:Metrics</c>，默认关闭）。
+    /// 适用于无 ASP.NET <c>MapMetrics()</c> 的宿主（Desktop 边缘端）；Webapi 继续用 MapMetrics，无需调用本方法。
+    /// </summary>
+    public static IServiceCollection AddNitroMetricsServer(
+        this IServiceCollection services, IConfiguration? configuration)
+    {
+        var options = TelemetryMetricsOptions.Resolve(configuration?.GetSection(TelemetryMetricsOptions.SectionName));
+        if (!options.Enabled)
+            return services;
+
+        services.AddSingleton(options);
+        services.AddHostedService(sp => new MetricsServerHostedService(
+            sp.GetRequiredService<TelemetryMetricsOptions>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MetricsServerHostedService>>()));
+        return services;
+    }
+
     public static IServiceCollection AddNitroTelemetry(
         this IServiceCollection services, IConfiguration? configuration, string? serviceName = null)
     {

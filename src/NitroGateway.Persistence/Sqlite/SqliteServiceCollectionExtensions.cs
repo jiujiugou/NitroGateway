@@ -54,6 +54,12 @@ public static class SqliteServiceCollectionExtensions
             retentionDays: configuration.GetValue("Persistence:MeasurementRetentionDays", 30),
             interval: configuration.GetValue<TimeSpan?>("Persistence:MeasurementRetentionInterval") ?? TimeSpan.FromHours(24)));
 
+        // WAL 维护：定期 checkpoint，防止 WAL 在持续写负载下无限增长拖垮全部读写。
+        services.AddHostedService(sp => new SqliteMaintenanceService(
+            connectionString,
+            sp.GetRequiredService<ILogger<SqliteMaintenanceService>>(),
+            interval: configuration.GetValue<TimeSpan?>("Persistence:WalCheckpointInterval") ?? TimeSpan.FromSeconds(60)));
+
         services.AddOptions<DiskGuardOption>()
             .Bind(configuration.GetSection(DiskGuardOption.SectionName))
             .Validate(o => o.WarningFreeBytes > o.CriticalFreeBytes, "Disk:WarningFreeBytes 必须大于 Disk:CriticalFreeBytes")

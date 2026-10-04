@@ -32,4 +32,22 @@ public static class GatewayActivityTags
 
     /// <summary>数据表名称</summary>
     public const string TableName = "db.table";
+
+    /// <summary>转发缓冲通道（mqtt / http）</summary>
+    public const string Channel = "buffer.channel";
+
+    /// <summary>出队批次数</summary>
+    public const string DequeueCount = "forward.dequeue_count";
+
+    /// <summary>成功提交批次数</summary>
+    public const string CommitCount = "forward.commit_count";
+
+    /// <summary>本轮失败批次数</summary>
+    public const string FailureCount = "forward.failure_count";
+
+    /// <summary>本轮在途发布并发上限</summary>
+    public const string Concurrency = "forward.concurrency";
+
+    /// <summary>批次 ID</summary>
+    public const string BatchId = "batch.id";
 }

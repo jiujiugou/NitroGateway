@@ -15,6 +15,7 @@ using NitroGateway.Persistence;
 using NitroGateway.Persistence.Sqlite;
 using NitroGateway.Protocols;
 using NitroGateway.Storage.Buffer;
+using NitroGateway.Telemetry;
 using NitroGateway.Transport.MQTT;
 using Serilog;
 
@@ -45,6 +46,10 @@ public sealed class GatewayHost : IAsyncDisposable
             ContentRootPath = AppContext.BaseDirectory
         });
 
+        // 关停硬上限：任何后台服务 StopAsync 超时（如慢 Broker 排空）后宿主也必须继续关闭，
+        // 避免桌面端退出时进程残留、独占单实例互斥体导致"再启动提示已在运行"。
+        builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
+
         // D4 配置与路径：SQLite/日志缺省落 %LocalAppData%\NitroGateway，环境变量可覆盖
         // 设置页自定义日志目录（desktop-settings.json）在 Apply 内生效，重启后写入新位置
         DesktopPathConfig.Apply(builder.Configuration, settingsStore: new DesktopSettingsStore());
@@ -71,6 +76,11 @@ public sealed class GatewayHost : IAsyncDisposable
         builder.Services.AddNitroForwarder(builder.Configuration);
         builder.Services.AddNitroCollection(builder.Configuration);
         builder.Services.AddNitroMqtt(builder.Configuration);
+
+        // 可观测性：指标 + 运行时统计（AddNitroTelemetry）；无 ASP.NET 管线，故用独立 MetricServer
+        // 暴露 /metrics（Telemetry:Metrics:Enabled 控制）。追踪按 Telemetry:Tracing 配置（File/OTLP/Console）。
+        builder.Services.AddNitroTelemetry(builder.Configuration, "nitrogateway-desktop");
+        builder.Services.AddNitroMetricsServer(builder.Configuration);
 
         // ── 桌面壳（EventBridge / UiDispatcher / ViewModels）──
         builder.Services.AddNitroDesktopShell(builder.Configuration);

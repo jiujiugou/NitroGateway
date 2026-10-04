@@ -8,6 +8,7 @@ namespace NitroGateway.Persistence.Sqlite;
 
 public sealed class DiskGuardService : BackgroundService, IDiskStatus
 {
+    private readonly string _dbPath;
     private readonly string _dbDirectory;
     private readonly DiskGuardOption _option;
     private readonly ILogger<DiskGuardService> _logger;
@@ -31,7 +32,8 @@ public sealed class DiskGuardService : BackgroundService, IDiskStatus
     {
         _option = option.Value;
         _logger = logger;
-        _dbDirectory = ResolveDbDirectory(connectionString);
+        _dbPath = ResolveDbPath(connectionString);
+        _dbDirectory = Path.GetDirectoryName(_dbPath) ?? Directory.GetCurrentDirectory();
     }
 
     /// <summary>
@@ -84,6 +86,8 @@ public sealed class DiskGuardService : BackgroundService, IDiskStatus
             minFreeBytes = Math.Min(minFreeBytes, freeBytes);
         }
 
+        SetDbSizeMetrics();
+
         var next = Evaluate(minFreeBytes, _option, _level);
         if (next == _level)
             return;
@@ -124,8 +128,29 @@ public sealed class DiskGuardService : BackgroundService, IDiskStatus
         return DiskLevel.Healthy;
     }
 
-    /// <summary>从连接串解析 Data Source 所在目录（相对路径按当前工作目录解析）</summary>
-    private static string ResolveDbDirectory(string connectionString)
+    /// <summary>上报主库与 WAL 文件大小（文件不存在则跳过，如 :memory: 或尚未创建）</summary>
+    private void SetDbSizeMetrics()
+    {
+        SetDbFileSize("main", _dbPath);
+        SetDbFileSize("wal", _dbPath + "-wal");
+    }
+
+    private static void SetDbFileSize(string kind, string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Exists)
+                NitroMetrics.DbSizeBytes.WithLabels(kind).Set(info.Length);
+        }
+        catch (Exception)
+        {
+            // 读取文件大小失败不影响磁盘守卫
+        }
+    }
+
+    /// <summary>从连接串解析 Data Source 文件路径（相对路径按当前工作目录解析）</summary>
+    private static string ResolveDbPath(string connectionString)
     {
         const string key = "Data Source=";
         var index = connectionString.IndexOf(key, StringComparison.OrdinalIgnoreCase);
@@ -133,8 +158,7 @@ public sealed class DiskGuardService : BackgroundService, IDiskStatus
             ? connectionString[(index + key.Length)..].Split(';')[0].Trim()
             : "nitrogateway.db";
 
-        var fullPath = Path.GetFullPath(dataSource);
-        return Path.GetDirectoryName(fullPath) ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(dataSource);
     }
 
     /// <summary>logs 目录：当前工作目录下的 logs/（与 Serilog File sink 默认落点一致）</summary>

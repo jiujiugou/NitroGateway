@@ -102,6 +102,48 @@ public class ForwarderRegistrationTests
         Assert.Equal(1234, option.IntervalMs);
     }
 
+    /// <summary>MaxConcurrentPublishes 应能从配置绑定。</summary>
+    [Fact]
+    public void AddNitroForwarder_Config_BindsMaxConcurrentPublishes()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNitroForwarder(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Forwarder:IntervalMs"] = "5000",
+                ["Forwarder:MaxConcurrentPublishes"] = "16"
+            })
+            .Build());
+        using var provider = services.BuildServiceProvider();
+
+        var option = provider.GetRequiredService<IOptions<ForwarderOption>>().Value;
+
+        Assert.Equal(16, option.MaxConcurrentPublishes);
+    }
+
+    /// <summary>越界 MaxConcurrentPublishes 应在选项校验时失败。</summary>
+    [Theory]
+    [InlineData("0")]
+    [InlineData("65")]
+    public void AddNitroForwarder_ConfigOutOfRangeConcurrency_OptionsValidationThrows(string value)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNitroForwarder(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Forwarder:MaxConcurrentPublishes"] = value
+            })
+            .Build());
+        using var provider = services.BuildServiceProvider();
+
+        var ex = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<ForwarderOption>>().Value);
+
+        Assert.Contains("MaxConcurrentPublishes", ex.Message);
+    }
+
     /// <summary>非正数 IntervalMs 在选项校验时失败，而非到运行期才抛晦涩异常。</summary>
     [Fact]
     public void AddNitroForwarder_ConfigZeroInterval_OptionsValidationThrows()

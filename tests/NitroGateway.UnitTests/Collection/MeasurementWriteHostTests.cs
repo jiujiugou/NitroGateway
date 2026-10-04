@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NitroGateway.Collection;
+using NitroGateway.Desktop.Services.Infrastructure;
 using NitroGateway.Domain.Devices;
 using NitroGateway.Shared;
 using NitroGateway.Storage.TimeSeries;
@@ -130,6 +131,25 @@ public class MeasurementWriteHostTests
         {
             await host.StopAsync(CancellationToken.None);
         }
+    }
+
+    [Fact]
+    public async Task ChannelOverflow_DroppedPointsAreCounted()
+    {
+        // 不启动后台消费，令有界通道（容量 1000）溢出；DropOldest 静默丢弃必须被指标可见化。
+        var host = new MeasurementWriteHost(new ResultFailingStore(), NullLogger<MeasurementWriteHost>.Instance);
+        var source = new PrometheusMetricsSource();
+
+        var before = MetricsSnapshot.Parse(await source.ScrapeAsync())
+            .Value("nitro_store_channel_dropped_points_total") ?? 0;
+
+        for (var i = 0; i < 1002; i++)
+            host.Post([MakeSnapshot(i)]);
+
+        var after = MetricsSnapshot.Parse(await source.ScrapeAsync())
+            .Value("nitro_store_channel_dropped_points_total") ?? 0;
+
+        Assert.True(after >= before + 2, $"期望至少丢弃 2 点，before={before} after={after}");
     }
 
     private static PointSnapshot MakeSnapshot(long value) => new()

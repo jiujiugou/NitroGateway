@@ -140,6 +140,7 @@ public sealed class DesktopViewSmokeTests
                     new AlarmsView(),
                     new AlarmRulesView(),
                     new HistoryView(),
+                    new MetricsView(),
                     new SettingsView(),
                     new StartupWindow()
                 };

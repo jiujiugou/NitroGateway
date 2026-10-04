@@ -6,6 +6,7 @@ using NitroGateway.Alarm.Evaluation;
 using NitroGateway.Alarm.Notification;
 using NitroGateway.Alarm.Repository;
 using NitroGateway.Domain.Events;
+using NitroGateway.Telemetry;
 
 namespace NitroGateway.Alarm.Hosted;
 
@@ -132,6 +133,7 @@ public sealed class AlarmHostedService : BackgroundService, IPointStoredSink
                 var saveResult = await alarmRepo.SaveAsync(eval.Alarm, ct);
                 if (saveResult.IsSuccess)
                 {
+                    NitroMetrics.AlarmTriggeredTotal.Inc();
                     _logger.LogWarning(
                         "告警触发: {RuleId} Severity={Severity} Value={Value}",
                         eval.RuleId, eval.Severity, eval.TriggerValue);
@@ -139,7 +141,11 @@ public sealed class AlarmHostedService : BackgroundService, IPointStoredSink
                     foreach (var notifier in notifiers)
                     {
                         try { await notifier.NotifyAsync(eval.Alarm, ct); }
-                        catch (Exception ex) { _logger.LogError(ex, "通知失败 {Notifier}", notifier.Name); }
+                        catch (Exception ex)
+                        {
+                            NitroMetrics.AlarmNotifyFailuresTotal.Inc();
+                            _logger.LogError(ex, "通知失败 {Notifier}", notifier.Name);
+                        }
                     }
                 }
                 break;

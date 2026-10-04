@@ -20,6 +20,7 @@
     <!-- 通用机制层：TTL 缓存（AlarmRuleCache） -->
     <ProjectReference Include="..\NitroGateway.Primitives\NitroGateway.Primitives.csproj" />
     <ProjectReference Include="..\NitroGateway.Transport\MQTT\NitroGateway.Transport.MQTT.csproj" />
+    <ProjectReference Include="..\NitroGateway.Telemetry\NitroGateway.Telemetry.csproj" />
   </ItemGroup>
 
 </Project>

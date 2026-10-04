@@ -55,3 +55,21 @@
 | 版本 | 变更 | 来源 |
 |---|---|---|
 | v1 | 初稿 + I1–I4 检测器；I4 在多轮探索下绿、未改 src | /并发建模 |
+| v2 | 追加 F1–F3：`Forwarder` 有界并发发布（客户端侧，非 buffer 内部） | 转发吞吐优化 |
+
+## 附：Forwarder 有界并发发布（客户端侧）
+
+- 目标：`src/NitroGateway.Forwarder/Forwarder.cs`（`ForwardBatchAsync`）
+- 背景：串行 QoS1 发布被公网 RTT 卡死（吞吐 ≈ 1/RTT），改为单轮在途发布数 ≤ `Forwarder:MaxConcurrentPublishes`（默认 8，夹紧 [1,64]）。buffer 内部（I1–I4）不变，仅调用方式由串行改为有界并发。
+- 检测器：`tests/NitroGateway.UnitTests/Forwarding/ForwarderTests.cs`（有界并发/串行退化/部分失败/不重复发布）。
+
+| # | 不变量（人话） | 检测器 |
+|---|---|---|
+| F1 | 同一批只发布一次（每个 batch 由唯一 worker 处理，committed 记其 Id 唯一） | `ForwardBatchAsync_Concurrent_DoesNotPublishDuplicateBatches` |
+| F2 | 在途发布数 ≤ MaxConcurrentPublishes（SemaphoreSlim 闸门） | `ForwardBatchAsync_BoundedConcurrency_NeverExceedsConfiguredDegree` / `..._MaxConcurrentPublishesOne_IsSerial` |
+| F3 | 取消时不 Commit（已出队未提交批次靠启动恢复重置 InFlight，与 v1 I3 一致） | `ForwardBatchAsync_OperationCanceled_Rethrows` / `..._CancelledBeforeCommit_DoesNotCommit` |
+| F4 | 并发下部分失败：成功批次全提交、失败批次全 MarkFailed（容器线程安全） | `ForwardBatchAsync_ConcurrentPartialFailure_CommitsSuccessesMarksFailures` |
+
+**豁免**：发送顺序不保证（并发发布 + QoS1 PUBACK 乱序）；遥测带时间戳，消费端须容忍乱序。`Activity` 非线程安全 → worker 内不改 activity，收尾统一设置（已在实现中保证）。
+
+**非目标**：MQTTnet/Polly 内部并发、Broker 端排序、`MaxDequeuePerCall` 批量上限。

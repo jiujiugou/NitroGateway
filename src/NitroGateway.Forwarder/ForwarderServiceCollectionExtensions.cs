@@ -35,6 +35,8 @@ public static class ForwarderServiceCollectionExtensions
             .Bind(configuration.GetSection(ForwarderOption.SectionName))
             .Validate(o => o.IntervalMs > 0, "Forwarder:IntervalMs 必须大于 0（PeriodicTimer 要求正数）")
             .Validate(o => IsSupportedChannels(o.Channels), "Forwarder:Channels 必须为 mqtt/http/both")
+            .Validate(o => o.MaxConcurrentPublishes is >= 1 and <= 64,
+                "Forwarder:MaxConcurrentPublishes 必须在 [1, 64] 范围内")
             .Validate(o => !ChannelsContainHttp(o.Channels) || !string.IsNullOrWhiteSpace(o.Http.BaseUrl),
                 "启用 http 通道时 Forwarder:Http:BaseUrl 不能为空")
             .ValidateOnStart();
@@ -59,7 +61,8 @@ public static class ForwarderServiceCollectionExtensions
             sp.GetRequiredService<NitroGateway.Transport.MQTT.IMqttClient>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Forwarder>>(),
             NitroGateway.Shared.SiteOptions.Resolve(
-                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["Site:Id"])));
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["Site:Id"]),
+            option.MaxConcurrentPublishes));
 
         if (channels.Contains(IForwardBuffer.MqttChannel))
         {
